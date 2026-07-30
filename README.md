@@ -4,25 +4,29 @@ WealthTracker is a local-first, open-source desktop application for viewing
 personal finances across Russian banks and investment accounts.
 
 The application keeps its database on your computer and encrypts it with
-SQLCipher. Interactive bank connectors may ask for credentials or a one-time
-code during a bank login, but the application contract forbids retaining
-passwords and one-time codes.
+SQLCipher. Official API tokens are stored in the operating-system credential
+store and copied into temporary memory only while a request is constructed.
 
 ## Current capabilities
 
 - Local CSV, XLSX, OFX, QIF, 1C-style, and reviewed PDF statement imports.
 - Import presets for T-Bank, Alfa-Bank, Sber, and VTB.
+- Read-only Alfa-Bank B2C API synchronization for registered integrations.
+- Read-only T-Bank Business account and statement synchronization.
+- Read-only Modulbank synchronization, including its public sandbox.
 - Read-only synchronization with T-Invest using a user-created token.
 - A local interactive-session contract for future retail-bank plugins.
 - Accounts, balances, transaction splits, categories, rules, and transfers.
 - Income, spending, savings, net-worth, and investment analytics.
 - Russian interface with localization support.
 
-Russian retail banks do not currently provide uniform consumer transaction
-APIs to independent local applications. A retail connection therefore needs a
-separately maintained bank-specific plugin. Retail login plugins for T-Bank,
-Alfa-Bank, Sber, and VTB are not bundled yet; the Connections page reports this
-explicitly instead of presenting a non-functional login form.
+The bundled live connectors use documented bank APIs only. They do not scrape
+web or mobile banking sessions and never ask for a bank password or SMS code.
+T-Bank Business and Modulbank cover business accounts. Alfa-Bank B2C requires
+an access token issued to a registered integration; WealthTracker does not yet
+run Alfa's Authorization Code flow itself. Retail T-Bank, Sber, and VTB login
+plugins are not bundled, and the Connections page reports that limitation
+instead of presenting a non-functional login form.
 
 The connector design is informed by the local, normalized plugin flow used by
 ZenMoney. WealthTracker does not copy or embed ZenPlugins source: ZenPlugins is
@@ -56,7 +60,8 @@ cmake --build --preset macos-debug
 ctest --preset macos-debug
 ```
 
-See [Building](docs/building.md), [Architecture](docs/architecture.md), and
+See [Bank connections](docs/bank-connections.md),
+[Building](docs/building.md), [Architecture](docs/architecture.md), and
 [Security](SECURITY.md) for details.
 
 ## License
