@@ -107,6 +107,7 @@ target_sources(
     PRIVATE
         src/connectors/import.cpp
         src/connectors/bank_presets.cpp
+        src/connectors/bank_sessions.cpp
         src/connectors/deduplication.cpp
         src/connectors/network_policy.cpp
         src/connectors/t_invest_client.cpp
