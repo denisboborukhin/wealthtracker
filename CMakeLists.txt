@@ -259,8 +259,12 @@ if(BUILD_TESTING)
     enable_sanitizers(connectors_tests)
     catch_discover_tests(connectors_tests)
 
-    add_executable(app_tests tests/app/finance_models_test.cpp)
-    target_link_libraries(app_tests PRIVATE app Catch2::Catch2WithMain)
+    add_executable(app_tests
+        tests/app/test_main.cpp
+        tests/app/finance_models_test.cpp
+        tests/app/bank_connections_test.cpp
+    )
+    target_link_libraries(app_tests PRIVATE app Catch2::Catch2)
     enable_strict_warnings(app_tests)
     enable_sanitizers(app_tests)
     catch_discover_tests(app_tests)

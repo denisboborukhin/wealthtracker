@@ -2,14 +2,31 @@
 
 #include "app/FinanceModels.hpp"
 
+#include <QByteArray>
 #include <QObject>
+#include <QSet>
+#include <QString>
 #include <QVariantList>
 
+#include <expected>
 #include <memory>
+#include <optional>
 
 namespace wealthtracker::app {
 
 class AppControllerPrivate;
+
+class CredentialBackend {
+public:
+    virtual ~CredentialBackend() = default;
+    [[nodiscard]] virtual bool supported() const noexcept = 0;
+    [[nodiscard]] virtual std::expected<void, QString>
+    put(const QString& key, const QByteArray& secret) = 0;
+    [[nodiscard]] virtual std::expected<std::optional<QByteArray>, QString>
+    get(const QString& key) = 0;
+    [[nodiscard]] virtual std::expected<void, QString>
+    remove(const QString& key) = 0;
+};
 
 class AppController final : public QObject {
     Q_OBJECT
@@ -33,6 +50,8 @@ class AppController final : public QObject {
 
 public:
     explicit AppController(QObject* parent = nullptr);
+    explicit AppController(std::unique_ptr<CredentialBackend> credentials,
+                           QObject* parent);
     ~AppController() override;
 
     [[nodiscard]] QAbstractItemModel* accounts() noexcept;
@@ -61,6 +80,9 @@ public:
     Q_INVOKABLE bool saveInvestmentToken(const QString& token);
     Q_INVOKABLE void removeInvestmentToken();
     Q_INVOKABLE void synchronizeInvestments();
+    Q_INVOKABLE bool saveBankToken(const QString& connectorId, const QString& token);
+    Q_INVOKABLE void removeBankToken(const QString& connectorId);
+    Q_INVOKABLE void synchronizeBank(const QString& connectorId);
     Q_INVOKABLE void describeBankConnection(const QString& connectorId);
 
 signals:
@@ -82,12 +104,18 @@ private:
     QString import_status_;
     QString sync_status_;
     QString connection_message_;
+    QString live_net_worth_ = QStringLiteral("0 ₽");
+    QString live_monthly_income_ = QStringLiteral("0 ₽");
+    QString live_monthly_spending_ = QStringLiteral("0 ₽");
+    QString live_savings_rate_ = QStringLiteral("—");
     bool locked_ = false;
     bool demo_mode_ = true;
     bool investment_connected_ = false;
+    QSet<QString> connected_bank_ids_;
     std::unique_ptr<AppControllerPrivate> private_;
 
     void refreshBankConnections();
+    void rebuildBankModels();
 };
 
 }  // namespace wealthtracker::app
