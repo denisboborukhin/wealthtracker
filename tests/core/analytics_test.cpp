@@ -1,11 +1,11 @@
-import wt.core.analytics;
-
 #include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
 
 #include <chrono>
 #include <optional>
 #include <vector>
+
+import wt.core.analytics;
 
 using namespace wealthtracker::core;
 

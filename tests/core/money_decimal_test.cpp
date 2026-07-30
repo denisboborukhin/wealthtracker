@@ -1,10 +1,10 @@
-import wt.core.decimal;
-import wt.core.money;
-
 #include <catch2/catch_test_macros.hpp>
 
 #include <cstdint>
 #include <limits>
+
+import wt.core.decimal;
+import wt.core.money;
 
 using namespace wealthtracker::core;
 

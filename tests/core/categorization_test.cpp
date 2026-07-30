@@ -1,11 +1,11 @@
-import wt.core.categorization;
-
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/catch_approx.hpp>
 
 #include <chrono>
 #include <string>
 #include <vector>
+
+import wt.core.categorization;
 
 using namespace std::chrono_literals;
 using namespace wealthtracker::core;
