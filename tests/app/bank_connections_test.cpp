@@ -85,6 +85,27 @@ public:
 
 }  // namespace
 
+TEST_CASE("new installations start with empty data and optional demo mode") {
+    auto credentials = std::make_unique<MemoryCredentialBackend>();
+    wealthtracker::app::AppController controller(std::move(credentials),
+                                                  nullptr);
+
+    CHECK_FALSE(controller.demoMode());
+    CHECK(controller.accounts()->rowCount() == 0);
+    CHECK(controller.transactions()->rowCount() == 0);
+    CHECK(controller.categories()->rowCount() == 0);
+    CHECK(controller.holdings()->rowCount() == 0);
+    CHECK(controller.netWorth() == QStringLiteral("0 ₽"));
+
+    controller.loadDemoData();
+    CHECK(controller.demoMode());
+    CHECK(controller.accounts()->rowCount() > 0);
+
+    controller.clearDemoData();
+    CHECK_FALSE(controller.demoMode());
+    CHECK(controller.accounts()->rowCount() == 0);
+}
+
 TEST_CASE("official bank tokens have independent credential state") {
     auto credentials = std::make_unique<MemoryCredentialBackend>();
     auto* stored = credentials.get();

@@ -737,7 +737,6 @@ AppController::AppController(std::unique_ptr<CredentialBackend> credentials,
     refreshBankConnections();
     import_status_ = QStringLiteral("Нет импортированных выписок");
     sync_status_ = QStringLiteral("Нет синхронизированных подключений");
-    loadDemoData();
 }
 
 AppController::~AppController() = default;

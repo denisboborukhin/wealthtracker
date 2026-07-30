@@ -140,7 +140,7 @@ private:
     QString live_monthly_spending_ = QStringLiteral("0 ₽");
     QString live_savings_rate_ = QStringLiteral("—");
     bool locked_ = false;
-    bool demo_mode_ = true;
+    bool demo_mode_ = false;
     bool investment_connected_ = false;
     QSet<QString> connected_bank_ids_;
     std::unique_ptr<AppControllerPrivate> private_;
