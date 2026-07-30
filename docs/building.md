@@ -28,8 +28,13 @@ conan install . \
   --profile:build=conan/profiles/macos-arm64 \
   --build=missing -s:h build_type=Debug \
   -of build/macos-debug
-cmake --preset macos-debug
+./scripts/configure.sh macos-debug
 ```
+
+The configure script selects full Xcode Clang or Homebrew LLVM together with
+its `clang-scan-deps` executable, which CMake needs for C++23 named modules.
+Set `WEALTHTRACKER_LLVM_ROOT` to select another LLVM installation. On Windows,
+configure with `cmake --preset windows-debug` instead.
 
 Build and test:
 

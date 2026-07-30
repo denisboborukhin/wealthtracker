@@ -42,7 +42,7 @@ conan install . \
   --profile:build=conan/profiles/macos-arm64 \
   --build=missing -s:h build_type=Debug \
   -of build/macos-debug
-cmake --preset macos-debug
+./scripts/configure.sh macos-debug
 cmake --build --preset macos-debug
 ctest --preset macos-debug
 ```
