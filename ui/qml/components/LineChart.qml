@@ -4,7 +4,7 @@ Canvas {
     id: chart
     required property var values
     property color lineColor: Theme.primary
-    property color fillColor: "#257C9CFF"
+    property color gridColor: Theme.border
 
     onValuesChanged: requestPaint()
     onWidthChanged: requestPaint()
@@ -27,6 +27,13 @@ Canvas {
         const step = (width - padding * 2) / (values.length - 1)
 
         context.beginPath()
+        context.moveTo(padding, height - padding)
+        context.lineTo(width - padding, height - padding)
+        context.lineWidth = 1
+        context.strokeStyle = gridColor
+        context.stroke()
+
+        context.beginPath()
         for (let i = 0; i < values.length; ++i) {
             const x = padding + i * step
             const y = height - padding - ((values[i] - minimum) / range) * (height - padding * 2)
@@ -35,14 +42,8 @@ Canvas {
             else
                 context.lineTo(x, y)
         }
-        context.lineWidth = 3
+        context.lineWidth = 2
         context.strokeStyle = lineColor
         context.stroke()
-
-        context.lineTo(width - padding, height - padding)
-        context.lineTo(padding, height - padding)
-        context.closePath()
-        context.fillStyle = fillColor
-        context.fill()
     }
 }

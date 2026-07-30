@@ -1,28 +1,30 @@
 import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
+import "components"
 import "pages"
 
 ApplicationWindow {
     id: window
-    width: 1380
-    height: 860
-    minimumWidth: 980
+    width: 1320
+    height: 820
+    minimumWidth: 1020
     minimumHeight: 680
     visible: true
     title: "WealthTracker"
     color: Theme.background
+    property alias currentPage: navigation.currentIndex
 
     readonly property var navigationItems: [
-        { "title": qsTr("Обзор"), "symbol": "◫" },
-        { "title": qsTr("Счета"), "symbol": "◉" },
-        { "title": qsTr("Операции"), "symbol": "↕" },
-        { "title": qsTr("Импорт"), "symbol": "⇩" },
-        { "title": qsTr("Инвестиции"), "symbol": "⌁" },
-        { "title": qsTr("Категории"), "symbol": "◈" },
-        { "title": qsTr("Подключения"), "symbol": "⌘" },
-        { "title": qsTr("Копии"), "symbol": "▣" },
-        { "title": qsTr("Настройки"), "symbol": "⚙" }
+        { "title": qsTr("Обзор") },
+        { "title": qsTr("Счета") },
+        { "title": qsTr("Операции") },
+        { "title": qsTr("Импорт") },
+        { "title": qsTr("Инвестиции") },
+        { "title": qsTr("Категории") },
+        { "title": qsTr("Подключения") },
+        { "title": qsTr("Резервные копии") },
+        { "title": qsTr("Настройки") }
     ]
 
     RowLayout {
@@ -31,56 +33,43 @@ ApplicationWindow {
 
         Rectangle {
             Layout.fillHeight: true
-            Layout.preferredWidth: 224
-            color: "#0E1628"
-            border.color: Theme.border
+            Layout.preferredWidth: 204
+            color: Theme.surface
 
             ColumnLayout {
                 anchors.fill: parent
-                anchors.margins: 14
-                spacing: 8
+                anchors.leftMargin: 14
+                anchors.rightMargin: 14
+                anchors.topMargin: 22
+                anchors.bottomMargin: 18
+                spacing: 5
 
-                RowLayout {
+                Text {
                     Layout.fillWidth: true
-                    Layout.bottomMargin: 22
-                    Rectangle {
-                        implicitWidth: 38
-                        implicitHeight: 38
-                        radius: 12
-                        color: Theme.primary
-                        Text { anchors.centerIn: parent; text: "W"; color: "#0B1020"; font.pixelSize: 20; font.bold: true }
-                    }
-                    Text {
-                        text: "WealthTracker"
-                        color: Theme.text
-                        font.pixelSize: 17
-                        font.weight: Font.DemiBold
-                    }
+                    Layout.leftMargin: 10
+                    Layout.bottomMargin: 24
+                    text: "WealthTracker"
+                    color: Theme.text
+                    font.pixelSize: 18
+                    font.weight: Font.DemiBold
                 }
 
                 Repeater {
                     model: window.navigationItems
                     delegate: Rectangle {
                         Layout.fillWidth: true
-                        Layout.preferredHeight: 44
-                        radius: 10
+                        Layout.preferredHeight: 38
+                        radius: 7
                         color: navigation.currentIndex === index ? Theme.surfaceRaised : "transparent"
-                        RowLayout {
+                        Text {
                             anchors.fill: parent
                             anchors.leftMargin: 12
                             anchors.rightMargin: 12
-                            Text {
-                                Layout.preferredWidth: 24
-                                text: modelData.symbol
-                                color: navigation.currentIndex === index ? Theme.primary : Theme.textMuted
-                                font.pixelSize: 16
-                            }
-                            Text {
-                                Layout.fillWidth: true
-                                text: modelData.title
-                                color: navigation.currentIndex === index ? Theme.text : Theme.textMuted
-                                font.pixelSize: 13
-                            }
+                            text: modelData.title
+                            color: navigation.currentIndex === index ? Theme.text : Theme.textMuted
+                            font.pixelSize: 13
+                            font.weight: navigation.currentIndex === index ? Font.Medium : Font.Normal
+                            verticalAlignment: Text.AlignVCenter
                         }
                         MouseArea {
                             anchors.fill: parent
@@ -92,11 +81,22 @@ ApplicationWindow {
                 Item { Layout.fillHeight: true }
                 Text {
                     Layout.fillWidth: true
-                    text: qsTr("Локально · Без телеметрии")
+                    text: qsTr("Данные остаются на устройстве")
                     color: Theme.textMuted
                     font.pixelSize: 10
-                    horizontalAlignment: Text.AlignHCenter
+                    wrapMode: Text.WordWrap
+                    horizontalAlignment: Text.AlignLeft
+                    Layout.leftMargin: 10
+                    Layout.rightMargin: 10
                 }
+            }
+
+            Rectangle {
+                width: 1
+                color: Theme.border
+                anchors.top: parent.top
+                anchors.bottom: parent.bottom
+                anchors.right: parent.right
             }
         }
 
@@ -122,13 +122,13 @@ ApplicationWindow {
         anchors.fill: parent
         visible: App.locked
         z: 100
-        color: "#F00B1020"
+        color: "#D9F5F6F7"
 
         Rectangle {
             anchors.centerIn: parent
-            width: 390
-            height: 280
-            radius: 18
+            width: 420
+            height: 240
+            radius: 12
             color: Theme.surface
             border.color: Theme.border
 
@@ -140,7 +140,7 @@ ApplicationWindow {
                     Layout.alignment: Qt.AlignHCenter
                     text: qsTr("Хранилище заблокировано")
                     color: Theme.text
-                    font.pixelSize: 22
+                    font.pixelSize: 20
                     font.weight: Font.DemiBold
                 }
                 Text {
@@ -150,9 +150,10 @@ ApplicationWindow {
                     color: Theme.textMuted
                     wrapMode: Text.WordWrap
                 }
-                Button {
+                ActionButton {
                     Layout.fillWidth: true
                     text: qsTr("Разблокировать")
+                    primary: true
                     onClicked: App.unlock()
                 }
             }

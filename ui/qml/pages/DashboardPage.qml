@@ -3,70 +3,69 @@ import QtQuick.Layouts
 import "../components"
 
 Flickable {
-    contentHeight: content.implicitHeight + 48
+    contentHeight: content.implicitHeight + Theme.pageMargin * 2
     clip: true
 
     ColumnLayout {
         id: content
-        width: parent.width - 48
-        x: 24
-        y: 24
-        spacing: 18
+        width: parent.width - Theme.pageMargin * 2
+        x: Theme.pageMargin
+        y: Theme.pageMargin
+        spacing: 16
 
         RowLayout {
             Layout.fillWidth: true
-            Text {
-                text: qsTr("Обзор")
-                color: Theme.text
-                font.pixelSize: 30
-                font.weight: Font.DemiBold
-            }
-            Item { Layout.fillWidth: true }
-            Rectangle {
-                visible: App.demoMode
-                implicitWidth: demoLabel.implicitWidth + 24
-                implicitHeight: 30
-                radius: 15
-                color: "#263B5A"
+            ColumnLayout {
+                spacing: 4
                 Text {
-                    id: demoLabel
-                    anchors.centerIn: parent
-                    text: qsTr("Демо-данные")
-                    color: Theme.primary
+                    text: qsTr("Обзор")
+                    color: Theme.text
+                    font.pixelSize: 26
+                    font.weight: Font.DemiBold
+                }
+                Text {
+                    text: qsTr("Все счета · июль 2026")
+                    color: Theme.textMuted
                     font.pixelSize: 12
                 }
+            }
+            Item { Layout.fillWidth: true }
+            StatusBadge {
+                visible: App.demoMode
+                text: qsTr("Демо-данные")
             }
         }
 
         GridLayout {
             Layout.fillWidth: true
-            columns: width > 1040 ? 4 : 2
-            columnSpacing: 14
-            rowSpacing: 14
+            columns: width > 900 ? 4 : 2
+            columnSpacing: 12
+            rowSpacing: 12
 
             MetricCard {
                 Layout.fillWidth: true
                 title: qsTr("Капитал")
                 value: App.netWorth
                 hint: qsTr("+4,2% за месяц")
+                accent: Theme.positive
             }
             MetricCard {
                 Layout.fillWidth: true
-                title: qsTr("Доходы в июле")
+                title: qsTr("Доходы")
                 value: App.monthlyIncome
                 hint: qsTr("+12,5% к июню")
                 accent: Theme.positive
             }
             MetricCard {
                 Layout.fillWidth: true
-                title: qsTr("Расходы в июле")
+                title: qsTr("Расходы")
                 value: App.monthlySpending
                 hint: qsTr("−6,8% к июню")
-                accent: Theme.negative
+                accent: Theme.textMuted
             }
             MetricCard {
                 Layout.fillWidth: true
-                title: qsTr("Норма сбережений")
+                title: qsTr("Сбережения")
                 value: App.savingsRate
                 hint: qsTr("Цель 40%")
                 accent: Theme.warning
@@ -75,30 +74,34 @@ Flickable {
 
         GridLayout {
             Layout.fillWidth: true
-            columns: width > 920 ? 2 : 1
-            columnSpacing: 18
-            rowSpacing: 18
+            columns: width > 860 ? 2 : 1
+            columnSpacing: 12
+            rowSpacing: 12
 
             SectionCard {
                 Layout.fillWidth: true
-                Layout.preferredHeight: 330
+                Layout.preferredHeight: 286
+
                 ColumnLayout {
                     anchors.fill: parent
-                    anchors.margins: 22
+                    anchors.margins: 18
+                    spacing: 4
+
                     Text {
-                        text: qsTr("Динамика капитала")
+                        text: qsTr("Капитал")
                         color: Theme.text
-                        font.pixelSize: 18
+                        font.pixelSize: 14
                         font.weight: Font.DemiBold
                     }
                     Text {
                         text: qsTr("Последние 12 месяцев")
                         color: Theme.textMuted
-                        font.pixelSize: 12
+                        font.pixelSize: 11
                     }
                     LineChart {
                         Layout.fillWidth: true
                         Layout.fillHeight: true
+                        Layout.topMargin: 10
                         values: App.netWorthSeries
                     }
                 }
@@ -106,49 +109,51 @@ Flickable {
 
             SectionCard {
                 Layout.fillWidth: true
-                Layout.preferredHeight: 330
-                RowLayout {
+                Layout.preferredHeight: 286
+
+                ColumnLayout {
                     anchors.fill: parent
-                    anchors.margins: 22
-                    spacing: 18
-                    ColumnLayout {
-                        Layout.fillHeight: true
-                        Layout.preferredWidth: 210
-                        Text {
-                            text: qsTr("Расходы по категориям")
-                            color: Theme.text
-                            font.pixelSize: 18
-                            font.weight: Font.DemiBold
-                        }
-                        DonutChart {
-                            Layout.fillWidth: true
-                            Layout.fillHeight: true
-                            categoryModel: App.categories
-                        }
+                    anchors.margins: 18
+                    spacing: 10
+
+                    Text {
+                        text: qsTr("Расходы по категориям")
+                        color: Theme.text
+                        font.pixelSize: 14
+                        font.weight: Font.DemiBold
                     }
-                    ListView {
-                        Layout.fillWidth: true
-                        Layout.fillHeight: true
+
+                    Repeater {
                         model: App.categories
-                        spacing: 10
-                        delegate: RowLayout {
-                            width: ListView.view.width
-                            Rectangle {
-                                implicitWidth: 9
-                                implicitHeight: 9
-                                radius: 5
-                                color: model.color
-                            }
-                            Text {
+                        delegate: ColumnLayout {
+                            Layout.fillWidth: true
+                            spacing: 4
+
+                            RowLayout {
                                 Layout.fillWidth: true
-                                text: model.name
-                                color: Theme.textMuted
-                                font.pixelSize: 13
+                                Text {
+                                    Layout.fillWidth: true
+                                    text: model.name
+                                    color: Theme.text
+                                    font.pixelSize: 12
+                                }
+                                Text {
+                                    text: model.amount
+                                    color: Theme.textMuted
+                                    font.pixelSize: 12
+                                }
                             }
-                            Text {
-                                text: model.amount
-                                color: Theme.text
-                                font.pixelSize: 13
+                            Rectangle {
+                                Layout.fillWidth: true
+                                Layout.preferredHeight: 4
+                                radius: 2
+                                color: Theme.surfaceRaised
+                                Rectangle {
+                                    width: parent.width * model.share
+                                    height: parent.height
+                                    radius: 2
+                                    color: model.color
+                                }
                             }
                         }
                     }
@@ -158,44 +163,86 @@ Flickable {
 
         SectionCard {
             Layout.fillWidth: true
-            Layout.preferredHeight: 350
+            Layout.preferredHeight: 320
+
             ColumnLayout {
                 anchors.fill: parent
-                anchors.margins: 22
-                Text {
-                    text: qsTr("Последние операции")
-                    color: Theme.text
-                    font.pixelSize: 18
-                    font.weight: Font.DemiBold
+                spacing: 0
+
+                RowLayout {
+                    Layout.fillWidth: true
+                    Layout.leftMargin: 18
+                    Layout.rightMargin: 18
+                    Layout.preferredHeight: 48
+                    Text {
+                        Layout.fillWidth: true
+                        text: qsTr("Последние операции")
+                        color: Theme.text
+                        font.pixelSize: 14
+                        font.weight: Font.DemiBold
+                    }
+                    Text {
+                        text: qsTr("Сумма")
+                        color: Theme.textMuted
+                        font.pixelSize: 11
+                    }
                 }
+
+                Rectangle {
+                    Layout.fillWidth: true
+                    Layout.preferredHeight: 1
+                    color: Theme.border
+                }
+
                 ListView {
                     Layout.fillWidth: true
                     Layout.fillHeight: true
                     model: App.transactions
                     clip: true
+
                     delegate: Item {
                         width: ListView.view.width
-                        height: 47
+                        height: 44
+
                         RowLayout {
                             anchors.fill: parent
+                            anchors.leftMargin: 18
+                            anchors.rightMargin: 18
                             Text {
-                                Layout.preferredWidth: 100
+                                Layout.preferredWidth: 88
                                 text: model.date
                                 color: Theme.textMuted
-                                font.pixelSize: 12
-                            }
-                            ColumnLayout {
-                                Layout.fillWidth: true
-                                spacing: 1
-                                Text { text: model.title; color: Theme.text; font.pixelSize: 14 }
-                                Text { text: model.category; color: Theme.textMuted; font.pixelSize: 11 }
+                                font.pixelSize: 11
                             }
                             Text {
+                                Layout.fillWidth: true
+                                text: model.title
+                                color: Theme.text
+                                font.pixelSize: 12
+                                elide: Text.ElideRight
+                            }
+                            Text {
+                                Layout.preferredWidth: 160
+                                text: model.category
+                                color: Theme.textMuted
+                                font.pixelSize: 11
+                                elide: Text.ElideRight
+                            }
+                            Text {
+                                Layout.preferredWidth: 105
+                                horizontalAlignment: Text.AlignRight
                                 text: model.amount
                                 color: model.income ? Theme.positive : Theme.text
-                                font.pixelSize: 14
+                                font.pixelSize: 12
                                 font.weight: Font.Medium
                             }
+                        }
+
+                        Rectangle {
+                            width: parent.width
+                            height: 1
+                            anchors.bottom: parent.bottom
+                            color: Theme.border
                         }
                     }
                 }

@@ -1,37 +1,38 @@
 import QtQuick
-import QtQuick.Controls
 import QtQuick.Layouts
 import "../components"
 
 Item {
     ColumnLayout {
         anchors.fill: parent
-        anchors.margins: 24
-        spacing: 18
+        anchors.margins: Theme.pageMargin
+        spacing: 16
+
         RowLayout {
+            Layout.fillWidth: true
             ColumnLayout {
-                Text {
-                    text: qsTr("Инвестиции")
-                    color: Theme.text
-                    font.pixelSize: 30
-                    font.weight: Font.DemiBold
-                }
+                spacing: 4
+                Text { text: qsTr("Инвестиции"); color: Theme.text; font.pixelSize: 26; font.weight: Font.DemiBold }
                 Text { text: App.syncStatus; color: Theme.textMuted; font.pixelSize: 12 }
             }
             Item { Layout.fillWidth: true }
-            Button {
+            ActionButton {
                 text: qsTr("Синхронизировать")
+                primary: true
                 onClicked: App.synchronizeInvestments()
             }
         }
+
         GridLayout {
             Layout.fillWidth: true
             columns: 3
+            columnSpacing: 12
             MetricCard {
                 Layout.fillWidth: true
                 title: qsTr("Стоимость портфеля")
                 value: App.portfolioValue
                 hint: qsTr("+14,8% за всё время")
+                accent: Theme.positive
             }
             MetricCard {
                 Layout.fillWidth: true
@@ -45,21 +46,31 @@ Item {
                 title: "XIRR"
                 value: "17,6%"
                 hint: qsTr("Не является налоговым расчётом")
-                accent: Theme.warning
+                accent: Theme.textMuted
             }
         }
+
         SectionCard {
             Layout.fillWidth: true
             Layout.fillHeight: true
+
             ColumnLayout {
                 anchors.fill: parent
-                anchors.margins: 20
-                Text {
-                    text: qsTr("Активы")
-                    color: Theme.text
-                    font.pixelSize: 18
-                    font.weight: Font.DemiBold
+                spacing: 0
+
+                RowLayout {
+                    Layout.fillWidth: true
+                    Layout.leftMargin: 18
+                    Layout.rightMargin: 18
+                    Layout.preferredHeight: 42
+                    Text { Layout.preferredWidth: 92; text: qsTr("Тикер"); color: Theme.textMuted; font.pixelSize: 11 }
+                    Text { Layout.fillWidth: true; text: qsTr("Актив"); color: Theme.textMuted; font.pixelSize: 11 }
+                    Text { Layout.preferredWidth: 90; horizontalAlignment: Text.AlignRight; text: qsTr("Доля"); color: Theme.textMuted; font.pixelSize: 11 }
+                    Text { Layout.preferredWidth: 100; horizontalAlignment: Text.AlignRight; text: qsTr("Доходность"); color: Theme.textMuted; font.pixelSize: 11 }
+                    Text { Layout.preferredWidth: 125; horizontalAlignment: Text.AlignRight; text: qsTr("Стоимость"); color: Theme.textMuted; font.pixelSize: 11 }
                 }
+                Rectangle { Layout.fillWidth: true; Layout.preferredHeight: 1; color: Theme.border }
+
                 ListView {
                     Layout.fillWidth: true
                     Layout.fillHeight: true
@@ -67,35 +78,18 @@ Item {
                     clip: true
                     delegate: Item {
                         width: ListView.view.width
-                        height: 58
+                        height: 54
                         RowLayout {
                             anchors.fill: parent
-                            Text {
-                                Layout.preferredWidth: 92
-                                text: model.ticker
-                                color: Theme.primary
-                                font.weight: Font.DemiBold
-                            }
-                            Text {
-                                Layout.fillWidth: true
-                                text: model.name
-                                color: Theme.text
-                            }
-                            Text { text: model.allocation; color: Theme.textMuted }
-                            Text {
-                                Layout.preferredWidth: 92
-                                horizontalAlignment: Text.AlignRight
-                                text: model.performance
-                                color: model.positive ? Theme.positive : Theme.negative
-                            }
-                            Text {
-                                Layout.preferredWidth: 125
-                                horizontalAlignment: Text.AlignRight
-                                text: model.value
-                                color: Theme.text
-                                font.weight: Font.Medium
-                            }
+                            anchors.leftMargin: 18
+                            anchors.rightMargin: 18
+                            Text { Layout.preferredWidth: 92; text: model.ticker; color: Theme.text; font.pixelSize: 12; font.weight: Font.DemiBold }
+                            Text { Layout.fillWidth: true; text: model.name; color: Theme.text; font.pixelSize: 12; elide: Text.ElideRight }
+                            Text { Layout.preferredWidth: 90; horizontalAlignment: Text.AlignRight; text: model.allocation; color: Theme.textMuted; font.pixelSize: 12 }
+                            Text { Layout.preferredWidth: 100; horizontalAlignment: Text.AlignRight; text: model.performance; color: model.positive ? Theme.positive : Theme.negative; font.pixelSize: 12 }
+                            Text { Layout.preferredWidth: 125; horizontalAlignment: Text.AlignRight; text: model.value; color: Theme.text; font.pixelSize: 12; font.weight: Font.Medium }
                         }
+                        Rectangle { width: parent.width; height: 1; anchors.bottom: parent.bottom; color: Theme.border }
                     }
                 }
             }

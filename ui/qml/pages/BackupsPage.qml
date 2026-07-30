@@ -1,43 +1,63 @@
 import QtQuick
-import QtQuick.Controls
 import QtQuick.Layouts
 import "../components"
 
 Item {
     ColumnLayout {
         anchors.fill: parent
-        anchors.margins: 24
-        spacing: 18
-        Text {
-            text: qsTr("Резервные копии")
-            color: Theme.text
-            font.pixelSize: 30
-            font.weight: Font.DemiBold
+        anchors.margins: Theme.pageMargin
+        spacing: 20
+
+        ColumnLayout {
+            Layout.fillWidth: true
+            spacing: 4
+            Text { text: qsTr("Резервные копии"); color: Theme.text; font.pixelSize: 26; font.weight: Font.DemiBold }
+            Text { text: qsTr("Локальные зашифрованные архивы данных"); color: Theme.textMuted; font.pixelSize: 12 }
         }
+
         SectionCard {
             Layout.fillWidth: true
-            Layout.preferredHeight: 190
-            ColumnLayout {
+            Layout.preferredHeight: 150
+            RowLayout {
                 anchors.fill: parent
                 anchors.margins: 22
-                Text { text: qsTr("Зашифрованная резервная копия"); color: Theme.text; font.pixelSize: 18 }
-                Text {
+                spacing: 24
+                ColumnLayout {
                     Layout.fillWidth: true
-                    text: qsTr("Архив защищается отдельной парольной фразой и содержит проверяемый манифест версии.")
-                    color: Theme.textMuted
-                    wrapMode: Text.WordWrap
+                    spacing: 6
+                    Text { text: qsTr("Зашифрованная резервная копия"); color: Theme.text; font.pixelSize: 14; font.weight: Font.DemiBold }
+                    Text {
+                        Layout.fillWidth: true
+                        text: qsTr("Архив защищается отдельной парольной фразой и содержит проверяемый манифест версии.")
+                        color: Theme.textMuted
+                        font.pixelSize: 12
+                        wrapMode: Text.WordWrap
+                    }
                 }
-                RowLayout {
-                    Button { text: qsTr("Создать копию") }
-                    Button { text: qsTr("Восстановить") }
+                ColumnLayout {
+                    spacing: 8
+                    ActionButton { Layout.fillWidth: true; text: qsTr("Создать копию"); primary: true }
+                    ActionButton { Layout.fillWidth: true; text: qsTr("Восстановить") }
                 }
             }
         }
-        Text {
-            text: qsTr("CSV-экспорт не шифруется. Приложение покажет предупреждение перед сохранением.")
-            color: Theme.warning
-            wrapMode: Text.WordWrap
+
+        Rectangle {
+            Layout.fillWidth: true
+            Layout.preferredHeight: 58
+            radius: Theme.radius
+            color: Theme.warningMuted
+            Text {
+                anchors.fill: parent
+                anchors.margins: 16
+                text: qsTr("CSV-экспорт не шифруется. Перед сохранением приложение покажет отдельное предупреждение.")
+                color: Theme.warning
+                font.pixelSize: 11
+                verticalAlignment: Text.AlignVCenter
+                wrapMode: Text.WordWrap
+            }
         }
+
         Item { Layout.fillHeight: true }
     }
 }

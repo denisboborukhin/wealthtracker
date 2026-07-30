@@ -2,52 +2,146 @@ import QtQuick
 import QtQuick.Layouts
 import "../components"
 
-Flickable {
-    contentHeight: content.implicitHeight + 48
-    clip: true
+Item {
     ColumnLayout {
-        id: content
-        width: parent.width - 48
-        x: 24
-        y: 24
-        spacing: 18
-        Text {
-            text: qsTr("Счета")
-            color: Theme.text
-            font.pixelSize: 30
-            font.weight: Font.DemiBold
+        anchors.fill: parent
+        anchors.margins: Theme.pageMargin
+        spacing: 20
+
+        ColumnLayout {
+            Layout.fillWidth: true
+            spacing: 4
+            Text {
+                text: qsTr("Счета")
+                color: Theme.text
+                font.pixelSize: 26
+                font.weight: Font.DemiBold
+            }
+            Text {
+                text: qsTr("Банковские, накопительные и инвестиционные счета")
+                color: Theme.textMuted
+                font.pixelSize: 12
+            }
         }
-        Repeater {
-            model: App.accounts
-            delegate: SectionCard {
-                Layout.fillWidth: true
-                Layout.preferredHeight: 92
+
+        SectionCard {
+            Layout.fillWidth: true
+            Layout.fillHeight: true
+
+            ColumnLayout {
+                anchors.fill: parent
+                spacing: 0
+
                 RowLayout {
-                    anchors.fill: parent
-                    anchors.margins: 18
-                    Rectangle {
-                        implicitWidth: 44
-                        implicitHeight: 44
-                        radius: 12
-                        color: model.accent
-                        Text {
-                            anchors.centerIn: parent
-                            text: model.institution.charAt(0)
-                            color: "#0B1020"
-                            font.pixelSize: 18
-                            font.weight: Font.Bold
-                        }
-                    }
-                    ColumnLayout {
+                    Layout.fillWidth: true
+                    Layout.leftMargin: 18
+                    Layout.rightMargin: 18
+                    Layout.preferredHeight: 42
+                    spacing: 14
+                    Text {
                         Layout.fillWidth: true
-                        Text { text: model.name; color: Theme.text; font.pixelSize: 16 }
-                        Text { text: model.institution + " · " + model.type; color: Theme.textMuted; font.pixelSize: 12 }
+                        Layout.minimumWidth: 0
+                        leftPadding: 22
+                        text: qsTr("Счёт")
+                        color: Theme.textMuted
+                        font.pixelSize: 11
                     }
                     Text {
-                        text: model.balance + " " + model.currency
-                        color: Theme.text
-                        font.pixelSize: 20
-                        font.weight: Font.DemiBold
+                        Layout.minimumWidth: 200
+                        Layout.preferredWidth: 200
+                        Layout.maximumWidth: 200
+                        text: qsTr("Тип")
+                        color: Theme.textMuted
+                        font.pixelSize: 11
+                    }
+                    Text {
+                        Layout.minimumWidth: 145
+                        Layout.preferredWidth: 145
+                        Layout.maximumWidth: 145
+                        horizontalAlignment: Text.AlignRight
+                        text: qsTr("Остаток")
+                        color: Theme.textMuted
+                        font.pixelSize: 11
+                    }
+                }
+
+                Rectangle {
+                    Layout.fillWidth: true
+                    Layout.preferredHeight: 1
+                    color: Theme.border
+                }
+
+                ListView {
+                    Layout.fillWidth: true
+                    Layout.fillHeight: true
+                    clip: true
+                    model: App.accounts
+
+                    delegate: Item {
+                        width: ListView.view.width
+                        height: 62
+
+                        RowLayout {
+                            anchors.fill: parent
+                            anchors.leftMargin: 18
+                            anchors.rightMargin: 18
+                            spacing: 14
+
+                            Rectangle {
+                                Layout.minimumWidth: 8
+                                Layout.preferredWidth: 8
+                                Layout.maximumWidth: 8
+                                Layout.preferredHeight: 34
+                                radius: 4
+                                color: model.accent
+                            }
+                            ColumnLayout {
+                                Layout.fillWidth: true
+                                Layout.minimumWidth: 0
+                                spacing: 2
+                                Text {
+                                    Layout.fillWidth: true
+                                    text: model.name
+                                    color: Theme.text
+                                    font.pixelSize: 13
+                                    font.weight: Font.Medium
+                                    elide: Text.ElideRight
+                                }
+                                Text {
+                                    Layout.fillWidth: true
+                                    text: model.institution
+                                    color: Theme.textMuted
+                                    font.pixelSize: 11
+                                    elide: Text.ElideRight
+                                }
+                            }
+                            Text {
+                                Layout.minimumWidth: 200
+                                Layout.preferredWidth: 200
+                                Layout.maximumWidth: 200
+                                text: model.type
+                                color: Theme.textMuted
+                                font.pixelSize: 12
+                                elide: Text.ElideRight
+                            }
+                            Text {
+                                Layout.minimumWidth: 145
+                                Layout.preferredWidth: 145
+                                Layout.maximumWidth: 145
+                                horizontalAlignment: Text.AlignRight
+                                text: model.balance + " " + model.currency
+                                color: Theme.text
+                                font.pixelSize: 14
+                                font.weight: Font.Medium
+                            }
+                        }
+
+                        Rectangle {
+                            width: parent.width
+                            height: 1
+                            anchors.bottom: parent.bottom
+                            color: Theme.border
+                        }
                     }
                 }
             }

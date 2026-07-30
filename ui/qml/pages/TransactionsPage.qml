@@ -6,77 +6,146 @@ import "../components"
 Item {
     ColumnLayout {
         anchors.fill: parent
-        anchors.margins: 24
-        spacing: 18
+        anchors.margins: Theme.pageMargin
+        spacing: 20
+
         RowLayout {
-            Text {
-                text: qsTr("Операции")
-                color: Theme.text
-                font.pixelSize: 30
-                font.weight: Font.DemiBold
+            Layout.fillWidth: true
+            ColumnLayout {
+                spacing: 4
+                Text {
+                    text: qsTr("Операции")
+                    color: Theme.text
+                    font.pixelSize: 26
+                    font.weight: Font.DemiBold
+                }
+                Text {
+                    text: qsTr("Все счета · сначала новые")
+                    color: Theme.textMuted
+                    font.pixelSize: 12
+                }
             }
             Item { Layout.fillWidth: true }
             TextField {
-                placeholderText: qsTr("Поиск")
+                id: searchField
+                Layout.preferredWidth: 240
+                Layout.preferredHeight: 38
+                placeholderText: qsTr("Поиск операций")
                 color: Theme.text
+                selectByMouse: true
                 background: Rectangle {
                     color: Theme.surface
-                    border.color: Theme.border
-                    radius: 9
+                    border.color: searchField.activeFocus
+                                  ? Theme.primary : Theme.borderStrong
+                    radius: 7
                 }
             }
         }
+
         SectionCard {
             Layout.fillWidth: true
             Layout.fillHeight: true
-            ListView {
+
+            ColumnLayout {
                 anchors.fill: parent
-                anchors.margins: 18
-                clip: true
-                model: App.transactions
-                delegate: Item {
-                    width: ListView.view.width
-                    height: 62
-                    RowLayout {
-                        anchors.fill: parent
-                        Text {
-                            Layout.preferredWidth: 105
-                            text: model.date
-                            color: Theme.textMuted
-                        }
-                        ColumnLayout {
-                            Layout.fillWidth: true
-                            spacing: 2
-                            Text { text: model.title; color: Theme.text; font.pixelSize: 15 }
-                            Text { text: model.subtitle; color: Theme.textMuted; font.pixelSize: 12 }
-                        }
-                        Rectangle {
-                            implicitWidth: categoryLabel.implicitWidth + 18
-                            implicitHeight: 28
-                            radius: 14
-                            color: Theme.surfaceRaised
+                spacing: 0
+
+                RowLayout {
+                    Layout.fillWidth: true
+                    Layout.leftMargin: 18
+                    Layout.rightMargin: 18
+                    Layout.preferredHeight: 42
+                    spacing: 14
+                    Text { Layout.minimumWidth: 95; Layout.preferredWidth: 95; Layout.maximumWidth: 95; text: qsTr("Дата"); color: Theme.textMuted; font.pixelSize: 11 }
+                    Text { Layout.fillWidth: true; Layout.minimumWidth: 0; text: qsTr("Описание"); color: Theme.textMuted; font.pixelSize: 11 }
+                    Text { Layout.minimumWidth: 170; Layout.preferredWidth: 170; Layout.maximumWidth: 170; text: qsTr("Категория"); color: Theme.textMuted; font.pixelSize: 11 }
+                    Text {
+                        Layout.minimumWidth: 115
+                        Layout.preferredWidth: 115
+                        Layout.maximumWidth: 115
+                        horizontalAlignment: Text.AlignRight
+                        text: qsTr("Сумма")
+                        color: Theme.textMuted
+                        font.pixelSize: 11
+                    }
+                }
+
+                Rectangle {
+                    Layout.fillWidth: true
+                    Layout.preferredHeight: 1
+                    color: Theme.border
+                }
+
+                ListView {
+                    Layout.fillWidth: true
+                    Layout.fillHeight: true
+                    clip: true
+                    model: App.transactions
+
+                    delegate: Item {
+                        width: ListView.view.width
+                        height: 58
+
+                        RowLayout {
+                            anchors.fill: parent
+                            anchors.leftMargin: 18
+                            anchors.rightMargin: 18
+                            spacing: 14
                             Text {
-                                id: categoryLabel
-                                anchors.centerIn: parent
-                                text: model.category
+                                Layout.minimumWidth: 95
+                                Layout.preferredWidth: 95
+                                Layout.maximumWidth: 95
+                                text: model.date
                                 color: Theme.textMuted
                                 font.pixelSize: 11
                             }
+                            ColumnLayout {
+                                Layout.fillWidth: true
+                                Layout.minimumWidth: 0
+                                spacing: 2
+                                Text {
+                                    Layout.fillWidth: true
+                                    text: model.title
+                                    color: Theme.text
+                                    font.pixelSize: 13
+                                    font.weight: Font.Medium
+                                    elide: Text.ElideRight
+                                }
+                                Text {
+                                    Layout.fillWidth: true
+                                    text: model.subtitle
+                                    color: Theme.textMuted
+                                    font.pixelSize: 10
+                                    elide: Text.ElideRight
+                                }
+                            }
+                            Text {
+                                Layout.minimumWidth: 170
+                                Layout.preferredWidth: 170
+                                Layout.maximumWidth: 170
+                                text: model.category
+                                color: Theme.textMuted
+                                font.pixelSize: 11
+                                elide: Text.ElideRight
+                            }
+                            Text {
+                                Layout.minimumWidth: 115
+                                Layout.preferredWidth: 115
+                                Layout.maximumWidth: 115
+                                horizontalAlignment: Text.AlignRight
+                                text: model.amount
+                                color: model.income ? Theme.positive : Theme.text
+                                font.pixelSize: 12
+                                font.weight: Font.Medium
+                            }
                         }
-                        Text {
-                            Layout.preferredWidth: 115
-                            horizontalAlignment: Text.AlignRight
-                            text: model.amount
-                            color: model.income ? Theme.positive : Theme.text
-                            font.pixelSize: 14
-                            font.weight: Font.Medium
+
+                        Rectangle {
+                            width: parent.width
+                            height: 1
+                            anchors.bottom: parent.bottom
+                            color: Theme.border
                         }
-                    }
-                    Rectangle {
-                        width: parent.width
-                        height: 1
-                        anchors.bottom: parent.bottom
-                        color: Theme.border
                     }
                 }
             }
