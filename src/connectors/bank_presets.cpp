@@ -22,6 +22,7 @@ module;
 #include <array>
 #include <cstdlib>
 #include <cstdint>
+#include <expected>
 #include <limits>
 #include <memory>
 #include <optional>
@@ -377,12 +378,26 @@ ParsedTable parseOfx(const QString &text)
                      QStringLiteral("currency"), QStringLiteral("account")};
     const auto currency = extractTag(text, QStringLiteral("CURDEF"));
     const auto account = extractTag(text, QStringLiteral("ACCTID"));
-    const QRegularExpression transactionExpression(
-        QStringLiteral("<STMTTRN>(.*?)(?=<STMTTRN>|</BANKTRANLIST>|</STMTTRN>)"),
-        QRegularExpression::CaseInsensitiveOption | QRegularExpression::DotMatchesEverythingOption);
-    auto iterator = transactionExpression.globalMatch(text);
-    while (iterator.hasNext()) {
-        const auto block = iterator.next().captured(1);
+    constexpr auto openingTag = "<STMTTRN>";
+    constexpr auto closingTag = "</STMTTRN>";
+    qsizetype searchFrom = 0;
+    while (true) {
+        const auto start =
+            text.indexOf(QString::fromLatin1(openingTag), searchFrom, Qt::CaseInsensitive);
+        if (start < 0) {
+            break;
+        }
+        const auto contentStart = start + std::char_traits<char>::length(openingTag);
+        auto end =
+            text.indexOf(QString::fromLatin1(closingTag), contentStart, Qt::CaseInsensitive);
+        if (end < 0) {
+            end = text.indexOf(
+                QString::fromLatin1(openingTag), contentStart, Qt::CaseInsensitive);
+        }
+        if (end < 0) {
+            end = text.size();
+        }
+        const auto block = text.sliced(contentStart, end - contentStart);
         auto date = extractTag(block, QStringLiteral("DTPOSTED"));
         if (date.size() >= 8) {
             date = QStringLiteral("%1-%2-%3").arg(date.first(4), date.sliced(4, 2),
@@ -397,6 +412,11 @@ ParsedTable parseOfx(const QString &text)
         }
         table.rows.push_back({date, extractTag(block, QStringLiteral("TRNAMT")), description,
                               extractTag(block, QStringLiteral("FITID")), currency, account});
+        searchFrom = end + (text.mid(end, std::char_traits<char>::length(closingTag))
+                                    .compare(QString::fromLatin1(closingTag),
+                                             Qt::CaseInsensitive) == 0
+                                ? std::char_traits<char>::length(closingTag)
+                                : 0);
     }
     return table;
 }
@@ -414,8 +434,11 @@ ParsedTable parseQif(const QString &text)
     QString memo;
     QString id;
     QString category;
-    const auto lines = text.split(QRegularExpression(QStringLiteral("\\r?\\n")));
-    for (const auto &line : lines) {
+    const auto lines = text.split(u'\n');
+    for (auto line : lines) {
+        if (line.endsWith(u'\r')) {
+            line.chop(1);
+        }
         if (line == u"^") {
             if (!date.isEmpty() || !amount.isEmpty()) {
                 table.rows.push_back(
@@ -686,21 +709,27 @@ FileFormat detectFileFormat(const ImportSource &source, const QByteArray &bytes)
     const auto extension = QFileInfo(source.effectiveName()).suffix().toLower();
     const auto trimmed = bytes.trimmed();
     const auto textHead = decodeStatementText(bytes.first(64 * 1024));
-    if (bytes.startsWith("%PDF-") || extension == u"pdf") {
+    if (extension == u"pdf" || bytes.startsWith("%PDF-")) {
         return FileFormat::Pdf;
     }
-    if ((bytes.startsWith("PK\x03\x04") && extension == u"xlsx") || extension == u"xlsx") {
+    if (extension == u"xlsx") {
         return FileFormat::Xlsx;
+    }
+    if (extension == u"ofx") {
+        return FileFormat::Ofx;
+    }
+    if (extension == u"qif") {
+        return FileFormat::Qif;
     }
     if (textHead.contains(QStringLiteral("1CClientBankExchange"), Qt::CaseInsensitive)) {
         return FileFormat::OneC;
     }
     if (textHead.contains(QStringLiteral("<OFX>"), Qt::CaseInsensitive)
         || textHead.contains(QStringLiteral("OFXHEADER:"), Qt::CaseInsensitive)
-        || extension == u"ofx") {
+        || bytes.startsWith("OFXHEADER:")) {
         return FileFormat::Ofx;
     }
-    if (trimmed.startsWith("!Type:") || extension == u"qif") {
+    if (trimmed.startsWith("!Type:")) {
         return FileFormat::Qif;
     }
     if (extension == u"csv" || extension == u"tsv" || extension == u"txt"

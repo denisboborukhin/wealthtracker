@@ -8,6 +8,8 @@ module;
 #include <QUrlQuery>
 #include <QXmlStreamReader>
 
+#include <expected>
+
 module wt.connectors;
 
 namespace wealthtracker::connectors {
@@ -64,7 +66,8 @@ ConnectorResult<QVector<FxRate>> CbrFxClient::parseDailyRates(const QByteArray &
             false});
     }
 
-    QXmlStreamReader reader(xml);
+    const auto decoded = detail::decodeStatementText(xml);
+    QXmlStreamReader reader(decoded);
     QVector<FxRate> rates;
     QDate effectiveDate;
     FxRate current;

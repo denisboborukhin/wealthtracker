@@ -5,6 +5,7 @@ module;
 #include <QUrl>
 
 #include <algorithm>
+#include <expected>
 
 module wt.connectors;
 

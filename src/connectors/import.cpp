@@ -5,6 +5,7 @@ module;
 #include <QFileInfo>
 
 #include <algorithm>
+#include <expected>
 
 module wt.connectors;
 

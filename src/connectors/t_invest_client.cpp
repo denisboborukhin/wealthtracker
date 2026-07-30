@@ -10,6 +10,7 @@ module;
 
 #include <cmath>
 #include <cstdint>
+#include <expected>
 #include <limits>
 #include <optional>
 #include <string>
@@ -102,7 +103,7 @@ std::optional<Money> moneyValue(const QJsonObject &object)
         return std::nullopt;
     }
     const auto rounding = value->nanos >= 0 ? 5'000'000 : -5'000'000;
-    const auto minor = (value->nanos + rounding) / 10'000'000;
+    const BigInt minor = (value->nanos + rounding) / 10'000'000;
     if (minor < std::numeric_limits<std::int64_t>::min()
         || minor > std::numeric_limits<std::int64_t>::max()) {
         return std::nullopt;
@@ -117,13 +118,13 @@ QString bigIntString(const BigInt &value)
 
 std::optional<Money> positionValue(const NanoValue &quantity, const NanoValue &price)
 {
-    const auto product = quantity.nanos * price.nanos;
+    const BigInt product = quantity.nanos * price.nanos;
     const BigInt denominator = BigInt(10'000'000) * 1'000'000'000;
     BigInt rounding = denominator / 2;
     if (product < 0) {
         rounding = -rounding;
     }
-    const auto minor = (product + rounding) / denominator;
+    const BigInt minor = (product + rounding) / denominator;
     if (minor < std::numeric_limits<std::int64_t>::min()
         || minor > std::numeric_limits<std::int64_t>::max()) {
         return std::nullopt;
