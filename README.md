@@ -29,15 +29,21 @@ statement import unless a legitimate read-only API is available.
 
 ## Build
 
-The build is dependency-locked through Conan. CMake presets expect Conan to
-generate a toolchain under `build/<preset>/generators`.
+Run the bootstrap script to install pinned build tools and the official
+prebuilt Qt SDK under the ignored `build/` directory. Conan installs the
+remaining C++ dependencies and generates a toolchain under
+`build/<preset>/generators`.
 
 ```sh
-conan install . --build=missing -s build_type=Debug \
+./scripts/bootstrap.sh
+build/tooling/bin/conan install . \
+  --profile:host=conan/profiles/macos-arm64 \
+  --profile:build=conan/profiles/macos-arm64 \
+  --build=missing -s:h build_type=Debug \
   -of build/macos-debug
-cmake --preset macos-debug
-cmake --build --preset macos-debug
-ctest --preset macos-debug
+build/tooling/bin/cmake --preset macos-debug
+build/tooling/bin/cmake --build --preset macos-debug
+build/tooling/bin/ctest --preset macos-debug
 ```
 
 See [Building](docs/building.md), [Architecture](docs/architecture.md), and
@@ -47,4 +53,3 @@ See [Building](docs/building.md), [Architecture](docs/architecture.md), and
 
 Application source is licensed under the [MIT License](LICENSE). Dynamically
 linked Qt libraries and other dependencies retain their respective licenses.
-

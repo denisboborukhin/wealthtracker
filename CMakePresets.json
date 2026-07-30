@@ -14,7 +14,7 @@
         "CMAKE_CXX_STANDARD": "23",
         "CMAKE_CXX_STANDARD_REQUIRED": "ON",
         "CMAKE_CXX_EXTENSIONS": "OFF",
-        "CMAKE_CXX_SCAN_FOR_MODULES": "ON",
+        "CMAKE_CXX_SCAN_FOR_MODULES": "OFF",
         "CMAKE_EXPORT_COMPILE_COMMANDS": "ON",
         "BUILD_TESTING": "ON"
       }
@@ -26,7 +26,8 @@
       "binaryDir": "${sourceDir}/build/macos-debug",
       "toolchainFile": "${sourceDir}/build/macos-debug/generators/conan_toolchain.cmake",
       "cacheVariables": {
-        "CMAKE_BUILD_TYPE": "Debug"
+        "CMAKE_BUILD_TYPE": "Debug",
+        "CMAKE_PREFIX_PATH": "${sourceDir}/build/qt/6.11.1/macos"
       }
     },
     {
@@ -36,7 +37,8 @@
       "binaryDir": "${sourceDir}/build/macos-release",
       "toolchainFile": "${sourceDir}/build/macos-release/generators/conan_toolchain.cmake",
       "cacheVariables": {
-        "CMAKE_BUILD_TYPE": "Release"
+        "CMAKE_BUILD_TYPE": "Release",
+        "CMAKE_PREFIX_PATH": "${sourceDir}/build/qt/6.11.1/macos"
       }
     },
     {
@@ -46,7 +48,8 @@
       "binaryDir": "${sourceDir}/build/windows-debug",
       "toolchainFile": "${sourceDir}/build/windows-debug/generators/conan_toolchain.cmake",
       "cacheVariables": {
-        "CMAKE_BUILD_TYPE": "Debug"
+        "CMAKE_BUILD_TYPE": "Debug",
+        "CMAKE_PREFIX_PATH": "${sourceDir}/build/qt/6.11.1/msvc2022_64"
       }
     },
     {
@@ -56,7 +59,8 @@
       "binaryDir": "${sourceDir}/build/windows-release",
       "toolchainFile": "${sourceDir}/build/windows-release/generators/conan_toolchain.cmake",
       "cacheVariables": {
-        "CMAKE_BUILD_TYPE": "Release"
+        "CMAKE_BUILD_TYPE": "Release",
+        "CMAKE_PREFIX_PATH": "${sourceDir}/build/qt/6.11.1/msvc2022_64"
       }
     }
   ],
@@ -113,4 +117,3 @@
     }
   ]
 }
-

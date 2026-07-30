@@ -8,22 +8,31 @@
 
 ## Configure
 
-Install Conan 2, CMake, and Ninja, then create or detect a Conan profile:
+Install the pinned toolchain and official prebuilt Qt SDK:
 
 ```sh
-conan profile detect --force
-conan install . --build=missing -s build_type=Debug \
-  -s compiler.cppstd=23 \
+./scripts/bootstrap.sh
+```
+
+On Windows, run `scripts/bootstrap.ps1` from PowerShell instead. Then install
+the remaining dependencies with Conan and configure the project:
+
+```sh
+build/tooling/bin/conan install . \
+  --profile:host=conan/profiles/macos-arm64 \
+  --profile:build=conan/profiles/macos-arm64 \
+  --build=missing -s:h build_type=Debug \
   -of build/macos-debug
-cmake --preset macos-debug
+build/tooling/bin/cmake --preset macos-debug
 ```
 
 Build and test:
 
 ```sh
-cmake --build --preset macos-debug
-ctest --preset macos-debug
+build/tooling/bin/cmake --build --preset macos-debug
+build/tooling/bin/ctest --preset macos-debug
 ```
 
-Conan must use locked dependency revisions for release builds. Qt is linked
-dynamically so users retain the replacement rights required by LGPL v3.
+Conan must use locked dependency revisions for release builds. Qt comes from
+the official prebuilt SDK and is linked dynamically so users retain the
+replacement rights required by LGPL v3.

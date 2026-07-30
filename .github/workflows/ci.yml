@@ -16,9 +16,13 @@ jobs:
           - os: macos-15
             profile: conan/profiles/macos-arm64
             preset: macos-release
+            qt_host: mac
+            qt_arch: clang_64
           - os: windows-2025
             profile: conan/profiles/windows-x86_64
             preset: windows-release
+            qt_host: windows
+            qt_arch: win64_msvc2022_64
 
     runs-on: ${{ matrix.os }}
     steps:
@@ -29,7 +33,21 @@ jobs:
           python-version: "3.12"
 
       - name: Install build tools
-        run: python -m pip install conan==2.19.1 cmake==4.1.2 ninja==1.13.0
+        run: >
+          python -m pip install
+          aqtinstall==3.3.0
+          conan==2.19.1
+          cmake==4.1.2
+          ninja==1.13.0
+
+      - name: Install Qt
+        run: >
+          aqt install-qt
+          ${{ matrix.qt_host }}
+          desktop
+          6.11.1
+          ${{ matrix.qt_arch }}
+          -O build/qt
 
       - name: Cache Conan packages
         uses: actions/cache@v4
@@ -87,4 +105,3 @@ jobs:
 
       - name: Verify task files are ignored
         run: git check-ignore tasks/todo.md tasks/lessons.md
-
