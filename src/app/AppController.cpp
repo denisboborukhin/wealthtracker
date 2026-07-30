@@ -197,6 +197,7 @@ void AppController::previewImport(const QUrl& source) {
         const ImportSource import_source{
             .filePath = file.absoluteFilePath(),
             .displayName = file.fileName(),
+            .content = {},
         };
         const auto connector =
             selectBestImportConnector(makeBuiltInImportConnectors(), import_source);
