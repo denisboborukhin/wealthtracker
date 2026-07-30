@@ -32,8 +32,24 @@ does not discard categories, splits, tags, or notes.
 
 ## Connectors
 
-Connector API v1 separates file imports from live read-only synchronization.
-Only compiled, audited connectors are loaded in v0.1.
+Connector API v1 separates file imports, token-based read-only synchronization,
+and interactive bank sessions. An interactive connector advances through
+typed challenges:
+
+1. Collect a small set of named fields such as phone, login, password, or MFA.
+2. Optionally open a clean HTTPS bank authorization URL.
+3. Return normalized accounts, balances, and transactions only after the
+   session is authenticated.
+
+Password and one-time-code fields must declare `Never` retention. A connector
+may retain a revocable session or refresh token in the operating system's
+credential store, but it cannot expose secrets to QML.
 
 Every network connector declares an HTTPS host allowlist. Write, trading,
 payment, and transfer endpoints are outside the contract.
+
+The interface is a clean-room C++ design inspired by ZenMoney's local plugin
+model, not a source or binary compatibility layer. No retail-bank plugin is
+bundled yet. The current live connector is T-Invest's official read-only API;
+retail banks remain available through statement import until audited
+bank-specific plugins are implemented.

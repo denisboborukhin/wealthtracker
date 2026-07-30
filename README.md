@@ -3,21 +3,30 @@
 WealthTracker is a local-first, open-source desktop application for viewing
 personal finances across Russian banks and investment accounts.
 
-The application keeps its database on your computer, encrypts it with
-SQLCipher, and never asks for an online-banking password or SMS code.
+The application keeps its database on your computer and encrypts it with
+SQLCipher. Interactive bank connectors may ask for credentials or a one-time
+code during a bank login, but the application contract forbids retaining
+passwords and one-time codes.
 
-## Planned v0.1 capabilities
+## Current capabilities
 
 - Local CSV, XLSX, OFX, QIF, 1C-style, and reviewed PDF statement imports.
 - Import presets for T-Bank, Alfa-Bank, Sber, and VTB.
 - Read-only synchronization with T-Invest using a user-created token.
+- A local interactive-session contract for future retail-bank plugins.
 - Accounts, balances, transaction splits, categories, rules, and transfers.
 - Income, spending, savings, net-worth, and investment analytics.
 - Russian interface with localization support.
 
 Russian retail banks do not currently provide uniform consumer transaction
-APIs to independent local applications. Bank support therefore means local
-statement import unless a legitimate read-only API is available.
+APIs to independent local applications. A retail connection therefore needs a
+separately maintained bank-specific plugin. Retail login plugins for T-Bank,
+Alfa-Bank, Sber, and VTB are not bundled yet; the Connections page reports this
+explicitly instead of presenting a non-functional login form.
+
+The connector design is informed by the local, normalized plugin flow used by
+ZenMoney. WealthTracker does not copy or embed ZenPlugins source: ZenPlugins is
+GPL-3.0 while this project is MIT-licensed.
 
 ## Technology
 
