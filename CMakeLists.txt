@@ -166,6 +166,7 @@ qt_add_qml_module(
     URI WealthTracker
     VERSION 1.0
     RESOURCE_PREFIX /qt/qml
+    NO_IMPORT_SCAN
     QML_FILES
         ui/qml/Main.qml
         ui/qml/Theme.qml
