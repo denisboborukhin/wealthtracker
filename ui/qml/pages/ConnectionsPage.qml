@@ -68,7 +68,6 @@ Item {
 
                 Text {
                     Layout.fillWidth: true
-                    visible: connectionDialog.connectorId !== "t-invest"
                     text: App.connectionMessage
                     color: Theme.textMuted
                     font.pixelSize: 13
@@ -78,12 +77,12 @@ Item {
 
                 ColumnLayout {
                     Layout.fillWidth: true
-                    visible: connectionDialog.connectorId === "t-invest"
+                    visible: connectionDialog.available
                                && !connectionDialog.connected
                     spacing: 7
 
                     Text {
-                        text: qsTr("Read-only токен")
+                        text: qsTr("Токен только для чтения")
                         color: Theme.text
                         font.pixelSize: 12
                         font.weight: Font.Medium
@@ -93,7 +92,13 @@ Item {
                         Layout.fillWidth: true
                         Layout.preferredHeight: 40
                         echoMode: TextInput.Password
-                        placeholderText: qsTr("Вставьте токен Т-Инвест")
+                        placeholderText: connectionDialog.connectorId === "alfa-api"
+                                         ? qsTr("Access token Альфа-Банка")
+                                         : connectionDialog.connectorId === "tbank-business"
+                                           ? qsTr("T-API токен")
+                                           : connectionDialog.connectorId === "modulbank"
+                                             ? qsTr("API-токен или sandboxtoken")
+                                             : qsTr("Read-only токен Т-Инвест")
                         color: Theme.text
                         selectByMouse: true
                         background: Rectangle {
@@ -113,7 +118,7 @@ Item {
                 }
 
                 StatusBadge {
-                    visible: connectionDialog.connectorId === "t-invest"
+                    visible: connectionDialog.available
                              && connectionDialog.connected
                     text: qsTr("Подключено")
                     tone: "positive"
@@ -128,30 +133,41 @@ Item {
                         onClicked: connectionDialog.close()
                     }
                     ActionButton {
-                        visible: connectionDialog.connectorId !== "t-invest"
+                        visible: !connectionDialog.available
                         text: qsTr("Плагин не установлен")
                         enabled: false
                     }
                     ActionButton {
-                        visible: connectionDialog.connectorId === "t-invest"
+                        visible: connectionDialog.available
                                  && !connectionDialog.connected
                         text: qsTr("Сохранить токен")
                         primary: true
                         enabled: tokenField.text.trim().length > 0
                         onClicked: {
-                            if (App.saveInvestmentToken(tokenField.text)) {
+                            if (App.saveBankToken(connectionDialog.connectorId,
+                                                  tokenField.text)) {
                                 tokenField.clear()
                                 connectionDialog.close()
                             }
                         }
                     }
                     ActionButton {
-                        visible: connectionDialog.connectorId === "t-invest"
+                        visible: connectionDialog.available
+                                 && connectionDialog.connected
+                        text: qsTr("Синхронизировать")
+                        primary: true
+                        onClicked: {
+                            App.synchronizeBank(connectionDialog.connectorId)
+                            connectionDialog.close()
+                        }
+                    }
+                    ActionButton {
+                        visible: connectionDialog.available
                                  && connectionDialog.connected
                         text: qsTr("Отключить")
                         destructive: true
                         onClicked: {
-                            App.removeInvestmentToken()
+                            App.removeBankToken(connectionDialog.connectorId)
                             connectionDialog.close()
                         }
                     }
@@ -178,7 +194,7 @@ Item {
             }
             Text {
                 Layout.fillWidth: true
-                text: qsTr("Банки подключаются через локальные коннекторы. Пароли и одноразовые коды не сохраняются.")
+                text: qsTr("Официальные API работают только на чтение. Токены остаются в системном хранилище ключей этого компьютера.")
                 color: Theme.textMuted
                 font.pixelSize: 13
                 wrapMode: Text.WordWrap
@@ -319,7 +335,7 @@ Item {
 
         Text {
             Layout.fillWidth: true
-            text: qsTr("Официальный API Т-Банка для счетов и выписок сейчас предназначен для бизнеса. Розничные подключения требуют отдельного сопровождаемого плагина.")
+            text: qsTr("Доступны Альфа-Банк API, Т-Банк Бизнес и Модульбанк. Розничные Т-Банк, Сбер и ВТБ не подключаются без поддерживаемого официального API.")
             color: Theme.textMuted
             font.pixelSize: 11
             wrapMode: Text.WordWrap
