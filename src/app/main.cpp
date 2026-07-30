@@ -1,9 +1,12 @@
 #include "app/AppController.hpp"
 
 #include <QGuiApplication>
+#include <QImage>
 #include <QQmlApplicationEngine>
 #include <QQmlContext>
+#include <QQuickWindow>
 #include <QQuickStyle>
+#include <QTimer>
 
 int main(int argc, char* argv[]) {
     QGuiApplication application(argc, argv);
@@ -18,6 +21,22 @@ int main(int argc, char* argv[]) {
     engine.loadFromModule(QStringLiteral("WealthTracker"), QStringLiteral("Main"));
     if (engine.rootObjects().isEmpty()) {
         return 1;
+    }
+
+    auto* window = qobject_cast<QQuickWindow*>(engine.rootObjects().front());
+    bool pageOk = false;
+    const int page = qEnvironmentVariableIntValue("WEALTHTRACKER_PAGE", &pageOk);
+    if (window && pageOk) {
+        window->setProperty("currentPage", page);
+    }
+
+    const auto screenshotPath = qEnvironmentVariable("WEALTHTRACKER_SCREENSHOT");
+    if (window && !screenshotPath.isEmpty()) {
+        QTimer::singleShot(750, &application,
+                           [window, screenshotPath, &application] {
+            const QImage image = window->grabWindow();
+            application.exit(!image.isNull() && image.save(screenshotPath) ? 0 : 2);
+        });
     }
     return application.exec();
 }
