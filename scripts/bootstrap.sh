@@ -32,3 +32,4 @@ esac
 
 echo "Tools installed under ${tool_dir}"
 echo "Qt installed under ${project_dir}/build/qt/6.11.1"
+echo "Activate the tools with: . build/tooling/bin/activate"

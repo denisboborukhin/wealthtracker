@@ -12,25 +12,30 @@ Install the pinned toolchain and official prebuilt Qt SDK:
 
 ```sh
 ./scripts/bootstrap.sh
+. build/tooling/bin/activate
 ```
 
-On Windows, run `scripts/bootstrap.ps1` from PowerShell instead. Then install
-the remaining dependencies with Conan and configure the project:
+On Windows, run `scripts/bootstrap.ps1` followed by
+`& build/tooling/Scripts/Activate.ps1` from PowerShell instead. Keep the
+tool environment active while installing dependencies, because Conan recipes
+invoke CMake and Ninja by name.
+
+Install the remaining dependencies with Conan and configure the project:
 
 ```sh
-build/tooling/bin/conan install . \
+conan install . \
   --profile:host=conan/profiles/macos-arm64 \
   --profile:build=conan/profiles/macos-arm64 \
   --build=missing -s:h build_type=Debug \
   -of build/macos-debug
-build/tooling/bin/cmake --preset macos-debug
+cmake --preset macos-debug
 ```
 
 Build and test:
 
 ```sh
-build/tooling/bin/cmake --build --preset macos-debug
-build/tooling/bin/ctest --preset macos-debug
+cmake --build --preset macos-debug
+ctest --preset macos-debug
 ```
 
 Conan must use locked dependency revisions for release builds. Qt comes from

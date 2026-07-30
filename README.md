@@ -36,14 +36,15 @@ remaining C++ dependencies and generates a toolchain under
 
 ```sh
 ./scripts/bootstrap.sh
-build/tooling/bin/conan install . \
+. build/tooling/bin/activate
+conan install . \
   --profile:host=conan/profiles/macos-arm64 \
   --profile:build=conan/profiles/macos-arm64 \
   --build=missing -s:h build_type=Debug \
   -of build/macos-debug
-build/tooling/bin/cmake --preset macos-debug
-build/tooling/bin/cmake --build --preset macos-debug
-build/tooling/bin/ctest --preset macos-debug
+cmake --preset macos-debug
+cmake --build --preset macos-debug
+ctest --preset macos-debug
 ```
 
 See [Building](docs/building.md), [Architecture](docs/architecture.md), and

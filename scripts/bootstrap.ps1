@@ -16,3 +16,4 @@ python -m venv $ToolDir
 
 Write-Host "Tools installed under $ToolDir"
 Write-Host "Qt installed under $ProjectDir/build/qt/6.11.1"
+Write-Host "Activate the tools with: & build/tooling/Scripts/Activate.ps1"
