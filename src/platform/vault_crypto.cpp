@@ -4,9 +4,15 @@ module;
 
 #include <algorithm>
 #include <array>
+#include <cstddef>
+#include <cstdint>
 #include <cstring>
+#include <expected>
 #include <limits>
+#include <span>
+#include <string_view>
 #include <utility>
+#include <vector>
 
 module wt.platform.vault_crypto;
 

@@ -12,9 +12,15 @@ module;
 #endif
 
 #include <algorithm>
+#include <cstddef>
+#include <cstdint>
 #include <cstring>
+#include <expected>
 #include <limits>
 #include <memory>
+#include <span>
+#include <string>
+#include <string_view>
 #include <utility>
 #include <vector>
 
