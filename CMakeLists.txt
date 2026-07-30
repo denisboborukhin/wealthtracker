@@ -244,6 +244,7 @@ if(BUILD_TESTING)
     catch_discover_tests(platform_tests)
 
     add_executable(connectors_tests
+        tests/connectors/test_main.cpp
         tests/connectors/import_test.cpp
         tests/connectors/deduplication_test.cpp
         tests/connectors/network_test.cpp
@@ -252,7 +253,7 @@ if(BUILD_TESTING)
         connectors_tests
         PRIVATE
             connectors
-            Catch2::Catch2WithMain
+            Catch2::Catch2
     )
     set_property(TARGET connectors_tests PROPERTY CXX_SCAN_FOR_MODULES ON)
     enable_strict_warnings(connectors_tests)

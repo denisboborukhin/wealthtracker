@@ -804,6 +804,9 @@ ModulbankClient::post(const QUrl &url, const QJsonObject &body,
         return std::unexpected(request.error());
     }
     request->setHeader(QNetworkRequest::ContentTypeHeader, QStringLiteral("application/json"));
+    if (readOnlyToken == QByteArrayLiteral("sandboxtoken")) {
+        request->setRawHeader("sandbox", "on");
+    }
     return network_.post(*request, QJsonDocument(body).toJson(QJsonDocument::Compact));
 }
 

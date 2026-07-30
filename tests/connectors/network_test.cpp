@@ -1,12 +1,55 @@
 #include <catch2/catch_test_macros.hpp>
 #include <QDate>
 #include <QDateTime>
+#include <QIODevice>
+#include <QNetworkAccessManager>
+#include <QNetworkReply>
 #include <QNetworkRequest>
 #include <QUrl>
 
 import wt.connectors;
 
 using namespace wealthtracker::connectors;
+
+namespace {
+
+class CapturedReply final : public QNetworkReply {
+public:
+    CapturedReply(const QNetworkAccessManager::Operation operation,
+                  const QNetworkRequest& request, QObject* parent)
+        : QNetworkReply(parent) {
+        setOperation(operation);
+        setRequest(request);
+        setUrl(request.url());
+        open(QIODevice::ReadOnly);
+        setFinished(true);
+    }
+
+    void abort() override {}
+
+protected:
+    qint64 readData(char*, qint64) override { return -1; }
+};
+
+class CapturingNetworkAccessManager final : public QNetworkAccessManager {
+public:
+    Operation operation = UnknownOperation;
+    QNetworkRequest request;
+    QByteArray body;
+
+protected:
+    QNetworkReply* createRequest(
+        const Operation requestedOperation,
+        const QNetworkRequest& requested,
+        QIODevice* outgoingData = nullptr) override {
+        operation = requestedOperation;
+        request = requested;
+        body = outgoingData ? outgoingData->readAll() : QByteArray{};
+        return new CapturedReply(requestedOperation, requested, this);
+    }
+};
+
+}  // namespace
 
 TEST_CASE("host allowlist requires exact HTTPS origins")
 {
@@ -148,6 +191,47 @@ TEST_CASE("official bank clients expose only documented read-only methods")
         ModulbankReadMethod::OperationHistory, modulbankAccount)));
     CHECK_FALSE(
         ModulbankClient::isReadOnlyPath(QStringLiteral("/v1/operation-upload")));
+}
+
+TEST_CASE("official bank requests preserve read-only origins and sandbox mode")
+{
+    CapturingNetworkAccessManager network;
+
+    AlfaBankClient alfa(network);
+    const auto alfaReply =
+        alfa.discoverAccounts(QByteArrayLiteral("alfa-token"));
+    REQUIRE(alfaReply);
+    CHECK(network.operation == QNetworkAccessManager::GetOperation);
+    CHECK(network.request.url() ==
+          QUrl(QStringLiteral("https://baas.alfabank.ru/api/pp/v1/accounts")));
+    CHECK(network.request.rawHeader("Authorization") ==
+          QByteArrayLiteral("Bearer alfa-token"));
+
+    TBankBusinessClient tbank(network);
+    const auto tbankReply =
+        tbank.discoverAccounts(QByteArrayLiteral("tbank-token"));
+    REQUIRE(tbankReply);
+    CHECK(network.operation == QNetworkAccessManager::GetOperation);
+    CHECK(network.request.url().host() ==
+          QStringLiteral("business.tbank.ru"));
+    CHECK(network.request.url().path() ==
+          QStringLiteral("/openapi/api/v4/bank-accounts"));
+    CHECK_FALSE(network.request.rawHeader("X-Request-Id").isEmpty());
+
+    ModulbankClient modulbank(network);
+    const auto sandboxReply =
+        modulbank.discoverAccounts(QByteArrayLiteral("sandboxtoken"));
+    REQUIRE(sandboxReply);
+    CHECK(network.operation == QNetworkAccessManager::PostOperation);
+    CHECK(network.request.url() ==
+          QUrl(QStringLiteral("https://api.modulbank.ru/v1/account-info")));
+    CHECK(network.request.rawHeader("sandbox") == QByteArrayLiteral("on"));
+    CHECK(network.body == QByteArrayLiteral("{}"));
+
+    const auto liveReply =
+        modulbank.discoverAccounts(QByteArrayLiteral("production-token"));
+    REQUIRE(liveReply);
+    CHECK(network.request.rawHeader("sandbox").isEmpty());
 }
 
 TEST_CASE("Alfa B2C responses normalize accounts and paginated operations")
