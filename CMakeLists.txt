@@ -266,6 +266,10 @@ install(
     BUNDLE DESTINATION .
     RUNTIME DESTINATION "${CMAKE_INSTALL_BINDIR}"
 )
+install(
+    FILES LICENSE THIRD_PARTY_NOTICES.md
+    DESTINATION "${CMAKE_INSTALL_DATADIR}/wealthtracker"
+)
 
 set(CPACK_PACKAGE_NAME "WealthTracker")
 set(CPACK_PACKAGE_VENDOR "WealthTracker contributors")
