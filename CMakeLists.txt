@@ -68,6 +68,7 @@ target_sources(
         src/storage/repository.cpp
 )
 target_link_libraries(storage PUBLIC sqlcipher::sqlcipher)
+set_property(TARGET storage PROPERTY CXX_SCAN_FOR_MODULES ON)
 enable_strict_warnings(storage)
 enable_sanitizers(storage)
 
@@ -86,6 +87,7 @@ target_sources(
         src/platform/credential_store.cpp
 )
 target_link_libraries(platform PUBLIC libsodium::libsodium)
+set_property(TARGET platform PROPERTY CXX_SCAN_FOR_MODULES ON)
 if(APPLE)
     target_link_libraries(platform PRIVATE "-framework Security")
 elseif(WIN32)
@@ -119,6 +121,7 @@ target_link_libraries(
     PRIVATE
         xlsxio::xlsxio_read
 )
+set_property(TARGET connectors PROPERTY CXX_SCAN_FOR_MODULES ON)
 enable_strict_warnings(connectors)
 enable_sanitizers(connectors)
 
@@ -144,6 +147,7 @@ target_link_libraries(
         platform
         connectors
 )
+set_property(TARGET app PROPERTY CXX_SCAN_FOR_MODULES ON)
 enable_strict_warnings(app)
 enable_sanitizers(app)
 
@@ -214,18 +218,21 @@ if(BUILD_TESTING)
         tests/core/analytics_test.cpp
     )
     target_link_libraries(core_tests PRIVATE core Catch2::Catch2WithMain)
+    set_property(TARGET core_tests PROPERTY CXX_SCAN_FOR_MODULES ON)
     enable_strict_warnings(core_tests)
     enable_sanitizers(core_tests)
     catch_discover_tests(core_tests)
 
     add_executable(storage_tests tests/storage/storage_test.cpp)
     target_link_libraries(storage_tests PRIVATE storage Catch2::Catch2WithMain)
+    set_property(TARGET storage_tests PROPERTY CXX_SCAN_FOR_MODULES ON)
     enable_strict_warnings(storage_tests)
     enable_sanitizers(storage_tests)
     catch_discover_tests(storage_tests)
 
     add_executable(platform_tests tests/platform/vault_crypto_test.cpp)
     target_link_libraries(platform_tests PRIVATE platform Catch2::Catch2WithMain)
+    set_property(TARGET platform_tests PROPERTY CXX_SCAN_FOR_MODULES ON)
     enable_strict_warnings(platform_tests)
     enable_sanitizers(platform_tests)
     catch_discover_tests(platform_tests)
@@ -241,6 +248,7 @@ if(BUILD_TESTING)
             connectors
             Catch2::Catch2WithMain
     )
+    set_property(TARGET connectors_tests PROPERTY CXX_SCAN_FOR_MODULES ON)
     enable_strict_warnings(connectors_tests)
     enable_sanitizers(connectors_tests)
     catch_discover_tests(connectors_tests)
