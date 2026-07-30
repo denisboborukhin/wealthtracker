@@ -32,6 +32,7 @@ AppController::AppController(QObject* parent)
       transactions_(this),
       categories_(this),
       holdings_(this),
+      bank_connections_(this),
       private_(std::make_unique<AppControllerPrivate>()) {
     if (private_->credentials && private_->credentials->supported()) {
         auto database_key = private_->credentials->get("database-key");
@@ -51,6 +52,7 @@ AppController::AppController(QObject* parent)
         investment_connected_ =
             static_cast<bool>(private_->credentials->get("t-invest-readonly"));
     }
+    refreshBankConnections();
     loadDemoData();
 }
 
@@ -60,6 +62,7 @@ QAbstractItemModel* AppController::accounts() noexcept { return &accounts_; }
 QAbstractItemModel* AppController::transactions() noexcept { return &transactions_; }
 QAbstractItemModel* AppController::categories() noexcept { return &categories_; }
 QAbstractItemModel* AppController::holdings() noexcept { return &holdings_; }
+QAbstractItemModel* AppController::bankConnections() noexcept { return &bank_connections_; }
 QVariantList AppController::netWorthSeries() const { return net_worth_series_; }
 
 QString AppController::netWorth() const {
@@ -88,6 +91,48 @@ bool AppController::locked() const noexcept { return locked_; }
 bool AppController::demoMode() const noexcept { return demo_mode_; }
 bool AppController::investmentConnected() const noexcept {
     return investment_connected_;
+}
+QString AppController::connectionMessage() const { return connection_message_; }
+
+void AppController::refreshBankConnections() {
+    bank_connections_.replace({
+        {QStringLiteral("tbank-retail"),
+         QStringLiteral("Т-Банк"),
+         QStringLiteral("Карты, счета и операции"),
+         QStringLiteral("Локальный интерактивный плагин"),
+         QStringLiteral("Плагин не установлен"),
+         false,
+         false},
+        {QStringLiteral("alfabank-retail"),
+         QStringLiteral("Альфа-Банк"),
+         QStringLiteral("Карты, счета и операции"),
+         QStringLiteral("Локальный интерактивный плагин"),
+         QStringLiteral("Плагин не установлен"),
+         false,
+         false},
+        {QStringLiteral("sber-retail"),
+         QStringLiteral("Сбер"),
+         QStringLiteral("Карты, счета и операции"),
+         QStringLiteral("Локальный интерактивный плагин"),
+         QStringLiteral("Плагин не установлен"),
+         false,
+         false},
+        {QStringLiteral("vtb-retail"),
+         QStringLiteral("ВТБ"),
+         QStringLiteral("Карты, счета и операции"),
+         QStringLiteral("Локальный интерактивный плагин"),
+         QStringLiteral("Плагин не установлен"),
+         false,
+         false},
+        {QStringLiteral("t-invest"),
+         QStringLiteral("Т-Инвестиции"),
+         QStringLiteral("Счета, позиции и операции"),
+         QStringLiteral("Официальный read-only API"),
+         investment_connected_ ? QStringLiteral("Подключено")
+                               : QStringLiteral("Не подключено"),
+         investment_connected_,
+         true},
+    });
 }
 
 void AppController::loadDemoData() {
@@ -256,6 +301,7 @@ bool AppController::saveInvestmentToken(const QString& token) {
 
     investment_connected_ = true;
     sync_status_ = QStringLiteral("Токен сохранён в системном хранилище");
+    refreshBankConnections();
     emit investmentConnectedChanged();
     emit syncStatusChanged();
     return true;
@@ -275,6 +321,7 @@ void AppController::removeInvestmentToken() {
     }
     investment_connected_ = false;
     sync_status_ = QStringLiteral("Т-Инвестиции отключены");
+    refreshBankConnections();
     emit investmentConnectedChanged();
     emit syncStatusChanged();
 }
@@ -335,6 +382,21 @@ void AppController::synchronizeInvestments() {
         emit syncStatusChanged();
         reply->deleteLater();
     });
+}
+
+void AppController::describeBankConnection(const QString& connectorId) {
+    if (connectorId == QStringLiteral("t-invest")) {
+        connection_message_ =
+            QStringLiteral("Т-Инвестиции подключаются официальным токеном только для чтения.");
+    } else {
+        connection_message_ =
+            QStringLiteral(
+                "Розничный банк требует отдельный локальный плагин. Плагин выполняет вход "
+                "на этом компьютере, запрашивает пароль и одноразовый код только на время "
+                "сессии и преобразует счета, остатки и операции в общий формат. Встроенный "
+                "плагин для этого банка пока не поставляется.");
+    }
+    emit connectionMessageChanged();
 }
 
 }  // namespace wealthtracker::app

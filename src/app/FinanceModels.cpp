@@ -148,4 +148,43 @@ void HoldingModel::replace(QVector<HoldingRow> rows) {
     endResetModel();
 }
 
+ConnectionModel::ConnectionModel(QObject* parent) : QAbstractListModel(parent) {}
+
+int ConnectionModel::rowCount(const QModelIndex& parent) const {
+    return parent.isValid() ? 0 : static_cast<int>(rows_.size());
+}
+
+QVariant ConnectionModel::data(const QModelIndex& index, int role) const {
+    if (!index.isValid() || index.row() < 0 || index.row() >= rows_.size()) {
+        return {};
+    }
+    const auto& row = rows_.at(index.row());
+    switch (role) {
+        case ConnectorIdRole: return row.connectorId;
+        case InstitutionRole: return row.institution;
+        case ScopeRole: return row.scope;
+        case MethodRole: return row.method;
+        case StatusRole: return row.status;
+        case ConnectedRole: return row.connected;
+        case AvailableRole: return row.available;
+        default: return {};
+    }
+}
+
+QHash<int, QByteArray> ConnectionModel::roleNames() const {
+    return {{ConnectorIdRole, "connectorId"},
+            {InstitutionRole, "institution"},
+            {ScopeRole, "scope"},
+            {MethodRole, "method"},
+            {StatusRole, "status"},
+            {ConnectedRole, "connected"},
+            {AvailableRole, "available"}};
+}
+
+void ConnectionModel::replace(QVector<ConnectionRow> rows) {
+    beginResetModel();
+    rows_ = std::move(rows);
+    endResetModel();
+}
+
 }  // namespace wealthtracker::app

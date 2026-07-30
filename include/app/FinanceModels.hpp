@@ -139,4 +139,40 @@ private:
     QVector<HoldingRow> rows_;
 };
 
+struct ConnectionRow {
+    QString connectorId;
+    QString institution;
+    QString scope;
+    QString method;
+    QString status;
+    bool connected = false;
+    bool available = false;
+};
+
+class ConnectionModel final : public QAbstractListModel {
+    Q_OBJECT
+
+public:
+    enum Role {
+        ConnectorIdRole = Qt::UserRole + 1,
+        InstitutionRole,
+        ScopeRole,
+        MethodRole,
+        StatusRole,
+        ConnectedRole,
+        AvailableRole,
+    };
+
+    explicit ConnectionModel(QObject* parent = nullptr);
+
+    [[nodiscard]] int rowCount(const QModelIndex& parent = {}) const override;
+    [[nodiscard]] QVariant data(const QModelIndex& index, int role) const override;
+    [[nodiscard]] QHash<int, QByteArray> roleNames() const override;
+
+    void replace(QVector<ConnectionRow> rows);
+
+private:
+    QVector<ConnectionRow> rows_;
+};
+
 }  // namespace wealthtracker::app

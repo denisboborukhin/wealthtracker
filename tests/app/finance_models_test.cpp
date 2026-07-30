@@ -4,6 +4,7 @@
 
 using wealthtracker::app::AccountModel;
 using wealthtracker::app::AccountRow;
+using wealthtracker::app::ConnectionModel;
 using wealthtracker::app::TransactionModel;
 using wealthtracker::app::TransactionRow;
 
@@ -45,4 +46,24 @@ TEST_CASE("transaction model keeps income state distinct from amount text") {
     CHECK(model.data(index, TransactionModel::IncomeRole).toBool());
     CHECK(model.data(index, TransactionModel::AmountRole).toString() ==
           QStringLiteral("+100 000 ₽"));
+}
+
+TEST_CASE("connection model exposes connector availability separately from state") {
+    ConnectionModel model;
+    model.replace({
+        {QStringLiteral("tbank-retail"), QStringLiteral("Т-Банк"),
+         QStringLiteral("Accounts"), QStringLiteral("Local plugin"),
+         QStringLiteral("Plugin required"), false, false},
+        {QStringLiteral("t-invest"), QStringLiteral("Т-Инвестиции"),
+         QStringLiteral("Portfolio"), QStringLiteral("Read-only API"),
+         QStringLiteral("Connected"), true, true},
+    });
+
+    REQUIRE(model.rowCount() == 2);
+    const auto roles = model.roleNames();
+    CHECK(model.data(model.index(0), ConnectionModel::ConnectorIdRole).toString()
+          == QStringLiteral("tbank-retail"));
+    CHECK_FALSE(model.data(model.index(0), ConnectionModel::AvailableRole).toBool());
+    CHECK(model.data(model.index(1), ConnectionModel::ConnectedRole).toBool());
+    CHECK(roles.value(ConnectionModel::AvailableRole) == QByteArrayLiteral("available"));
 }
