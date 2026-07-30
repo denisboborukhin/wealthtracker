@@ -1,10 +1,18 @@
 import QtQuick
 import QtQuick.Controls
+import QtQuick.Dialogs as PlatformDialogs
 import QtQuick.Layouts
 import "../components"
 
 Item {
     id: page
+
+    PlatformDialogs.FileDialog {
+        id: pluginBundleDialog
+        title: qsTr("Выберите собранный ZenPlugins bundle")
+        nameFilters: [qsTr("JavaScript bundle (*.js *.cjs)")]
+        onAccepted: App.inspectZenPluginBundle(selectedFile)
+    }
 
     Dialog {
         id: connectionDialog
@@ -22,6 +30,25 @@ Item {
         property string status: ""
         property bool connected: false
         property bool available: false
+        readonly property bool localPlugin:
+            connectorId === "zenplugins-local"
+
+        function pluginPreferences() {
+            let result = {}
+            for (let index = 0; index < preferenceRepeater.count; ++index) {
+                let field = preferenceRepeater.itemAt(index)
+                result[field.fieldKey] = field.fieldValue
+            }
+            return result
+        }
+
+        function clearSensitivePluginFields() {
+            for (let index = 0; index < preferenceRepeater.count; ++index) {
+                let field = preferenceRepeater.itemAt(index)
+                if (field.sensitive)
+                    field.clearValue()
+            }
+        }
 
         background: Rectangle {
             color: Theme.surface
@@ -79,6 +106,7 @@ Item {
                     Layout.fillWidth: true
                     visible: connectionDialog.available
                                && !connectionDialog.connected
+                               && !connectionDialog.localPlugin
                     spacing: 7
 
                     Text {
@@ -120,8 +148,181 @@ Item {
                 StatusBadge {
                     visible: connectionDialog.available
                              && connectionDialog.connected
+                             && !connectionDialog.localPlugin
                     text: qsTr("Подключено")
                     tone: "positive"
+                }
+
+                ColumnLayout {
+                    Layout.fillWidth: true
+                    visible: connectionDialog.localPlugin
+                    spacing: 12
+
+                    RowLayout {
+                        Layout.fillWidth: true
+                        ColumnLayout {
+                            Layout.fillWidth: true
+                            spacing: 2
+                            Text {
+                                text: App.zenPluginId.length > 0
+                                      ? App.zenPluginId
+                                      : qsTr("Bundle не выбран")
+                                color: Theme.text
+                                font.pixelSize: 12
+                                font.weight: Font.Medium
+                            }
+                            Text {
+                                Layout.fillWidth: true
+                                text: App.zenPluginBundlePath.length > 0
+                                      ? App.zenPluginBundlePath
+                                      : qsTr("Сначала соберите plugin через yarn build <plugin-id>")
+                                color: Theme.textMuted
+                                font.pixelSize: 10
+                                elide: Text.ElideMiddle
+                            }
+                        }
+                        ActionButton {
+                            text: qsTr("Выбрать bundle")
+                            enabled: !App.zenPluginRunning
+                            onClicked: pluginBundleDialog.open()
+                        }
+                    }
+
+                    ColumnLayout {
+                        Layout.fillWidth: true
+                        visible: App.zenPluginId.length > 0
+                                 && !App.zenPluginRunning
+                        spacing: 7
+
+                        Text {
+                            text: qsTr("Название банка")
+                            color: Theme.text
+                            font.pixelSize: 12
+                            font.weight: Font.Medium
+                        }
+                        TextField {
+                            id: pluginInstitutionField
+                            Layout.fillWidth: true
+                            Layout.preferredHeight: 40
+                            text: App.zenPluginInstitution
+                            placeholderText: qsTr("Как показывать банк в счетах")
+                            color: Theme.text
+                            selectByMouse: true
+                            background: Rectangle {
+                                color: Theme.surface
+                                border.color: pluginInstitutionField.activeFocus
+                                              ? Theme.primary : Theme.borderStrong
+                                radius: 7
+                            }
+                        }
+
+                        Repeater {
+                            id: preferenceRepeater
+                            model: App.zenPluginFields
+
+                            delegate: ColumnLayout {
+                                required property var modelData
+                                readonly property string fieldKey: modelData.key
+                                readonly property bool sensitive: modelData.sensitive
+                                readonly property var fieldValue:
+                                    modelData.kind === "checkbox"
+                                    ? checkboxField.checked
+                                    : valueField.text
+
+                                function clearValue() {
+                                    valueField.clear()
+                                }
+
+                                Layout.fillWidth: true
+                                spacing: 5
+
+                                Text {
+                                    text: modelData.label
+                                          + (modelData.required ? " *" : "")
+                                    color: Theme.text
+                                    font.pixelSize: 12
+                                    font.weight: Font.Medium
+                                }
+                                TextField {
+                                    id: valueField
+                                    Layout.fillWidth: true
+                                    Layout.preferredHeight: 40
+                                    visible: modelData.kind !== "checkbox"
+                                    text: modelData.defaultValue
+                                    echoMode: modelData.sensitive
+                                              ? TextInput.Password
+                                              : TextInput.Normal
+                                    inputMethodHints:
+                                        modelData.kind === "number"
+                                        || modelData.kind === "phone"
+                                        ? Qt.ImhDigitsOnly : Qt.ImhNone
+                                    color: Theme.text
+                                    selectByMouse: true
+                                    background: Rectangle {
+                                        color: Theme.surface
+                                        border.color: valueField.activeFocus
+                                                      ? Theme.primary
+                                                      : Theme.borderStrong
+                                        radius: 7
+                                    }
+                                }
+                                MinimalSwitch {
+                                    id: checkboxField
+                                    visible: modelData.kind === "checkbox"
+                                    checked: modelData.defaultValue === "true"
+                                }
+                            }
+                        }
+
+                        Text {
+                            Layout.fillWidth: true
+                            text: qsTr("Поля входа живут только до завершения запуска. Bundle — сторонний код без песочницы; запускайте только проверенную сборку.")
+                            color: Theme.warning
+                            font.pixelSize: 10
+                            wrapMode: Text.WordWrap
+                        }
+                    }
+
+                    ColumnLayout {
+                        Layout.fillWidth: true
+                        visible: App.zenPluginRunning
+                        spacing: 7
+
+                        StatusBadge {
+                            text: App.zenPluginPrompt.length > 0
+                                  ? qsTr("Требуется ответ")
+                                  : qsTr("Синхронизация")
+                            tone: App.zenPluginPrompt.length > 0
+                                  ? "warning" : "neutral"
+                        }
+                        Text {
+                            Layout.fillWidth: true
+                            visible: App.zenPluginPrompt.length > 0
+                            text: App.zenPluginPrompt
+                            color: Theme.text
+                            font.pixelSize: 12
+                            wrapMode: Text.WordWrap
+                        }
+                        TextField {
+                            id: pluginPromptField
+                            Layout.fillWidth: true
+                            Layout.preferredHeight: 40
+                            visible: App.zenPluginPrompt.length > 0
+                            echoMode: App.zenPluginPromptSecret
+                                      ? TextInput.Password
+                                      : TextInput.Normal
+                            inputMethodHints: Qt.ImhDigitsOnly
+                            color: Theme.text
+                            selectByMouse: true
+                            background: Rectangle {
+                                color: Theme.surface
+                                border.color: pluginPromptField.activeFocus
+                                              ? Theme.primary
+                                              : Theme.borderStrong
+                                radius: 7
+                            }
+                        }
+                    }
                 }
 
                 RowLayout {
@@ -140,6 +341,7 @@ Item {
                     ActionButton {
                         visible: connectionDialog.available
                                  && !connectionDialog.connected
+                                 && !connectionDialog.localPlugin
                         text: qsTr("Сохранить токен")
                         primary: true
                         enabled: tokenField.text.trim().length > 0
@@ -154,6 +356,7 @@ Item {
                     ActionButton {
                         visible: connectionDialog.available
                                  && connectionDialog.connected
+                                 && !connectionDialog.localPlugin
                         text: qsTr("Синхронизировать")
                         primary: true
                         onClicked: {
@@ -164,6 +367,7 @@ Item {
                     ActionButton {
                         visible: connectionDialog.available
                                  && connectionDialog.connected
+                                 && !connectionDialog.localPlugin
                         text: qsTr("Отключить")
                         destructive: true
                         onClicked: {
@@ -171,11 +375,61 @@ Item {
                             connectionDialog.close()
                         }
                     }
+                    ActionButton {
+                        visible: connectionDialog.localPlugin
+                                 && App.zenPluginRunning
+                                 && App.zenPluginPrompt.length === 0
+                        text: qsTr("Отменить")
+                        destructive: true
+                        onClicked: App.cancelZenPlugin()
+                    }
+                    ActionButton {
+                        visible: connectionDialog.localPlugin
+                                 && App.zenPluginRunning
+                                 && App.zenPluginPrompt.length > 0
+                        text: qsTr("Передать")
+                        primary: true
+                        enabled: pluginPromptField.text.length > 0
+                        onClicked: {
+                            if (App.answerZenPluginPrompt(
+                                        pluginPromptField.text))
+                                pluginPromptField.clear()
+                        }
+                    }
+                    ActionButton {
+                        visible: connectionDialog.localPlugin
+                                 && !App.zenPluginRunning
+                                 && App.zenPluginId.length > 0
+                        text: qsTr("Запустить")
+                        primary: true
+                        enabled: pluginInstitutionField.text.trim().length > 0
+                        onClicked: {
+                            if (App.startZenPlugin(
+                                        pluginInstitutionField.text,
+                                        connectionDialog.pluginPreferences()))
+                                connectionDialog.clearSensitivePluginFields()
+                        }
+                    }
+                    ActionButton {
+                        visible: connectionDialog.localPlugin
+                                 && !App.zenPluginRunning
+                                 && App.zenPluginId.length > 0
+                        text: qsTr("Удалить")
+                        destructive: true
+                        onClicked: {
+                            App.removeZenPlugin()
+                            connectionDialog.close()
+                        }
+                    }
                 }
             }
         }
 
-        onClosed: tokenField.clear()
+        onClosed: {
+            tokenField.clear()
+            pluginPromptField.clear()
+            clearSensitivePluginFields()
+        }
     }
 
     ColumnLayout {
@@ -194,7 +448,7 @@ Item {
             }
             Text {
                 Layout.fillWidth: true
-                text: qsTr("Официальные API работают только на чтение. Токены остаются в системном хранилище ключей этого компьютера.")
+                text: qsTr("Официальные API и отдельно собранные локальные плагины. Токены и состояние сессий остаются в системном хранилище ключей.")
                 color: Theme.textMuted
                 font.pixelSize: 13
                 wrapMode: Text.WordWrap
@@ -335,7 +589,7 @@ Item {
 
         Text {
             Layout.fillWidth: true
-            text: qsTr("Доступны Альфа-Банк API, Т-Банк Бизнес и Модульбанк. Розничные Т-Банк, Сбер и ВТБ не подключаются без поддерживаемого официального API.")
+            text: qsTr("ZenPlugins подключаются только из выбранной вами локальной сборки. В текущем upstream нет retail-плагинов для Альфа-Банка России, Т-Банка, Сбера или ВТБ; altabanka-rs — это Alta Banka в Сербии.")
             color: Theme.textMuted
             font.pixelSize: 11
             wrapMode: Text.WordWrap
