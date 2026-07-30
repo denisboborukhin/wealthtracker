@@ -114,7 +114,7 @@ public:
         constexpr qsizetype probeBytesLimit = 512 * 1024;
         QByteArray bytes;
         if (!source.content.isNull()) {
-            bytes = source.content.first(probeBytesLimit);
+            bytes = source.content.left(probeBytesLimit);
         } else {
             QFile file(source.filePath);
             if (!file.open(QIODevice::ReadOnly)) {
@@ -708,7 +708,7 @@ FileFormat detectFileFormat(const ImportSource &source, const QByteArray &bytes)
 {
     const auto extension = QFileInfo(source.effectiveName()).suffix().toLower();
     const auto trimmed = bytes.trimmed();
-    const auto textHead = decodeStatementText(bytes.first(64 * 1024));
+    const auto textHead = decodeStatementText(bytes.left(64 * 1024));
     if (extension == u"pdf" || bytes.startsWith("%PDF-")) {
         return FileFormat::Pdf;
     }
