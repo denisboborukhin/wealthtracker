@@ -1,5 +1,10 @@
 module;
+#include <cstdint>
+#include <expected>
+#include <optional>
+#include <string>
 #include <utility>
+#include <vector>
 
 module wt.storage.import_session;
 

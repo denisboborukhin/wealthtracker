@@ -1,3 +1,12 @@
+module;
+
+#include <cstdint>
+#include <expected>
+#include <optional>
+#include <string>
+#include <string_view>
+#include <vector>
+
 module wt.storage.repository;
 
 namespace wealthtracker::storage {

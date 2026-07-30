@@ -1,6 +1,9 @@
 module;
 #include <array>
+#include <expected>
 #include <string>
+#include <string_view>
+#include <vector>
 
 module wt.storage.migrations;
 

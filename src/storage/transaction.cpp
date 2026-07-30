@@ -1,4 +1,6 @@
 module;
+#include <expected>
+#include <string_view>
 #include <utility>
 
 module wt.storage.transaction;

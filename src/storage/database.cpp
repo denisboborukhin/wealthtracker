@@ -4,8 +4,16 @@ module;
 #include <algorithm>
 #include <array>
 #include <climits>
+#include <cstddef>
+#include <cstdint>
 #include <cstring>
+#include <expected>
+#include <filesystem>
+#include <span>
+#include <string>
+#include <string_view>
 #include <utility>
+#include <vector>
 
 module wt.storage.database;
 
