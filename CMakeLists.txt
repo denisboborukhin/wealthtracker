@@ -111,6 +111,7 @@ target_sources(
         src/connectors/deduplication.cpp
         src/connectors/network_policy.cpp
         src/connectors/t_invest_client.cpp
+        src/connectors/official_bank_clients.cpp
         src/connectors/cbr_fx_client.cpp
 )
 target_link_libraries(

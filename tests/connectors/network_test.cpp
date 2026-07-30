@@ -124,6 +124,127 @@ TEST_CASE("T-Invest response parsers preserve cursor and exact portfolio values"
     }
 }
 
+TEST_CASE("official bank clients expose only documented read-only methods")
+{
+    CHECK(AlfaBankClient::isReadOnlyPath(
+        AlfaBankClient::restPath(AlfaBankReadMethod::Accounts)));
+    CHECK(AlfaBankClient::isReadOnlyPath(
+        AlfaBankClient::restPath(AlfaBankReadMethod::Operations)));
+    CHECK_FALSE(
+        AlfaBankClient::isReadOnlyPath(QStringLiteral("/api/pp/v1/payments")));
+
+    CHECK(TBankBusinessClient::isReadOnlyPath(
+        TBankBusinessClient::restPath(TBankBusinessReadMethod::Accounts)));
+    CHECK(TBankBusinessClient::isReadOnlyPath(
+        TBankBusinessClient::restPath(TBankBusinessReadMethod::Statement)));
+    CHECK_FALSE(TBankBusinessClient::isReadOnlyPath(
+        QStringLiteral("/openapi/api/v1/payment")));
+
+    const auto modulbankAccount = QStringLiteral(
+        "d0b9f257-6f5b-4f0f-a45f-6ef09c2d6dd7");
+    CHECK(ModulbankClient::isReadOnlyPath(
+        ModulbankClient::restPath(ModulbankReadMethod::Accounts)));
+    CHECK(ModulbankClient::isReadOnlyPath(ModulbankClient::restPath(
+        ModulbankReadMethod::OperationHistory, modulbankAccount)));
+    CHECK_FALSE(
+        ModulbankClient::isReadOnlyPath(QStringLiteral("/v1/operation-upload")));
+}
+
+TEST_CASE("Alfa B2C responses normalize accounts and paginated operations")
+{
+    const auto observedAt = QDateTime::fromString(
+        QStringLiteral("2026-07-30T10:00:00Z"), Qt::ISODate);
+
+    const auto accounts = AlfaBankClient::parseAccountsResponse(
+        QByteArrayLiteral(
+            R"({"accounts":[{"mnemonic":"Основной","number":"40817810000000000001","type":"EE","typeDescription":"Текущий счёт","status":"ACTIVE","balance":{"currency":"RUR","minorUnits":100,"amount":2400050}}]})"),
+        observedAt);
+    REQUIRE(accounts);
+    REQUIRE(accounts->accounts.size() == 1);
+    REQUIRE(accounts->balances.size() == 1);
+    CHECK(accounts->accounts.front().currency == QStringLiteral("RUB"));
+    CHECK(accounts->accounts.front().maskedNumber == QStringLiteral("•••• 0001"));
+    CHECK(accounts->balances.front().balance
+          == Money{2400050, QStringLiteral("RUB")});
+
+    const auto operations = AlfaBankClient::parseOperationsResponse(
+        QByteArrayLiteral(
+            R"({"operations":[{"id":"alfa-operation-1","dateTime":"2026-07-29T12:30:00Z","title":"МТС","amount":{"value":10000,"currency":"RUR","minorUnits":100},"direction":"EXPENSE","category":{"name":"Связь"},"mcc":"4814","status":"SUCCESS"}]})"),
+        QStringLiteral("40817810000000000001"), 100, 1);
+    REQUIRE(operations);
+    REQUIRE(operations->transactions.size() == 1);
+    CHECK(operations->transactions.front().amount
+          == Money{-10000, QStringLiteral("RUB")});
+    CHECK(operations->transactions.front().bankCategory == QStringLiteral("Связь"));
+    CHECK(operations->nextCursor == QByteArrayLiteral("101"));
+}
+
+TEST_CASE("T-Bank Business responses normalize statement signs and cursor")
+{
+    const auto observedAt = QDateTime::fromString(
+        QStringLiteral("2026-07-30T10:00:00Z"), Qt::ISODate);
+    const auto accounts = TBankBusinessClient::parseAccountsResponse(
+        QByteArrayLiteral(
+            R"({"accounts":[{"accountNumber":"40702810000000000001","name":"Расчётный","accountType":"Checking","currency":"RUB","balance":"1200.50","status":"OPEN"}]})"),
+        observedAt);
+    REQUIRE(accounts);
+    REQUIRE(accounts->balances.size() == 1);
+    CHECK(accounts->balances.front().balance
+          == Money{120050, QStringLiteral("RUB")});
+
+    const auto statement = TBankBusinessClient::parseStatementResponse(
+        QByteArrayLiteral(
+            R"({"operations":[{"operationId":"tbank-operation-1","operationDate":"2026-07-29T08:15:00Z","credit":"150.25","debit":"0","currency":"RUB","description":"Оплата от клиента"},{"operationId":"tbank-operation-2","operationDate":"2026-07-29T09:15:00Z","credit":"0","debit":"25.10","currency":"RUB","description":"Комиссия"}],"nextCursor":"cursor-2"})"),
+        QStringLiteral("40702810000000000001"));
+    REQUIRE(statement);
+    REQUIRE(statement->transactions.size() == 2);
+    CHECK(statement->transactions.at(0).amount.minorUnits == 15025);
+    CHECK(statement->transactions.at(1).amount.minorUnits == -2510);
+    CHECK(statement->nextCursor == QByteArrayLiteral("cursor-2"));
+}
+
+TEST_CASE("Modulbank responses normalize business accounts and directions")
+{
+    const auto accountId =
+        QStringLiteral("d0b9f257-6f5b-4f0f-a45f-6ef09c2d6dd7");
+    const auto observedAt = QDateTime::fromString(
+        QStringLiteral("2026-07-30T10:00:00Z"), Qt::ISODate);
+    const auto accounts = ModulbankClient::parseAccountsResponse(
+        QByteArrayLiteral(
+            R"([{"companyName":"ООО Пример","bankAccounts":[{"id":"d0b9f257-6f5b-4f0f-a45f-6ef09c2d6dd7","accountName":"Основной","category":"Checking","currency":"RUR","number":"40702810000000000001","balance":900000,"status":"Open"}]}])"),
+        observedAt);
+    REQUIRE(accounts);
+    REQUIRE(accounts->accounts.size() == 1);
+    REQUIRE(accounts->balances.size() == 1);
+    CHECK(accounts->accounts.front().name == QStringLiteral("ООО Пример · Основной"));
+    CHECK(accounts->balances.front().balance
+          == Money{90000000, QStringLiteral("RUB")});
+
+    const auto operations = ModulbankClient::parseOperationsResponse(
+        QByteArrayLiteral(
+            R"([{"id":"modul-operation-1","executed":"2026-07-29T10:15:00Z","amount":100000,"currency":"RUR","category":"Debet","paymentPurpose":"Оплата по счёту","contragentName":"ООО Клиент","status":"Executed"},{"id":"modul-operation-2","executed":"2026-07-29T11:15:00Z","amount":"500.25","currency":"RUR","category":"Credit","paymentPurpose":"Комиссия","status":"Executed"}])"),
+        accountId, 0, 2);
+    REQUIRE(operations);
+    REQUIRE(operations->transactions.size() == 2);
+    CHECK(operations->transactions.at(0).amount.minorUnits == 10000000);
+    CHECK(operations->transactions.at(1).amount.minorUnits == -50025);
+    CHECK(operations->nextCursor == QByteArrayLiteral("2"));
+}
+
+TEST_CASE("official bank parsers reject unsafe or malformed responses")
+{
+    const auto observedAt = QDateTime::currentDateTimeUtc();
+    const auto oversized = AlfaBankClient::parseAccountsResponse(
+        QByteArray(20 * 1024 * 1024 + 1, 'x'), observedAt);
+    REQUIRE_FALSE(oversized);
+    CHECK(oversized.error().code == ErrorCode::SecurityViolation);
+
+    const auto malformed = ModulbankClient::parseOperationsResponse(
+        QByteArrayLiteral("{not-json}"), QStringLiteral("account"), 0, 50);
+    REQUIRE_FALSE(malformed);
+    CHECK(malformed.error().code == ErrorCode::ParseFailed);
+}
+
 TEST_CASE("Bank of Russia daily XML is parsed without floating point conversion")
 {
     const auto rates = CbrFxClient::parseDailyRates(QByteArrayLiteral(

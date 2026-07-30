@@ -382,6 +382,84 @@ private:
     HostAllowlist allowlist_;
 };
 
+enum class AlfaBankReadMethod { Accounts, Operations };
+
+class AlfaBankClient final : public ILiveConnector {
+public:
+    explicit AlfaBankClient(QNetworkAccessManager &network);
+    [[nodiscard]] ConnectorManifest manifest() const override;
+    [[nodiscard]] ConnectorResult<QNetworkReply *>
+    discoverAccounts(const QByteArray &readOnlyToken) override;
+    [[nodiscard]] ConnectorResult<QVector<QNetworkReply *>>
+    synchronize(const LiveSyncRequest &request, const QByteArray &readOnlyToken) override;
+    [[nodiscard]] static QString restPath(AlfaBankReadMethod method);
+    [[nodiscard]] static bool isReadOnlyPath(QStringView path);
+    [[nodiscard]] static ConnectorResult<NormalizedBatch>
+    parseAccountsResponse(const QByteArray &json, const QDateTime &observedAt);
+    [[nodiscard]] static ConnectorResult<NormalizedBatch>
+    parseOperationsResponse(const QByteArray &json, const QString &accountExternalId,
+                            int currentOffset, int requestedPageSize);
+
+private:
+    [[nodiscard]] ConnectorResult<QNetworkReply *>
+    get(const QUrl &url, const QByteArray &readOnlyToken);
+
+    QNetworkAccessManager &network_;
+    HostAllowlist allowlist_;
+};
+
+enum class TBankBusinessReadMethod { Accounts, Statement };
+
+class TBankBusinessClient final : public ILiveConnector {
+public:
+    explicit TBankBusinessClient(QNetworkAccessManager &network);
+    [[nodiscard]] ConnectorManifest manifest() const override;
+    [[nodiscard]] ConnectorResult<QNetworkReply *>
+    discoverAccounts(const QByteArray &readOnlyToken) override;
+    [[nodiscard]] ConnectorResult<QVector<QNetworkReply *>>
+    synchronize(const LiveSyncRequest &request, const QByteArray &readOnlyToken) override;
+    [[nodiscard]] static QString restPath(TBankBusinessReadMethod method);
+    [[nodiscard]] static bool isReadOnlyPath(QStringView path);
+    [[nodiscard]] static ConnectorResult<NormalizedBatch>
+    parseAccountsResponse(const QByteArray &json, const QDateTime &observedAt);
+    [[nodiscard]] static ConnectorResult<NormalizedBatch>
+    parseStatementResponse(const QByteArray &json, const QString &accountExternalId);
+
+private:
+    [[nodiscard]] ConnectorResult<QNetworkReply *>
+    get(const QUrl &url, const QByteArray &readOnlyToken);
+
+    QNetworkAccessManager &network_;
+    HostAllowlist allowlist_;
+};
+
+enum class ModulbankReadMethod { Accounts, OperationHistory };
+
+class ModulbankClient final : public ILiveConnector {
+public:
+    explicit ModulbankClient(QNetworkAccessManager &network);
+    [[nodiscard]] ConnectorManifest manifest() const override;
+    [[nodiscard]] ConnectorResult<QNetworkReply *>
+    discoverAccounts(const QByteArray &readOnlyToken) override;
+    [[nodiscard]] ConnectorResult<QVector<QNetworkReply *>>
+    synchronize(const LiveSyncRequest &request, const QByteArray &readOnlyToken) override;
+    [[nodiscard]] static QString restPath(ModulbankReadMethod method,
+                                          QStringView accountExternalId = {});
+    [[nodiscard]] static bool isReadOnlyPath(QStringView path);
+    [[nodiscard]] static ConnectorResult<NormalizedBatch>
+    parseAccountsResponse(const QByteArray &json, const QDateTime &observedAt);
+    [[nodiscard]] static ConnectorResult<NormalizedBatch>
+    parseOperationsResponse(const QByteArray &json, const QString &accountExternalId,
+                            int currentOffset, int requestedPageSize);
+
+private:
+    [[nodiscard]] ConnectorResult<QNetworkReply *>
+    post(const QUrl &url, const QJsonObject &body, const QByteArray &readOnlyToken);
+
+    QNetworkAccessManager &network_;
+    HostAllowlist allowlist_;
+};
+
 struct FxRate {
     QDate effectiveDate;
     QString currency;
