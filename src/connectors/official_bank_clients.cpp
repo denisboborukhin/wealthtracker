@@ -250,7 +250,9 @@ std::optional<Money> tbankMoney(const QJsonValue &value, const QString &fallback
         const auto currency = firstString(
             object, {QStringLiteral("currency"), QStringLiteral("currencyName")});
         for (const auto &key :
-             {QStringLiteral("amount"), QStringLiteral("value"), QStringLiteral("sum")}) {
+             {QStringLiteral("balance"), QStringLiteral("realOtb"),
+              QStringLiteral("currentBalance"), QStringLiteral("amount"),
+              QStringLiteral("value"), QStringLiteral("sum")}) {
             if (object.contains(key)) {
                 if (const auto result =
                         decimalMoney(object.value(key),
@@ -621,7 +623,9 @@ TBankBusinessClient::parseAccountsResponse(const QByteArray &json,
                          {QStringLiteral("accountType"), QStringLiteral("type")}),
              currency,
              maskedAccountNumber(id),
-             status.contains(QStringLiteral("CLOSED"), Qt::CaseInsensitive),
+             status.startsWith(QStringLiteral("CLS"), Qt::CaseInsensitive)
+                 || status.contains(QStringLiteral("CLOSED"),
+                                    Qt::CaseInsensitive),
              provenance});
         if (balance) {
             batch.balances.push_back({id, observedAt, *balance, provenance});
@@ -655,12 +659,33 @@ TBankBusinessClient::parseStatementResponse(const QByteArray &json,
             item, {QStringLiteral("operationDate"), QStringLiteral("trxnPostDate"),
                    QStringLiteral("transactionDate"), QStringLiteral("docDate")});
         const auto occurredAt = parseBankDateTime(dateText);
-        const auto currency = normalizedCurrency(
-            firstString(item, {QStringLiteral("currency"), QStringLiteral("currencyCode")}));
-        auto amount = tbankMoney(item.value(QStringLiteral("credit")), currency);
-        bool isCredit = amount && amount->minorUnits != 0;
-        if (!isCredit) {
-            amount = tbankMoney(item.value(QStringLiteral("debit")), currency);
+        const auto currency = normalizedCurrency(firstString(
+            item, {QStringLiteral("accountCurrencyDigitalCode"),
+                   QStringLiteral("operationCurrencyDigitalCode"),
+                   QStringLiteral("currency"), QStringLiteral("currencyCode")}));
+        std::optional<Money> amount;
+        bool isCredit = false;
+        if (item.contains(QStringLiteral("accountAmount"))) {
+            amount =
+                tbankMoney(item.value(QStringLiteral("accountAmount")), currency);
+            isCredit =
+                firstString(item, {QStringLiteral("typeOfOperation")})
+                    .compare(QStringLiteral("Credit"),
+                             Qt::CaseInsensitive) == 0;
+        } else if (item.contains(QStringLiteral("operationAmount"))) {
+            amount = tbankMoney(
+                item.value(QStringLiteral("operationAmount")), currency);
+            isCredit =
+                firstString(item, {QStringLiteral("typeOfOperation")})
+                    .compare(QStringLiteral("Credit"),
+                             Qt::CaseInsensitive) == 0;
+        } else {
+            amount = tbankMoney(item.value(QStringLiteral("credit")), currency);
+            isCredit = amount && amount->minorUnits != 0;
+            if (!isCredit) {
+                amount =
+                    tbankMoney(item.value(QStringLiteral("debit")), currency);
+            }
         }
         if (!amount && item.contains(QStringLiteral("amount"))) {
             amount = tbankMoney(item.value(QStringLiteral("amount")), currency);

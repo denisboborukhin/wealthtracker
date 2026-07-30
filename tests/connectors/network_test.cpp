@@ -269,7 +269,7 @@ TEST_CASE("T-Bank Business responses normalize statement signs and cursor")
         QStringLiteral("2026-07-30T10:00:00Z"), Qt::ISODate);
     const auto accounts = TBankBusinessClient::parseAccountsResponse(
         QByteArrayLiteral(
-            R"({"accounts":[{"accountNumber":"40702810000000000001","name":"Расчётный","accountType":"Checking","currency":"RUB","balance":"1200.50","status":"OPEN"}]})"),
+            R"([{"accountNumber":"40702810000000000001","name":"Расчётный","accountType":"Current","currency":"643","balance":{"balance":1200.50,"realOtb":1100.25,"otb":1300},"status":"NORM"}])"),
         observedAt);
     REQUIRE(accounts);
     REQUIRE(accounts->balances.size() == 1);
@@ -278,7 +278,7 @@ TEST_CASE("T-Bank Business responses normalize statement signs and cursor")
 
     const auto statement = TBankBusinessClient::parseStatementResponse(
         QByteArrayLiteral(
-            R"({"operations":[{"operationId":"tbank-operation-1","operationDate":"2026-07-29T08:15:00Z","credit":"150.25","debit":"0","currency":"RUB","description":"Оплата от клиента"},{"operationId":"tbank-operation-2","operationDate":"2026-07-29T09:15:00Z","credit":"0","debit":"25.10","currency":"RUB","description":"Комиссия"}],"nextCursor":"cursor-2"})"),
+            R"({"balances":{"balanceBegin":1000,"balanceEnd":1125.15},"operations":[{"operationId":"tbank-operation-1","operationDate":"2026-07-29T08:15:00Z","typeOfOperation":"Credit","accountAmount":150.25,"accountCurrencyDigitalCode":"643","description":"Оплата от клиента"},{"operationId":"tbank-operation-2","operationDate":"2026-07-29T09:15:00Z","typeOfOperation":"Debit","accountAmount":25.10,"accountCurrencyDigitalCode":"643","description":"Комиссия"}],"nextCursor":"cursor-2"})"),
         QStringLiteral("40702810000000000001"));
     REQUIRE(statement);
     REQUIRE(statement->transactions.size() == 2);
