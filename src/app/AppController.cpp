@@ -1,13 +1,23 @@
 #include "app/AppController.hpp"
 
 #include <QDate>
+#include <QCryptographicHash>
+#include <QDir>
+#include <QFile>
 #include <QFileInfo>
 #include <QHash>
+#include <QJsonDocument>
+#include <QJsonObject>
 #include <QLocale>
 #include <QNetworkAccessManager>
 #include <QNetworkReply>
 #include <QPointer>
+#include <QProcess>
+#include <QSettings>
 #include <QSet>
+#include <QStandardPaths>
+#include <QTemporaryFile>
+#include <QTimer>
 #include <QUrl>
 
 #include <algorithm>
@@ -32,6 +42,9 @@ using wealthtracker::connectors::ILiveConnector;
 using wealthtracker::connectors::LiveSyncRequest;
 using wealthtracker::connectors::Money;
 using wealthtracker::connectors::NormalizedBatch;
+using wealthtracker::connectors::ZenPluginDescriptor;
+using wealthtracker::connectors::ZenPluginEvent;
+using wealthtracker::connectors::ZenPluginEventKind;
 
 class SystemCredentialBackend final : public CredentialBackend {
 public:
@@ -202,6 +215,230 @@ QString connectorAccent(const QString& connectorId) {
     }
     return QStringLiteral("#2563EB");
 }
+
+QString nodeExecutable() {
+    auto executable =
+        QStandardPaths::findExecutable(QStringLiteral("node"));
+    if (!executable.isEmpty()) {
+        return executable;
+    }
+    for (const auto& candidate :
+         {QStringLiteral("/opt/homebrew/bin/node"),
+          QStringLiteral("/usr/local/bin/node"),
+          QStringLiteral("/usr/bin/node")}) {
+        const QFileInfo file(candidate);
+        if (file.isFile() && file.isExecutable()) {
+            return candidate;
+        }
+    }
+    return {};
+}
+
+QString zenStateCredentialKey(const ZenPluginDescriptor& descriptor) {
+    QCryptographicHash hash(QCryptographicHash::Sha256);
+    hash.addData(descriptor.pluginId.toUtf8());
+    hash.addData("\n");
+    hash.addData(descriptor.bundlePath.toUtf8());
+    return QStringLiteral("zen-plugin-state-%1")
+        .arg(QString::fromLatin1(hash.result().toHex()));
+}
+
+QString zenPreferenceKindName(
+    const wealthtracker::connectors::ZenPluginPreferenceKind kind) {
+    using wealthtracker::connectors::ZenPluginPreferenceKind;
+    switch (kind) {
+        case ZenPluginPreferenceKind::Password:
+            return QStringLiteral("password");
+        case ZenPluginPreferenceKind::Phone:
+            return QStringLiteral("phone");
+        case ZenPluginPreferenceKind::Number:
+            return QStringLiteral("number");
+        case ZenPluginPreferenceKind::Date:
+            return QStringLiteral("date");
+        case ZenPluginPreferenceKind::Checkbox:
+            return QStringLiteral("checkbox");
+        case ZenPluginPreferenceKind::Choice:
+            return QStringLiteral("choice");
+        case ZenPluginPreferenceKind::Text:
+            return QStringLiteral("text");
+    }
+    return QStringLiteral("text");
+}
+
+class ZenPluginRunner final : public QObject {
+public:
+    using Prompted =
+        std::function<void(wealthtracker::connectors::ZenPluginPrompt)>;
+    using Completed = std::function<void(NormalizedBatch, QJsonObject)>;
+    using Failed = std::function<void(QString)>;
+
+    ZenPluginRunner(QString pluginId, Prompted prompted,
+                    Completed completed, Failed failed, QObject* parent)
+        : QObject(parent),
+          plugin_id_(std::move(pluginId)),
+          prompted_(std::move(prompted)),
+          completed_(std::move(completed)),
+          failed_(std::move(failed)),
+          host_file_(QDir::tempPath()
+                     + QStringLiteral(
+                         "/wealthtracker-zen-host-XXXXXX.mjs")) {
+        host_file_.setAutoRemove(true);
+        QFile resource(
+            QStringLiteral(
+                ":/org/wealthtracker/runtime/scripts/zen_plugin_host.mjs"));
+        host_ready_ =
+            resource.open(QIODevice::ReadOnly) && host_file_.open()
+            && host_file_.write(resource.readAll()) > 0
+            && host_file_.flush();
+        host_file_.close();
+
+        process_.setProcessChannelMode(QProcess::SeparateChannels);
+        connect(&process_, &QProcess::readyReadStandardOutput, this,
+                [this] { readOutput(); });
+        connect(&process_, &QProcess::readyReadStandardError, this,
+                [this] { (void)process_.readAllStandardError(); });
+        connect(
+            &process_,
+            qOverload<int, QProcess::ExitStatus>(&QProcess::finished),
+            this, [this](int, QProcess::ExitStatus) {
+                if (!terminal_) {
+                    fail(QStringLiteral(
+                        "Локальный процесс плагина завершился без результата"));
+                }
+            });
+        connect(&process_, &QProcess::errorOccurred, this,
+                [this](QProcess::ProcessError) {
+                    if (!terminal_) {
+                        fail(QStringLiteral(
+                            "Не удалось запустить локальный процесс плагина"));
+                    }
+                });
+        timeout_.setSingleShot(true);
+        timeout_.setInterval(10 * 60 * 1000);
+        connect(&timeout_, &QTimer::timeout, this, [this] {
+            fail(QStringLiteral(
+                "Плагин превысил лимит времени синхронизации"));
+        });
+    }
+
+    ~ZenPluginRunner() override {
+        if (process_.state() != QProcess::NotRunning) {
+            process_.kill();
+            process_.waitForFinished(1000);
+        }
+    }
+
+    bool start(const QString& executable, const QByteArray& startMessage) {
+        if (!host_ready_ || executable.isEmpty()
+            || startMessage.isEmpty()) {
+            return false;
+        }
+        pending_start_message_ = startMessage;
+        connect(&process_, &QProcess::started, this, [this] {
+            process_.write(pending_start_message_);
+            pending_start_message_.fill('\0');
+            pending_start_message_.clear();
+            timeout_.start();
+        });
+        process_.start(executable, {host_file_.fileName()});
+        return true;
+    }
+
+    bool answer(const QByteArray& message) {
+        if (terminal_ || prompt_id_.isEmpty()
+            || process_.state() != QProcess::Running
+            || message.isEmpty()) {
+            return false;
+        }
+        process_.write(message);
+        prompt_id_.clear();
+        return true;
+    }
+
+    void cancel() {
+        if (terminal_) {
+            return;
+        }
+        terminal_ = true;
+        timeout_.stop();
+        pending_start_message_.fill('\0');
+        output_.fill('\0');
+        process_.kill();
+    }
+
+private:
+    static constexpr qsizetype maximumOutputBytes =
+        8 * 1024 * 1024;
+
+    void readOutput() {
+        output_ += process_.readAllStandardOutput();
+        if (output_.size() > maximumOutputBytes) {
+            fail(QStringLiteral(
+                "Ответ плагина превысил безопасный лимит"));
+            return;
+        }
+        qsizetype newline = -1;
+        while (!terminal_
+               && (newline = output_.indexOf('\n')) >= 0) {
+            const auto line = output_.first(newline);
+            output_.remove(0, newline + 1);
+            auto event =
+                wealthtracker::connectors::parseZenPluginEvent(
+                    line, plugin_id_);
+            if (!event) {
+                fail(event.error().message);
+                return;
+            }
+            handleEvent(std::move(*event));
+        }
+    }
+
+    void handleEvent(ZenPluginEvent event) {
+        if (event.kind == ZenPluginEventKind::Prompt) {
+            if (!prompt_id_.isEmpty()) {
+                fail(QStringLiteral(
+                    "Плагин запросил несколько кодов одновременно"));
+                return;
+            }
+            prompt_id_ = event.prompt.requestId;
+            prompted_(std::move(event.prompt));
+            return;
+        }
+        terminal_ = true;
+        timeout_.stop();
+        if (event.kind == ZenPluginEventKind::Result) {
+            completed_(std::move(event.batch),
+                       std::move(event.state));
+        } else {
+            failed_(event.message);
+        }
+    }
+
+    void fail(const QString& message) {
+        if (terminal_) {
+            return;
+        }
+        terminal_ = true;
+        timeout_.stop();
+        pending_start_message_.fill('\0');
+        output_.fill('\0');
+        process_.kill();
+        failed_(message);
+    }
+
+    QString plugin_id_;
+    QString prompt_id_;
+    Prompted prompted_;
+    Completed completed_;
+    Failed failed_;
+    QProcess process_;
+    QTimer timeout_;
+    QTemporaryFile host_file_;
+    QByteArray pending_start_message_;
+    QByteArray output_;
+    bool host_ready_ = false;
+    bool terminal_ = false;
+};
 
 struct BankRuntime {
     ILiveConnector* connector = nullptr;
@@ -412,6 +649,10 @@ public:
     wealthtracker::connectors::TBankBusinessClient tbank_business;
     wealthtracker::connectors::ModulbankClient modulbank;
     QHash<QString, wealthtracker::connectors::NormalizedBatch> bank_batches;
+    QHash<QString, QString> bank_institutions;
+    std::optional<ZenPluginDescriptor> zen_descriptor;
+    std::unique_ptr<ZenPluginRunner> zen_runner;
+    QString zen_prompt_id;
 };
 
 AppController::AppController(QObject* parent)
@@ -459,7 +700,43 @@ AppController::AppController(std::unique_ptr<CredentialBackend> credentials,
         investment_connected_ =
             connected_bank_ids_.contains(QStringLiteral("t-invest"));
     }
+
+    QSettings settings;
+    const auto configuredBundle =
+        settings.value(QStringLiteral("zenPlugin/bundlePath"))
+            .toString();
+    if (!configuredBundle.isEmpty()) {
+        auto descriptor =
+            wealthtracker::connectors::inspectZenPluginBundle(
+                configuredBundle);
+        if (descriptor) {
+            private_->zen_descriptor = std::move(*descriptor);
+            zen_plugin_id_ = private_->zen_descriptor->pluginId;
+            zen_plugin_bundle_path_ =
+                private_->zen_descriptor->bundlePath;
+            zen_plugin_institution_ =
+                settings
+                    .value(QStringLiteral("zenPlugin/institution"),
+                           zen_plugin_id_)
+                    .toString();
+            for (const auto& field :
+                 private_->zen_descriptor->preferences) {
+                zen_plugin_fields_.push_back(QVariantMap{
+                    {QStringLiteral("key"), field.key},
+                    {QStringLiteral("label"), field.label},
+                    {QStringLiteral("kind"),
+                     zenPreferenceKindName(field.kind)},
+                    {QStringLiteral("defaultValue"),
+                     field.defaultValue},
+                    {QStringLiteral("required"), field.required},
+                    {QStringLiteral("sensitive"), field.sensitive},
+                });
+            }
+        }
+    }
     refreshBankConnections();
+    import_status_ = QStringLiteral("Нет импортированных выписок");
+    sync_status_ = QStringLiteral("Нет синхронизированных подключений");
     loadDemoData();
 }
 
@@ -496,13 +773,48 @@ QString AppController::importStatus() const { return import_status_; }
 QString AppController::syncStatus() const { return sync_status_; }
 bool AppController::locked() const noexcept { return locked_; }
 bool AppController::demoMode() const noexcept { return demo_mode_; }
+bool AppController::hasFinancialData() const noexcept {
+    return accounts_.rowCount() > 0;
+}
 bool AppController::investmentConnected() const noexcept {
     return investment_connected_;
 }
 QString AppController::connectionMessage() const { return connection_message_; }
+QVariantList AppController::zenPluginFields() const {
+    return zen_plugin_fields_;
+}
+QString AppController::zenPluginId() const { return zen_plugin_id_; }
+QString AppController::zenPluginBundlePath() const {
+    return zen_plugin_bundle_path_;
+}
+QString AppController::zenPluginInstitution() const {
+    return zen_plugin_institution_;
+}
+QString AppController::zenPluginPrompt() const {
+    return zen_plugin_prompt_;
+}
+bool AppController::zenPluginPromptSecret() const noexcept {
+    return zen_plugin_prompt_secret_;
+}
+bool AppController::zenPluginRunning() const noexcept {
+    return zen_plugin_running_;
+}
 
 void AppController::refreshBankConnections() {
     bank_connections_.replace({
+        {QStringLiteral("zenplugins-local"),
+         private_->zen_descriptor
+             ? zen_plugin_institution_
+             : QStringLiteral("Локальный ZenPlugins"),
+         QStringLiteral("Счета, остатки и операции"),
+         QStringLiteral("Внешний bundle · локальный процесс"),
+         nodeExecutable().isEmpty()
+             ? QStringLiteral("Требуется Node.js")
+             : private_->zen_descriptor
+                 ? QStringLiteral("Настроен")
+                 : QStringLiteral("Выберите bundle"),
+         private_->zen_descriptor.has_value(),
+         !nodeExecutable().isEmpty()},
         {QStringLiteral("tbank-retail"),
          QStringLiteral("Т-Банк"),
          QStringLiteral("Карты, счета и операции"),
@@ -1032,7 +1344,10 @@ void AppController::rebuildBankModels() {
     for (auto bank = private_->bank_batches.cbegin();
          bank != private_->bank_batches.cend(); ++bank) {
         const auto configuration = bankConfiguration(bank.key());
-        if (!configuration) {
+        const auto institution =
+            configuration ? configuration->institution
+                          : private_->bank_institutions.value(bank.key());
+        if (institution.isEmpty()) {
             continue;
         }
         QHash<QString, Money> balances;
@@ -1048,7 +1363,7 @@ void AppController::rebuildBankModels() {
                 account.externalId, Money{0, account.currency});
             accountRows.push_back({
                 account.name,
-                configuration->institution,
+                institution,
                 account.kind,
                 formatMinorUnits(balance.minorUnits),
                 currencySymbol(balance.currency),
@@ -1065,7 +1380,7 @@ void AppController::rebuildBankModels() {
             }
             auto subtitle = transaction.description.trimmed();
             if (subtitle.isEmpty() || subtitle == title) {
-                subtitle = configuration->institution;
+                subtitle = institution;
             }
             const auto category = transaction.bankCategory.trimmed().isEmpty()
                 ? QStringLiteral("Без категории")
@@ -1177,8 +1492,348 @@ void AppController::rebuildBankModels() {
     }
 }
 
+bool AppController::inspectZenPluginBundle(const QUrl& source) {
+    if (zen_plugin_running_) {
+        sync_status_ =
+            QStringLiteral("Сначала завершите текущую синхронизацию");
+        emit syncStatusChanged();
+        return false;
+    }
+    if (!source.isLocalFile()) {
+        sync_status_ =
+            QStringLiteral("Можно выбрать только локальный файл bundle");
+        emit syncStatusChanged();
+        return false;
+    }
+
+    auto descriptor =
+        wealthtracker::connectors::inspectZenPluginBundle(
+            source.toLocalFile());
+    if (!descriptor) {
+        sync_status_ = descriptor.error().message;
+        if (!descriptor.error().detail.isEmpty()) {
+            sync_status_ +=
+                QStringLiteral(" · ") + descriptor.error().detail;
+        }
+        emit syncStatusChanged();
+        return false;
+    }
+
+    private_->zen_descriptor = std::move(*descriptor);
+    zen_plugin_id_ = private_->zen_descriptor->pluginId;
+    zen_plugin_bundle_path_ =
+        private_->zen_descriptor->bundlePath;
+    zen_plugin_institution_ =
+        zen_plugin_id_ == QStringLiteral("altabanka-rs")
+        ? QStringLiteral("Alta Banka (Сербия)")
+        : zen_plugin_id_;
+    zen_plugin_fields_.clear();
+    for (const auto& field : private_->zen_descriptor->preferences) {
+        zen_plugin_fields_.push_back(QVariantMap{
+            {QStringLiteral("key"), field.key},
+            {QStringLiteral("label"), field.label},
+            {QStringLiteral("kind"),
+             zenPreferenceKindName(field.kind)},
+            {QStringLiteral("defaultValue"), field.defaultValue},
+            {QStringLiteral("required"), field.required},
+            {QStringLiteral("sensitive"), field.sensitive},
+        });
+    }
+    sync_status_ =
+        QStringLiteral("%1: bundle проверен · полей %2")
+            .arg(zen_plugin_id_)
+            .arg(zen_plugin_fields_.size());
+    emit zenPluginChanged();
+    emit syncStatusChanged();
+    return true;
+}
+
+bool AppController::startZenPlugin(
+    const QString& institution, const QVariantMap& preferences) {
+    if (zen_plugin_running_ || !private_->zen_descriptor) {
+        sync_status_ = zen_plugin_running_
+            ? QStringLiteral("Плагин уже выполняется")
+            : QStringLiteral("Сначала выберите собранный bundle");
+        emit syncStatusChanged();
+        return false;
+    }
+    const auto node = nodeExecutable();
+    if (node.isEmpty()) {
+        sync_status_ =
+            QStringLiteral("Для внешних JavaScript-плагинов нужен Node.js 18+");
+        emit syncStatusChanged();
+        return false;
+    }
+    if (!private_->credentials
+        || !private_->credentials->supported()) {
+        sync_status_ = QStringLiteral(
+            "Системное хранилище секретов нужно для состояния плагина");
+        emit syncStatusChanged();
+        return false;
+    }
+    const auto displayName = institution.trimmed();
+    if (displayName.isEmpty() || displayName.size() > 160) {
+        sync_status_ =
+            QStringLiteral("Укажите короткое название банка");
+        emit syncStatusChanged();
+        return false;
+    }
+
+    QJsonObject normalizedPreferences;
+    QDateTime from =
+        QDateTime(QDate::currentDate().addYears(-1), QTime(0, 0),
+                  QTimeZone::UTC);
+    for (const auto& field :
+         private_->zen_descriptor->preferences) {
+        auto value =
+            preferences.value(field.key, field.defaultValue);
+        if (field.kind
+            == wealthtracker::connectors::
+                ZenPluginPreferenceKind::Checkbox) {
+            normalizedPreferences.insert(field.key, value.toBool());
+        } else {
+            const auto text = value.toString();
+            if (field.required && text.trimmed().isEmpty()) {
+                sync_status_ =
+                    QStringLiteral("Заполните поле «%1»")
+                        .arg(field.label);
+                emit syncStatusChanged();
+                return false;
+            }
+            normalizedPreferences.insert(field.key, text);
+            if (field.key == QStringLiteral("startDate")) {
+                auto parsed =
+                    QDateTime::fromString(text, Qt::ISODateWithMs);
+                if (!parsed.isValid()) {
+                    parsed =
+                        QDateTime::fromString(text, Qt::ISODate);
+                }
+                if (parsed.isValid()) {
+                    from = parsed.toUTC();
+                }
+            }
+        }
+    }
+
+    QJsonObject state;
+    const auto stateKey =
+        zenStateCredentialKey(*private_->zen_descriptor);
+    auto savedState = private_->credentials->get(stateKey);
+    if (!savedState) {
+        sync_status_ = savedState.error();
+        emit syncStatusChanged();
+        return false;
+    }
+    if (*savedState) {
+        QByteArray encoded = std::move(**savedState);
+        QJsonParseError parseError;
+        const auto document =
+            QJsonDocument::fromJson(encoded, &parseError);
+        encoded.fill('\0');
+        if (parseError.error == QJsonParseError::NoError
+            && document.isObject()) {
+            state = document.object();
+        } else {
+            const auto removed =
+                private_->credentials->remove(stateKey);
+            if (!removed) {
+                sync_status_ = removed.error();
+                emit syncStatusChanged();
+                return false;
+            }
+        }
+    }
+
+    const wealthtracker::connectors::ZenPluginRunRequest request{
+        .descriptor = *private_->zen_descriptor,
+        .preferences = std::move(normalizedPreferences),
+        .state = std::move(state),
+        .from = from,
+        .to = QDateTime::currentDateTimeUtc(),
+    };
+    auto startMessage =
+        wealthtracker::connectors::makeZenPluginStartMessage(
+            request);
+    if (!startMessage) {
+        sync_status_ = startMessage.error().message;
+        emit syncStatusChanged();
+        return false;
+    }
+
+    const auto pluginId = private_->zen_descriptor->pluginId;
+    const auto batchKey =
+        QStringLiteral("zen:") + pluginId;
+    zen_plugin_institution_ = displayName;
+    private_->zen_prompt_id.clear();
+    private_->zen_runner = std::make_unique<ZenPluginRunner>(
+        pluginId,
+        [this](wealthtracker::connectors::ZenPluginPrompt prompt) {
+            private_->zen_prompt_id = prompt.requestId;
+            zen_plugin_prompt_ = prompt.message;
+            zen_plugin_prompt_secret_ = true;
+            sync_status_ =
+                QStringLiteral("Плагин ждёт одноразовый ответ");
+            emit zenPluginChanged();
+            emit syncStatusChanged();
+        },
+        [this, batchKey, stateKey,
+         displayName](NormalizedBatch batch, QJsonObject newState) {
+            auto encoded =
+                QJsonDocument(newState).toJson(
+                    QJsonDocument::Compact);
+            const auto stored =
+                private_->credentials->put(stateKey, encoded);
+            encoded.fill('\0');
+
+            const auto accountCount = batch.accounts.size();
+            const auto transactionCount =
+                batch.transactions.size();
+            private_->bank_batches.insert(batchKey,
+                                          std::move(batch));
+            private_->bank_institutions.insert(batchKey,
+                                               displayName);
+            rebuildBankModels();
+
+            QSettings settings;
+            settings.setValue(
+                QStringLiteral("zenPlugin/bundlePath"),
+                private_->zen_descriptor->bundlePath);
+            settings.setValue(
+                QStringLiteral("zenPlugin/institution"),
+                displayName);
+            zen_plugin_running_ = false;
+            zen_plugin_prompt_.clear();
+            private_->zen_prompt_id.clear();
+            sync_status_ =
+                QStringLiteral("%1: счетов %2 · операций %3")
+                    .arg(displayName)
+                    .arg(accountCount)
+                    .arg(transactionCount);
+            if (!stored) {
+                sync_status_ += QStringLiteral(
+                    " · состояние сессии не сохранено");
+            }
+            refreshBankConnections();
+            emit zenPluginChanged();
+            emit syncStatusChanged();
+        },
+        [this, displayName](const QString& error) {
+            zen_plugin_running_ = false;
+            zen_plugin_prompt_.clear();
+            private_->zen_prompt_id.clear();
+            sync_status_ =
+                QStringLiteral("%1: %2").arg(displayName, error);
+            emit zenPluginChanged();
+            emit syncStatusChanged();
+        },
+        this);
+
+    zen_plugin_running_ = true;
+    zen_plugin_prompt_.clear();
+    sync_status_ =
+        QStringLiteral("%1: запускаем локальный плагин…")
+            .arg(displayName);
+    if (!private_->zen_runner->start(node, *startMessage)) {
+        startMessage->fill('\0');
+        private_->zen_runner.reset();
+        zen_plugin_running_ = false;
+        sync_status_ =
+            QStringLiteral("Не удалось подготовить локальный host плагина");
+        emit zenPluginChanged();
+        emit syncStatusChanged();
+        return false;
+    }
+    startMessage->fill('\0');
+    emit zenPluginChanged();
+    emit syncStatusChanged();
+    return true;
+}
+
+bool AppController::answerZenPluginPrompt(const QString& value) {
+    if (!private_->zen_runner
+        || private_->zen_prompt_id.isEmpty()) {
+        return false;
+    }
+    auto encoded = value.toUtf8();
+    auto message =
+        wealthtracker::connectors::makeZenPluginInputMessage(
+            private_->zen_prompt_id, encoded);
+    encoded.fill('\0');
+    if (!message) {
+        sync_status_ = message.error().message;
+        emit syncStatusChanged();
+        return false;
+    }
+    const auto accepted = private_->zen_runner->answer(*message);
+    message->fill('\0');
+    if (!accepted) {
+        return false;
+    }
+    private_->zen_prompt_id.clear();
+    zen_plugin_prompt_.clear();
+    sync_status_ =
+        QStringLiteral("Ответ передан локальному плагину");
+    emit zenPluginChanged();
+    emit syncStatusChanged();
+    return true;
+}
+
+void AppController::cancelZenPlugin() {
+    if (private_->zen_runner) {
+        private_->zen_runner->cancel();
+    }
+    zen_plugin_running_ = false;
+    zen_plugin_prompt_.clear();
+    private_->zen_prompt_id.clear();
+    sync_status_ = QStringLiteral("Синхронизация плагина отменена");
+    emit zenPluginChanged();
+    emit syncStatusChanged();
+}
+
+void AppController::removeZenPlugin() {
+    cancelZenPlugin();
+    if (private_->zen_descriptor && private_->credentials) {
+        const auto removed = private_->credentials->remove(
+            zenStateCredentialKey(*private_->zen_descriptor));
+        if (!removed) {
+            sync_status_ = removed.error();
+            emit syncStatusChanged();
+            return;
+        }
+        private_->bank_batches.remove(
+            QStringLiteral("zen:")
+            + private_->zen_descriptor->pluginId);
+        private_->bank_institutions.remove(
+            QStringLiteral("zen:")
+            + private_->zen_descriptor->pluginId);
+    }
+    QSettings settings;
+    settings.remove(QStringLiteral("zenPlugin"));
+    private_->zen_descriptor.reset();
+    zen_plugin_fields_.clear();
+    zen_plugin_id_.clear();
+    zen_plugin_bundle_path_.clear();
+    zen_plugin_institution_.clear();
+    if (!demo_mode_) {
+        rebuildBankModels();
+    }
+    sync_status_ =
+        QStringLiteral("Конфигурация локального плагина удалена");
+    refreshBankConnections();
+    emit zenPluginChanged();
+    emit syncStatusChanged();
+}
+
 void AppController::describeBankConnection(const QString& connectorId) {
-    if (connectorId == QStringLiteral("alfa-api")) {
+    if (connectorId == QStringLiteral("zenplugins-local")) {
+        connection_message_ = QStringLiteral(
+            "Выберите bundle, который вы самостоятельно собрали из "
+            "ZenPlugins. Он запускается отдельным локальным процессом и "
+            "может обращаться к сети от вашего имени. Проверяйте исходный "
+            "код и commit перед запуском. Пароли и одноразовые коды не "
+            "сохраняются; состояние сессии хранится в системном хранилище "
+            "ключей.");
+    } else if (connectorId == QStringLiteral("alfa-api")) {
         connection_message_ = QStringLiteral(
             "Нужен access token приложения Альфа-Банка со scope для счетов и "
             "истории операций. Доступ выдаётся через кабинет разработчика.");

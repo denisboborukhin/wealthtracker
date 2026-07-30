@@ -3,9 +3,17 @@
 
 #include <catch2/catch_test_macros.hpp>
 
+#include <QCoreApplication>
+#include <QElapsedTimer>
+#include <QEventLoop>
 #include <QHash>
+#include <QSettings>
+#include <QStandardPaths>
+#include <QThread>
+#include <QUrl>
 
 #include <expected>
+#include <functional>
 #include <memory>
 #include <optional>
 
@@ -51,6 +59,30 @@ bool connectionState(QAbstractItemModel* model, const QString& connectorId) {
     return false;
 }
 
+bool waitUntil(const std::function<bool()>& predicate,
+               const int timeoutMilliseconds = 5000) {
+    QElapsedTimer timer;
+    timer.start();
+    while (timer.elapsed() < timeoutMilliseconds) {
+        QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
+        if (predicate()) {
+            return true;
+        }
+        QThread::msleep(10);
+    }
+    return predicate();
+}
+
+class ZenSettingsCleanup final {
+public:
+    ZenSettingsCleanup() {
+        QSettings{}.remove(QStringLiteral("zenPlugin"));
+    }
+    ~ZenSettingsCleanup() {
+        QSettings{}.remove(QStringLiteral("zenPlugin"));
+    }
+};
+
 }  // namespace
 
 TEST_CASE("official bank tokens have independent credential state") {
@@ -88,6 +120,46 @@ TEST_CASE("official bank tokens have independent credential state") {
                                 QStringLiteral("alfa-api")));
     CHECK(connectionState(controller.bankConnections(),
                           QStringLiteral("modulbank")));
+}
+
+TEST_CASE("application runs a selected local bundle through the embedded host") {
+    if (QStandardPaths::findExecutable(QStringLiteral("node")).isEmpty()) {
+        SKIP("Node.js is not installed");
+    }
+    const ZenSettingsCleanup cleanup;
+    auto credentials = std::make_unique<MemoryCredentialBackend>();
+    wealthtracker::app::AppController controller(std::move(credentials),
+                                                  nullptr);
+    const auto fixture = QStringLiteral(
+        WEALTHTRACKER_SOURCE_DIR
+        "/tests/fixtures/zen_plugin_fixture.cjs");
+
+    REQUIRE(controller.inspectZenPluginBundle(
+        QUrl::fromLocalFile(fixture)));
+    CHECK(controller.zenPluginId()
+          == QStringLiteral("zen_plugin_fixture"));
+    REQUIRE(controller.startZenPlugin(
+        QStringLiteral("Fixture Bank"),
+        {{QStringLiteral("login"), QStringLiteral("fixture")},
+         {QStringLiteral("password"),
+          QStringLiteral("session-only-secret")},
+         {QStringLiteral("startDate"),
+          QStringLiteral("2026-07-01T00:00:00.000Z")}}));
+    REQUIRE(waitUntil([&controller] {
+        return !controller.zenPluginPrompt().isEmpty();
+    }));
+    REQUIRE(controller.answerZenPluginPrompt(
+        QStringLiteral("123456")));
+    REQUIRE(waitUntil([&controller] {
+        return !controller.zenPluginRunning();
+    }));
+    CHECK(controller.accounts()->rowCount() == 1);
+    CHECK(controller.transactions()->rowCount() == 1);
+    CHECK_FALSE(controller.demoMode());
+    CHECK(controller.syncStatus().contains(
+        QStringLiteral("Fixture Bank")));
+
+    controller.removeZenPlugin();
 }
 
 TEST_CASE("bank connection state rejects malformed and unknown tokens") {

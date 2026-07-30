@@ -138,6 +138,14 @@ target_sources(
         src/app/FinanceModels.cpp
 )
 target_include_directories(app PUBLIC include)
+qt_add_resources(
+    app
+    zen_plugin_runtime
+    PREFIX
+        "/org/wealthtracker/runtime"
+    FILES
+        scripts/zen_plugin_host.mjs
+)
 target_link_libraries(
     app
     PUBLIC
@@ -273,6 +281,11 @@ if(BUILD_TESTING)
         tests/app/bank_connections_test.cpp
     )
     target_link_libraries(app_tests PRIVATE app Catch2::Catch2)
+    target_compile_definitions(
+        app_tests
+        PRIVATE
+            WEALTHTRACKER_SOURCE_DIR="${CMAKE_CURRENT_SOURCE_DIR}"
+    )
     enable_strict_warnings(app_tests)
     enable_sanitizers(app_tests)
     catch_discover_tests(app_tests)

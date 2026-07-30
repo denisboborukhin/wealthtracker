@@ -7,6 +7,7 @@
 #include <QSet>
 #include <QString>
 #include <QVariantList>
+#include <QVariantMap>
 
 #include <expected>
 #include <memory>
@@ -45,8 +46,16 @@ class AppController final : public QObject {
     Q_PROPERTY(QString syncStatus READ syncStatus NOTIFY syncStatusChanged)
     Q_PROPERTY(bool locked READ locked NOTIFY lockedChanged)
     Q_PROPERTY(bool demoMode READ demoMode NOTIFY demoModeChanged)
+    Q_PROPERTY(bool hasFinancialData READ hasFinancialData NOTIFY dashboardChanged)
     Q_PROPERTY(bool investmentConnected READ investmentConnected NOTIFY investmentConnectedChanged)
     Q_PROPERTY(QString connectionMessage READ connectionMessage NOTIFY connectionMessageChanged)
+    Q_PROPERTY(QVariantList zenPluginFields READ zenPluginFields NOTIFY zenPluginChanged)
+    Q_PROPERTY(QString zenPluginId READ zenPluginId NOTIFY zenPluginChanged)
+    Q_PROPERTY(QString zenPluginBundlePath READ zenPluginBundlePath NOTIFY zenPluginChanged)
+    Q_PROPERTY(QString zenPluginInstitution READ zenPluginInstitution NOTIFY zenPluginChanged)
+    Q_PROPERTY(QString zenPluginPrompt READ zenPluginPrompt NOTIFY zenPluginChanged)
+    Q_PROPERTY(bool zenPluginPromptSecret READ zenPluginPromptSecret NOTIFY zenPluginChanged)
+    Q_PROPERTY(bool zenPluginRunning READ zenPluginRunning NOTIFY zenPluginChanged)
 
 public:
     explicit AppController(QObject* parent = nullptr);
@@ -69,8 +78,16 @@ public:
     [[nodiscard]] QString syncStatus() const;
     [[nodiscard]] bool locked() const noexcept;
     [[nodiscard]] bool demoMode() const noexcept;
+    [[nodiscard]] bool hasFinancialData() const noexcept;
     [[nodiscard]] bool investmentConnected() const noexcept;
     [[nodiscard]] QString connectionMessage() const;
+    [[nodiscard]] QVariantList zenPluginFields() const;
+    [[nodiscard]] QString zenPluginId() const;
+    [[nodiscard]] QString zenPluginBundlePath() const;
+    [[nodiscard]] QString zenPluginInstitution() const;
+    [[nodiscard]] QString zenPluginPrompt() const;
+    [[nodiscard]] bool zenPluginPromptSecret() const noexcept;
+    [[nodiscard]] bool zenPluginRunning() const noexcept;
 
     Q_INVOKABLE void loadDemoData();
     Q_INVOKABLE void clearDemoData();
@@ -84,6 +101,12 @@ public:
     Q_INVOKABLE void removeBankToken(const QString& connectorId);
     Q_INVOKABLE void synchronizeBank(const QString& connectorId);
     Q_INVOKABLE void describeBankConnection(const QString& connectorId);
+    Q_INVOKABLE bool inspectZenPluginBundle(const QUrl& source);
+    Q_INVOKABLE bool startZenPlugin(const QString& institution,
+                                    const QVariantMap& preferences);
+    Q_INVOKABLE bool answerZenPluginPrompt(const QString& value);
+    Q_INVOKABLE void cancelZenPlugin();
+    Q_INVOKABLE void removeZenPlugin();
 
 signals:
     void dashboardChanged();
@@ -93,6 +116,7 @@ signals:
     void demoModeChanged();
     void investmentConnectedChanged();
     void connectionMessageChanged();
+    void zenPluginChanged();
 
 private:
     AccountModel accounts_;
@@ -104,6 +128,13 @@ private:
     QString import_status_;
     QString sync_status_;
     QString connection_message_;
+    QVariantList zen_plugin_fields_;
+    QString zen_plugin_id_;
+    QString zen_plugin_bundle_path_;
+    QString zen_plugin_institution_;
+    QString zen_plugin_prompt_;
+    bool zen_plugin_prompt_secret_ = true;
+    bool zen_plugin_running_ = false;
     QString live_net_worth_ = QStringLiteral("0 ₽");
     QString live_monthly_income_ = QStringLiteral("0 ₽");
     QString live_monthly_spending_ = QStringLiteral("0 ₽");
