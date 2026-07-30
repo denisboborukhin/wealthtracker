@@ -307,6 +307,69 @@ public:
     synchronizeAuthenticated(const LiveSyncRequest &request) = 0;
 };
 
+enum class ZenPluginPreferenceKind {
+    Text,
+    Password,
+    Phone,
+    Number,
+    Date,
+    Checkbox,
+    Choice,
+};
+
+struct ZenPluginPreference {
+    QString key;
+    QString label;
+    ZenPluginPreferenceKind kind{ZenPluginPreferenceKind::Text};
+    QString defaultValue;
+    QStringList choices;
+    bool required{false};
+    bool sensitive{false};
+};
+
+struct ZenPluginDescriptor {
+    QString pluginId;
+    QString bundlePath;
+    QString preferencesPath;
+    QVector<ZenPluginPreference> preferences;
+};
+
+struct ZenPluginRunRequest {
+    ZenPluginDescriptor descriptor;
+    QJsonObject preferences;
+    QJsonObject state;
+    QDateTime from;
+    QDateTime to;
+};
+
+struct ZenPluginPrompt {
+    QString requestId;
+    QString message;
+    QString inputType;
+    int timeoutMilliseconds{120000};
+};
+
+enum class ZenPluginEventKind { Prompt, Result, Error };
+
+struct ZenPluginEvent {
+    ZenPluginEventKind kind{ZenPluginEventKind::Error};
+    ZenPluginPrompt prompt;
+    NormalizedBatch batch;
+    QJsonObject state;
+    QString message;
+    bool retryable{false};
+};
+
+[[nodiscard]] ConnectorResult<ZenPluginDescriptor>
+inspectZenPluginBundle(const QString &bundlePath);
+[[nodiscard]] ConnectorResult<QByteArray>
+makeZenPluginStartMessage(const ZenPluginRunRequest &request);
+[[nodiscard]] ConnectorResult<QByteArray>
+makeZenPluginInputMessage(const QString &requestId, const QByteArray &value);
+[[nodiscard]] ConnectorResult<ZenPluginEvent>
+parseZenPluginEvent(const QByteArray &line, const QString &pluginId,
+                    const QDateTime &observedAt = QDateTime::currentDateTimeUtc());
+
 enum class RussianBank { Generic, TBank, AlfaBank, Sber, Vtb };
 
 struct BankPreset {

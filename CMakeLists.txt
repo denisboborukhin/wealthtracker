@@ -108,6 +108,7 @@ target_sources(
         src/connectors/import.cpp
         src/connectors/bank_presets.cpp
         src/connectors/bank_sessions.cpp
+        src/connectors/zen_plugin.cpp
         src/connectors/deduplication.cpp
         src/connectors/network_policy.cpp
         src/connectors/t_invest_client.cpp
@@ -248,6 +249,7 @@ if(BUILD_TESTING)
         tests/connectors/import_test.cpp
         tests/connectors/deduplication_test.cpp
         tests/connectors/network_test.cpp
+        tests/connectors/zen_plugin_test.cpp
     )
     target_link_libraries(
         connectors_tests
@@ -256,6 +258,11 @@ if(BUILD_TESTING)
             Catch2::Catch2
     )
     set_property(TARGET connectors_tests PROPERTY CXX_SCAN_FOR_MODULES ON)
+    target_compile_definitions(
+        connectors_tests
+        PRIVATE
+            WEALTHTRACKER_SOURCE_DIR="${CMAKE_CURRENT_SOURCE_DIR}"
+    )
     enable_strict_warnings(connectors_tests)
     enable_sanitizers(connectors_tests)
     catch_discover_tests(connectors_tests)
