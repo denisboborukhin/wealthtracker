@@ -71,76 +71,89 @@ Item {
                     color: Theme.border
                 }
 
-                ListView {
+                Item {
                     Layout.fillWidth: true
                     Layout.fillHeight: true
-                    clip: true
-                    model: App.accounts
 
-                    delegate: Item {
-                        width: ListView.view.width
-                        height: 62
+                    Text {
+                        anchors.centerIn: parent
+                        visible: accountList.count === 0
+                        text: qsTr("Счетов пока нет. Добавьте подключение или импортируйте выписку.")
+                        color: Theme.textMuted
+                        font.pixelSize: 12
+                    }
 
-                        RowLayout {
-                            anchors.fill: parent
-                            anchors.leftMargin: 18
-                            anchors.rightMargin: 18
-                            spacing: 14
+                    ListView {
+                        id: accountList
+                        anchors.fill: parent
+                        clip: true
+                        model: App.accounts
+
+                        delegate: Item {
+                            width: ListView.view.width
+                            height: 62
+
+                            RowLayout {
+                                anchors.fill: parent
+                                anchors.leftMargin: 18
+                                anchors.rightMargin: 18
+                                spacing: 14
+
+                                Rectangle {
+                                    Layout.minimumWidth: 8
+                                    Layout.preferredWidth: 8
+                                    Layout.maximumWidth: 8
+                                    Layout.preferredHeight: 34
+                                    radius: 4
+                                    color: model.accent
+                                }
+                                ColumnLayout {
+                                    Layout.fillWidth: true
+                                    Layout.minimumWidth: 0
+                                    spacing: 2
+                                    Text {
+                                        Layout.fillWidth: true
+                                        text: model.name
+                                        color: Theme.text
+                                        font.pixelSize: 13
+                                        font.weight: Font.Medium
+                                        elide: Text.ElideRight
+                                    }
+                                    Text {
+                                        Layout.fillWidth: true
+                                        text: model.institution
+                                        color: Theme.textMuted
+                                        font.pixelSize: 11
+                                        elide: Text.ElideRight
+                                    }
+                                }
+                                Text {
+                                    Layout.minimumWidth: 200
+                                    Layout.preferredWidth: 200
+                                    Layout.maximumWidth: 200
+                                    text: model.type
+                                    color: Theme.textMuted
+                                    font.pixelSize: 12
+                                    elide: Text.ElideRight
+                                }
+                                Text {
+                                    Layout.minimumWidth: 145
+                                    Layout.preferredWidth: 145
+                                    Layout.maximumWidth: 145
+                                    horizontalAlignment: Text.AlignRight
+                                    text: model.balance + " " + model.currency
+                                    color: Theme.text
+                                    font.pixelSize: 14
+                                    font.weight: Font.Medium
+                                }
+                            }
 
                             Rectangle {
-                                Layout.minimumWidth: 8
-                                Layout.preferredWidth: 8
-                                Layout.maximumWidth: 8
-                                Layout.preferredHeight: 34
-                                radius: 4
-                                color: model.accent
+                                width: parent.width
+                                height: 1
+                                anchors.bottom: parent.bottom
+                                color: Theme.border
                             }
-                            ColumnLayout {
-                                Layout.fillWidth: true
-                                Layout.minimumWidth: 0
-                                spacing: 2
-                                Text {
-                                    Layout.fillWidth: true
-                                    text: model.name
-                                    color: Theme.text
-                                    font.pixelSize: 13
-                                    font.weight: Font.Medium
-                                    elide: Text.ElideRight
-                                }
-                                Text {
-                                    Layout.fillWidth: true
-                                    text: model.institution
-                                    color: Theme.textMuted
-                                    font.pixelSize: 11
-                                    elide: Text.ElideRight
-                                }
-                            }
-                            Text {
-                                Layout.minimumWidth: 200
-                                Layout.preferredWidth: 200
-                                Layout.maximumWidth: 200
-                                text: model.type
-                                color: Theme.textMuted
-                                font.pixelSize: 12
-                                elide: Text.ElideRight
-                            }
-                            Text {
-                                Layout.minimumWidth: 145
-                                Layout.preferredWidth: 145
-                                Layout.maximumWidth: 145
-                                horizontalAlignment: Text.AlignRight
-                                text: model.balance + " " + model.currency
-                                color: Theme.text
-                                font.pixelSize: 14
-                                font.weight: Font.Medium
-                            }
-                        }
-
-                        Rectangle {
-                            width: parent.width
-                            height: 1
-                            anchors.bottom: parent.bottom
-                            color: Theme.border
                         }
                     }
                 }

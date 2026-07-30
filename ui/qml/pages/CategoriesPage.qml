@@ -41,8 +41,10 @@ Item {
                 Rectangle { Layout.fillWidth: true; Layout.preferredHeight: 1; color: Theme.border }
 
                 ListView {
+                    id: categoryList
                     Layout.fillWidth: true
                     Layout.fillHeight: true
+                    visible: count > 0
                     model: App.categories
                     clip: true
                     delegate: Item {
@@ -60,6 +62,16 @@ Item {
                         }
                         Rectangle { width: parent.width; height: 1; anchors.bottom: parent.bottom; color: Theme.border }
                     }
+                }
+                Text {
+                    Layout.fillWidth: true
+                    Layout.fillHeight: true
+                    visible: categoryList.count === 0
+                    text: qsTr("Категории расходов появятся после загрузки операций")
+                    color: Theme.textMuted
+                    font.pixelSize: 12
+                    horizontalAlignment: Text.AlignHCenter
+                    verticalAlignment: Text.AlignVCenter
                 }
             }
         }

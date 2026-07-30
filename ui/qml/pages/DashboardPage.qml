@@ -24,7 +24,11 @@ Flickable {
                     font.weight: Font.DemiBold
                 }
                 Text {
-                    text: qsTr("Все счета · июль 2026")
+                    text: App.demoMode
+                          ? qsTr("Пример данных · июль 2026")
+                          : App.hasFinancialData
+                            ? qsTr("Все подключённые счета")
+                            : qsTr("Подключите банк или импортируйте выписку")
                     color: Theme.textMuted
                     font.pixelSize: 12
                 }
@@ -46,28 +50,32 @@ Flickable {
                 Layout.fillWidth: true
                 title: qsTr("Капитал")
                 value: App.netWorth
-                hint: qsTr("+4,2% за месяц")
+                hint: App.demoMode ? qsTr("+4,2% за месяц")
+                                   : qsTr("Текущий остаток")
                 accent: Theme.positive
             }
             MetricCard {
                 Layout.fillWidth: true
                 title: qsTr("Доходы")
                 value: App.monthlyIncome
-                hint: qsTr("+12,5% к июню")
+                hint: App.demoMode ? qsTr("+12,5% к июню")
+                                   : qsTr("Текущий месяц")
                 accent: Theme.positive
             }
             MetricCard {
                 Layout.fillWidth: true
                 title: qsTr("Расходы")
                 value: App.monthlySpending
-                hint: qsTr("−6,8% к июню")
+                hint: App.demoMode ? qsTr("−6,8% к июню")
+                                   : qsTr("Текущий месяц")
                 accent: Theme.textMuted
             }
             MetricCard {
                 Layout.fillWidth: true
                 title: qsTr("Сбережения")
                 value: App.savingsRate
-                hint: qsTr("Цель 40%")
+                hint: App.demoMode ? qsTr("Цель 40%")
+                                   : qsTr("Доходы минус расходы")
                 accent: Theme.warning
             }
         }
@@ -102,7 +110,19 @@ Flickable {
                         Layout.fillWidth: true
                         Layout.fillHeight: true
                         Layout.topMargin: 10
+                        visible: App.netWorthSeries.length > 1
                         values: App.netWorthSeries
+                    }
+                    Text {
+                        Layout.fillWidth: true
+                        Layout.fillHeight: true
+                        visible: App.netWorthSeries.length <= 1
+                        text: qsTr("История капитала появится после нескольких снимков баланса")
+                        color: Theme.textMuted
+                        font.pixelSize: 12
+                        horizontalAlignment: Text.AlignHCenter
+                        verticalAlignment: Text.AlignVCenter
+                        wrapMode: Text.WordWrap
                     }
                 }
             }
@@ -124,6 +144,7 @@ Flickable {
                     }
 
                     Repeater {
+                        id: categoryRepeater
                         model: App.categories
                         delegate: ColumnLayout {
                             Layout.fillWidth: true
@@ -156,6 +177,16 @@ Flickable {
                                 }
                             }
                         }
+                    }
+                    Text {
+                        Layout.fillWidth: true
+                        Layout.fillHeight: true
+                        visible: categoryRepeater.count === 0
+                        text: qsTr("Категории появятся после загрузки операций")
+                        color: Theme.textMuted
+                        font.pixelSize: 12
+                        horizontalAlignment: Text.AlignHCenter
+                        verticalAlignment: Text.AlignVCenter
                     }
                 }
             }
@@ -194,55 +225,68 @@ Flickable {
                     color: Theme.border
                 }
 
-                ListView {
+                Item {
                     Layout.fillWidth: true
                     Layout.fillHeight: true
-                    model: App.transactions
-                    clip: true
 
-                    delegate: Item {
-                        width: ListView.view.width
-                        height: 44
+                    Text {
+                        anchors.centerIn: parent
+                        visible: transactionList.count === 0
+                        text: qsTr("Операций пока нет")
+                        color: Theme.textMuted
+                        font.pixelSize: 12
+                    }
 
-                        RowLayout {
-                            anchors.fill: parent
-                            anchors.leftMargin: 18
-                            anchors.rightMargin: 18
-                            Text {
-                                Layout.preferredWidth: 88
-                                text: model.date
-                                color: Theme.textMuted
-                                font.pixelSize: 11
-                            }
-                            Text {
-                                Layout.fillWidth: true
-                                text: model.title
-                                color: Theme.text
-                                font.pixelSize: 12
-                                elide: Text.ElideRight
-                            }
-                            Text {
-                                Layout.preferredWidth: 160
-                                text: model.category
-                                color: Theme.textMuted
-                                font.pixelSize: 11
-                                elide: Text.ElideRight
-                            }
-                            Text {
-                                Layout.preferredWidth: 105
-                                horizontalAlignment: Text.AlignRight
-                                text: model.amount
-                                color: model.income ? Theme.positive : Theme.text
-                                font.pixelSize: 12
-                                font.weight: Font.Medium
-                            }
-                        }
+                    ListView {
+                        id: transactionList
+                        anchors.fill: parent
+                        model: App.transactions
+                        clip: true
 
-                        Rectangle {
-                            width: parent.width
-                            height: 1
-                            anchors.bottom: parent.bottom
-                            color: Theme.border
+                        delegate: Item {
+                            width: ListView.view.width
+                            height: 44
+
+                            RowLayout {
+                                anchors.fill: parent
+                                anchors.leftMargin: 18
+                                anchors.rightMargin: 18
+                                Text {
+                                    Layout.preferredWidth: 88
+                                    text: model.date
+                                    color: Theme.textMuted
+                                    font.pixelSize: 11
+                                }
+                                Text {
+                                    Layout.fillWidth: true
+                                    text: model.title
+                                    color: Theme.text
+                                    font.pixelSize: 12
+                                    elide: Text.ElideRight
+                                }
+                                Text {
+                                    Layout.preferredWidth: 160
+                                    text: model.category
+                                    color: Theme.textMuted
+                                    font.pixelSize: 11
+                                    elide: Text.ElideRight
+                                }
+                                Text {
+                                    Layout.preferredWidth: 105
+                                    horizontalAlignment: Text.AlignRight
+                                    text: model.amount
+                                    color: model.income ? Theme.positive : Theme.text
+                                    font.pixelSize: 12
+                                    font.weight: Font.Medium
+                                }
+                            }
+
+                            Rectangle {
+                                width: parent.width
+                                height: 1
+                                anchors.bottom: parent.bottom
+                                color: Theme.border
+                            }
                         }
                     }
                 }

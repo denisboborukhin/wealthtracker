@@ -31,21 +31,25 @@ Item {
                 Layout.fillWidth: true
                 title: qsTr("Стоимость портфеля")
                 value: App.portfolioValue
-                hint: qsTr("+14,8% за всё время")
+                hint: App.demoMode ? qsTr("+14,8% за всё время")
+                                   : qsTr("Текущая оценка")
                 accent: Theme.positive
             }
             MetricCard {
                 Layout.fillWidth: true
                 title: qsTr("Дивиденды и купоны")
-                value: "86 420 ₽"
-                hint: qsTr("За 12 месяцев")
+                value: App.demoMode ? "86 420 ₽" : "0 ₽"
+                hint: App.demoMode ? qsTr("За 12 месяцев")
+                                   : qsTr("Нет данных")
                 accent: Theme.positive
             }
             MetricCard {
                 Layout.fillWidth: true
                 title: "XIRR"
-                value: "17,6%"
-                hint: qsTr("Не является налоговым расчётом")
+                value: App.demoMode ? "17,6%" : "—"
+                hint: App.demoMode
+                      ? qsTr("Не является налоговым расчётом")
+                      : qsTr("Недостаточно операций")
                 accent: Theme.textMuted
             }
         }
@@ -72,8 +76,10 @@ Item {
                 Rectangle { Layout.fillWidth: true; Layout.preferredHeight: 1; color: Theme.border }
 
                 ListView {
+                    id: holdingList
                     Layout.fillWidth: true
                     Layout.fillHeight: true
+                    visible: count > 0
                     model: App.holdings
                     clip: true
                     delegate: Item {
@@ -91,6 +97,16 @@ Item {
                         }
                         Rectangle { width: parent.width; height: 1; anchors.bottom: parent.bottom; color: Theme.border }
                     }
+                }
+                Text {
+                    Layout.fillWidth: true
+                    Layout.fillHeight: true
+                    visible: holdingList.count === 0
+                    text: qsTr("Активов пока нет. Подключите инвестиционный счёт.")
+                    color: Theme.textMuted
+                    font.pixelSize: 12
+                    horizontalAlignment: Text.AlignHCenter
+                    verticalAlignment: Text.AlignVCenter
                 }
             }
         }

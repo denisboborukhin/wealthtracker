@@ -77,8 +77,10 @@ Item {
                 }
 
                 ListView {
+                    id: transactionList
                     Layout.fillWidth: true
                     Layout.fillHeight: true
+                    visible: count > 0
                     clip: true
                     model: App.transactions
 
@@ -147,6 +149,16 @@ Item {
                             color: Theme.border
                         }
                     }
+                }
+                Text {
+                    Layout.fillWidth: true
+                    Layout.fillHeight: true
+                    visible: transactionList.count === 0
+                    text: qsTr("Операций пока нет. Подключите банк или импортируйте выписку.")
+                    color: Theme.textMuted
+                    font.pixelSize: 12
+                    horizontalAlignment: Text.AlignHCenter
+                    verticalAlignment: Text.AlignVCenter
                 }
             }
         }
