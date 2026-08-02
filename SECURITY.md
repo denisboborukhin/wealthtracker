@@ -30,6 +30,9 @@ sharing reproduction material.
   and is persisted to the operating-system credential store only after
   explicit user confirmation and successful read-access validation. Invalid
   certificate errors are shown to the user and are never bypassed.
+- T-Bank TLS diagnostics contain only the ASCII hostname, numeric certificate
+  category, and main-frame/subresource scope. URL paths, query strings,
+  cookies, and credentials are not included in status text or runtime logs.
 - The built-in T-Bank importer is restricted to the exact HTTPS origin
   `https://www.tbank.ru`, blocks redirects, and implements only account,
   balance, and operation reads. The underlying retail web API is undocumented

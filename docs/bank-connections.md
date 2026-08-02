@@ -74,6 +74,36 @@ Certificate errors stop the login and are displayed in the dialog. Fix the
 local certificate trust or TLS-inspection configuration instead of bypassing
 the warning.
 
+### T-Bank login troubleshooting
+
+Qt WebEngine can print messages from Chromium that do not, by themselves,
+mean that authentication failed:
+
+- `Failed to create WebGPU Context Provider` means GPU-based WebGPU was not
+  available. The login form does not require WebGPU.
+- DNS failures for `stun3.l.google.com` or `stun4.l.google.com` come from
+  WebRTC discovery used by page scripts. They are unrelated to T-Bank session
+  storage.
+- The malformed `t-static.ruimagessolid` favicon URL is rejected by the bank
+  page's own Content Security Policy.
+
+`net_error -202` is different: Chromium rejected a certificate whose authority
+is not trusted. WealthTracker rejects it too. The connection status and runtime
+log report only the failing hostname, numeric certificate category, and whether
+the failure was for the main frame or a subresource. URL paths, query strings,
+cookies, and credentials are deliberately omitted.
+
+When `-202` prevents login:
+
+1. Ensure macOS date and time are set automatically.
+2. Open `https://www.tbank.ru/login` in a regular browser on the same Mac and
+   inspect any certificate warning.
+3. Check whether a VPN, antivirus, corporate proxy, or filtering DNS service is
+   intercepting HTTPS. If it is required, its administrator-provided root must
+   be correctly installed and trusted in Keychain Access.
+4. Rebuild and retry. Do not enable Chromium's certificate-ignore flags and do
+   not accept an unknown certificate for a bank login.
+
 ## Alfa-Bank B2C API
 
 WealthTracker calls only:
