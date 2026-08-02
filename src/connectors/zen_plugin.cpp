@@ -16,6 +16,7 @@ module;
 #include <QString>
 #include <QStringList>
 #include <QTimeZone>
+#include <QUrl>
 #include <QVector>
 #include <QXmlStreamReader>
 
@@ -240,6 +241,37 @@ ConnectorResult<void> validateScalarObject(const QJsonObject &object,
         }
     }
     return {};
+}
+
+ConnectorResult<QJsonArray> validatedOrigins(const QStringList &origins)
+{
+    if (origins.size() > 8) {
+        return std::unexpected(invalidInput(
+            QStringLiteral("Слишком много разрешённых origin плагина")));
+    }
+    QJsonArray result;
+    QSet<QString> seen;
+    for (const auto &value : origins) {
+        const QUrl url(value, QUrl::StrictMode);
+        const bool plainRootPath = url.path().isEmpty()
+            || url.path() == QStringLiteral("/");
+        if (!url.isValid() || url.scheme() != QStringLiteral("https")
+            || url.host().isEmpty() || !url.userInfo().isEmpty()
+            || url.hasQuery() || url.hasFragment() || !plainRootPath) {
+            return std::unexpected(invalidInput(
+                QStringLiteral("Некорректный разрешённый origin плагина"),
+                value));
+        }
+        QString normalized = QStringLiteral("https://") + url.host().toLower();
+        if (url.port(-1) != -1 && url.port() != 443) {
+            normalized += QStringLiteral(":%1").arg(url.port());
+        }
+        if (!seen.contains(normalized)) {
+            seen.insert(normalized);
+            result.push_back(normalized);
+        }
+    }
+    return result;
 }
 
 std::optional<std::int64_t> toMinorUnits(const QJsonValue &value)
@@ -577,6 +609,10 @@ makeZenPluginStartMessage(const ZenPluginRunRequest &request)
         return std::unexpected(invalidInput(
             QStringLiteral("Состояние плагина превышает 1 МБ")));
     }
+    auto allowedOrigins = validatedOrigins(request.allowedOrigins);
+    if (!allowedOrigins) {
+        return std::unexpected(allowedOrigins.error());
+    }
 
     const QJsonObject object{
         {QStringLiteral("type"), QStringLiteral("start")},
@@ -588,7 +624,8 @@ makeZenPluginStartMessage(const ZenPluginRunRequest &request)
         {QStringLiteral("from"),
          request.from.toUTC().toString(Qt::ISODateWithMs)},
         {QStringLiteral("to"),
-         request.to.toUTC().toString(Qt::ISODateWithMs)}};
+         request.to.toUTC().toString(Qt::ISODateWithMs)},
+        {QStringLiteral("allowedOrigins"), *allowedOrigins}};
     auto line = QJsonDocument(object).toJson(QJsonDocument::Compact);
     if (line.size() > maximumProtocolLineBytes) {
         return std::unexpected(invalidInput(

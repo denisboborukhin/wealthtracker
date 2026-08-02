@@ -99,6 +99,36 @@ function cloneJson (value) {
   return JSON.parse(JSON.stringify(value))
 }
 
+function makeFetch (allowedOrigins) {
+  if (allowedOrigins.length === 0) {
+    return nativeFetch
+  }
+  const allowed = new Set(allowedOrigins)
+  return async function restrictedFetch (input, init = {}) {
+    const rawUrl = input instanceof NativeRequest ? input.url : input
+    let url
+    try {
+      url = new URL(String(rawUrl))
+    } catch {
+      throw new Error('Plugin requested an invalid URL')
+    }
+    if (url.protocol !== 'https:' || !allowed.has(url.origin)) {
+      throw new Error('Plugin network origin is not allowed')
+    }
+    const method = String(
+      init.method ?? (input instanceof NativeRequest ? input.method : 'GET')
+    ).toUpperCase()
+    if (method !== 'GET' && method !== 'HEAD') {
+      throw new Error('Plugin network method is not allowed')
+    }
+    const response = await nativeFetch(input, { ...init, redirect: 'manual' })
+    if (response.status >= 300 && response.status < 400) {
+      throw new Error('Plugin network redirect was blocked')
+    }
+    return response
+  }
+}
+
 function makeConsole () {
   const ignored = () => {}
   return {
@@ -118,7 +148,7 @@ function makeConsole () {
   }
 }
 
-function makeRuntime ({ preferences, state }) {
+function makeRuntime ({ preferences, state, allowedOrigins }) {
   const accounts = []
   const transactions = []
   const pluginData = cloneJson(state.pluginData ?? {})
@@ -166,7 +196,7 @@ function makeRuntime ({ preferences, state }) {
       transactionDtoV2: false
     },
     locale: 'ru_RU',
-    fetch: nativeFetch,
+    fetch: makeFetch(allowedOrigins),
     Headers: NativeHeaders,
     Blob: NativeBlob,
     Request: NativeRequest,
@@ -333,6 +363,11 @@ async function start (command) {
   }
   assertScalarObject(command.preferences, 'Plugin preferences')
   assertObject(command.state, 'Plugin state')
+  if (!Array.isArray(command.allowedOrigins) || command.allowedOrigins.length > 8 ||
+      command.allowedOrigins.some(origin => typeof origin !== 'string' ||
+        new URL(origin).origin !== origin || !origin.startsWith('https://'))) {
+    throw new Error('Invalid plugin network allowlist')
+  }
   if (Buffer.byteLength(JSON.stringify(command.state)) > maximumStateBytes) {
     throw new Error('Plugin state exceeds 1 MiB')
   }
@@ -351,6 +386,7 @@ async function start (command) {
   globalThis.console = makeConsole()
   const { runtime, terminal } = makeRuntime(command)
   globalThis.ZenMoney = runtime
+  globalThis.fetch = runtime.fetch
 
   const require = createRequire(import.meta.url)
   require(command.bundlePath)

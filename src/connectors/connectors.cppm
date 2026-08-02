@@ -340,6 +340,7 @@ struct ZenPluginRunRequest {
     QJsonObject state;
     QDateTime from;
     QDateTime to;
+    QStringList allowedOrigins;
 };
 
 struct ZenPluginPrompt {

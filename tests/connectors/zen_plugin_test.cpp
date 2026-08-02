@@ -2,6 +2,7 @@
 
 #include <QDateTime>
 #include <QFileInfo>
+#include <QJsonArray>
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QProcess>
@@ -53,6 +54,15 @@ TEST_CASE("Zen plugin descriptors validate bundle and preference metadata")
         inspectZenPluginBundle(QStringLiteral("/does/not/exist.js"));
     REQUIRE_FALSE(missing);
     CHECK(missing.error().code == ErrorCode::InvalidInput);
+
+    const auto tbankBundle = inspectZenPluginBundle(
+        QStringLiteral(WEALTHTRACKER_SOURCE_DIR
+                       "/bundles/tbank-retail/tbank-retail.cjs"));
+    REQUIRE(tbankBundle);
+    CHECK(tbankBundle->pluginId == QStringLiteral("tbank-retail"));
+    REQUIRE(tbankBundle->preferences.size() == 1);
+    CHECK(tbankBundle->preferences.front().key
+          == QStringLiteral("startDate"));
 }
 
 TEST_CASE("Zen plugin result events normalize accounts and signed operations")
@@ -92,6 +102,132 @@ TEST_CASE("Zen plugin protocol rejects malformed events and secret-sized input")
     CHECK(oversizedInput.error().code == ErrorCode::InvalidInput);
 }
 
+TEST_CASE("Zen plugin protocol validates an exact HTTPS network allowlist")
+{
+    const auto fixture =
+        QStringLiteral(WEALTHTRACKER_SOURCE_DIR
+                       "/tests/fixtures/zen_plugin_fixture.cjs");
+    const auto descriptor = inspectZenPluginBundle(fixture);
+    REQUIRE(descriptor);
+    ZenPluginRunRequest request{
+        .descriptor = *descriptor,
+        .preferences = {},
+        .state = {},
+        .from = QDateTime::fromString(
+            QStringLiteral("2026-07-01T00:00:00Z"), Qt::ISODate),
+        .to = QDateTime::fromString(
+            QStringLiteral("2026-07-30T00:00:00Z"), Qt::ISODate),
+        .allowedOrigins = {QStringLiteral("https://www.tbank.ru")},
+    };
+
+    const auto message = makeZenPluginStartMessage(request);
+    REQUIRE(message);
+    const auto object = QJsonDocument::fromJson(*message).object();
+    CHECK(object.value(QStringLiteral("allowedOrigins"))
+              .toArray()
+              .at(0)
+              .toString()
+          == QStringLiteral("https://www.tbank.ru"));
+
+    request.allowedOrigins = {QStringLiteral("http://www.tbank.ru")};
+    CHECK_FALSE(makeZenPluginStartMessage(request));
+    request.allowedOrigins = {
+        QStringLiteral("https://www.tbank.ru/api/common/v1")};
+    CHECK_FALSE(makeZenPluginStartMessage(request));
+    request.allowedOrigins = {QStringLiteral("https://tbank.ru@evil.test")};
+    CHECK_FALSE(makeZenPluginStartMessage(request));
+}
+
+TEST_CASE("local host blocks bundle requests outside its network allowlist")
+{
+    const auto node = QStandardPaths::findExecutable(QStringLiteral("node"));
+    if (node.isEmpty()) {
+        SKIP("Node.js is not installed");
+    }
+
+    const auto fixture =
+        QStringLiteral(WEALTHTRACKER_SOURCE_DIR
+                       "/tests/fixtures/zen_plugin_network_fixture.cjs");
+    const auto descriptor = inspectZenPluginBundle(fixture);
+    REQUIRE(descriptor);
+
+    QProcess process;
+    process.setProcessChannelMode(QProcess::SeparateChannels);
+    process.start(
+        node,
+        {QStringLiteral(WEALTHTRACKER_SOURCE_DIR
+                        "/scripts/zen_plugin_host.mjs")});
+    REQUIRE(process.waitForStarted(5000));
+
+    const ZenPluginRunRequest request{
+        .descriptor = *descriptor,
+        .preferences = {},
+        .state = {},
+        .from = QDateTime::fromString(
+            QStringLiteral("2026-07-01T00:00:00Z"), Qt::ISODate),
+        .to = QDateTime::fromString(
+            QStringLiteral("2026-07-30T00:00:00Z"), Qt::ISODate),
+        .allowedOrigins = {QStringLiteral("https://www.tbank.ru")},
+    };
+    const auto startMessage = makeZenPluginStartMessage(request);
+    REQUIRE(startMessage);
+    process.write(*startMessage);
+    REQUIRE(process.waitForBytesWritten(5000));
+
+    const auto result = parseZenPluginEvent(
+        readProtocolLine(process), descriptor->pluginId);
+    INFO(process.readAllStandardError().constData());
+    REQUIRE(result);
+    CHECK(result->kind == ZenPluginEventKind::Error);
+    CHECK(result->message.contains(QStringLiteral("origin is not allowed")));
+    CHECK(process.waitForFinished(5000));
+}
+
+TEST_CASE("local host makes allowlisted built-in plugins read-only")
+{
+    const auto node = QStandardPaths::findExecutable(QStringLiteral("node"));
+    if (node.isEmpty()) {
+        SKIP("Node.js is not installed");
+    }
+
+    const auto fixture =
+        QStringLiteral(WEALTHTRACKER_SOURCE_DIR
+                       "/tests/fixtures/zen_plugin_write_fixture.cjs");
+    const auto descriptor = inspectZenPluginBundle(fixture);
+    REQUIRE(descriptor);
+
+    QProcess process;
+    process.setProcessChannelMode(QProcess::SeparateChannels);
+    process.start(
+        node,
+        {QStringLiteral(WEALTHTRACKER_SOURCE_DIR
+                        "/scripts/zen_plugin_host.mjs")});
+    REQUIRE(process.waitForStarted(5000));
+
+    const ZenPluginRunRequest request{
+        .descriptor = *descriptor,
+        .preferences = {},
+        .state = {},
+        .from = QDateTime::fromString(
+            QStringLiteral("2026-07-01T00:00:00Z"), Qt::ISODate),
+        .to = QDateTime::fromString(
+            QStringLiteral("2026-07-30T00:00:00Z"), Qt::ISODate),
+        .allowedOrigins = {QStringLiteral("https://www.tbank.ru")},
+    };
+    const auto startMessage = makeZenPluginStartMessage(request);
+    REQUIRE(startMessage);
+    process.write(*startMessage);
+    REQUIRE(process.waitForBytesWritten(5000));
+
+    const auto result = parseZenPluginEvent(
+        readProtocolLine(process), descriptor->pluginId);
+    INFO(process.readAllStandardError().constData());
+    REQUIRE(result);
+    CHECK(result->kind == ZenPluginEventKind::Error);
+    CHECK(result->message.contains(QStringLiteral("method is not allowed")));
+    CHECK(process.waitForFinished(5000));
+}
+
 TEST_CASE("local host executes an external bundle and handles an OTP prompt")
 {
     const auto node = QStandardPaths::findExecutable(QStringLiteral("node"));
@@ -126,6 +262,7 @@ TEST_CASE("local host executes an external bundle and handles an OTP prompt")
             QStringLiteral("2026-07-01T00:00:00Z"), Qt::ISODate),
         .to = QDateTime::fromString(
             QStringLiteral("2026-07-30T00:00:00Z"), Qt::ISODate),
+        .allowedOrigins = {},
     };
     const auto startMessage = makeZenPluginStartMessage(request);
     REQUIRE(startMessage);
