@@ -24,6 +24,8 @@
 #include <QUrl>
 #include <QWebEngineCertificateError>
 #include <QWebEngineCookieStore>
+#include <QWebEngineUrlRequestInfo>
+#include <QWebEngineUrlRequestInterceptor>
 #include <QQuickWebEngineProfile>
 
 #include <algorithm>
@@ -274,6 +276,24 @@ QString certificateReason(const int errorType) {
         return QStringLiteral("ошибка сертификата, код %1").arg(errorType);
     }
 }
+
+bool isTBankDeviceCollector(const QUrl& url) {
+    const auto host = url.host().toLower();
+    return host == QStringLiteral("mddc.tbank.ru")
+        || host == QStringLiteral("mddc.tinkoff.ru");
+}
+
+class TBankLoginRequestInterceptor final
+    : public QWebEngineUrlRequestInterceptor {
+public:
+    using QWebEngineUrlRequestInterceptor::QWebEngineUrlRequestInterceptor;
+
+    void interceptRequest(QWebEngineUrlRequestInfo& info) override {
+        if (isTBankDeviceCollector(info.requestUrl())) {
+            info.block(true);
+        }
+    }
+};
 
 bool isRetailBankConnector(const QString& connectorId) {
     return std::ranges::any_of(
@@ -860,6 +880,9 @@ public:
           modulbank(network) {}
 
     ~AppControllerPrivate() {
+        if (tbank_web_profile) {
+            tbank_web_profile->setUrlRequestInterceptor(nullptr);
+        }
         tbank_candidate_session.fill('\0');
     }
 
@@ -877,9 +900,13 @@ public:
     QDateTime next_zen_auto_update_at;
     QString zen_prompt_id;
     QString configured_zen_state_key;
+    std::unique_ptr<QWebEngineUrlRequestInterceptor>
+        tbank_request_interceptor =
+            std::make_unique<TBankLoginRequestInterceptor>();
     QPointer<QQuickWebEngineProfile> tbank_web_profile;
     QByteArray tbank_candidate_session;
     QString tbank_certificate_failure;
+    QSet<QString> tbank_reported_certificate_failures;
     bool tbank_cookie_capture_pending = false;
     bool tbank_rejected_psid_seen = false;
     int tbank_cookie_count = 0;
@@ -1095,6 +1122,8 @@ void AppController::attachTBankWebProfile(QObject* profileObject) {
     profile->setPersistentPermissionsPolicy(
         QQuickWebEngineProfile::PersistentPermissionsPolicy::StoreInMemory);
     profile->setHttpAcceptLanguage(QStringLiteral("ru-RU,ru;q=0.9"));
+    profile->setUrlRequestInterceptor(
+        private_->tbank_request_interceptor.get());
     connect(profile->cookieStore(), &QWebEngineCookieStore::cookieAdded,
             this, [this](const QNetworkCookie& cookie) {
                 if (!tbank_login_active_
@@ -1144,9 +1173,34 @@ bool AppController::isAllowedTBankLoginUrl(const QUrl& url) const {
         || host == QStringLiteral("id.tinkoff.ru");
 }
 
+bool AppController::isBlockedTBankLoginSubresource(const QUrl& url) const {
+    return isTBankDeviceCollector(url);
+}
+
 QString AppController::reportTBankCertificateError(
     const QUrl& url, const int errorType, const bool mainFrame) {
     const auto host = certificateHost(url);
+    const auto failureKey = QStringLiteral("%1|%2|%3")
+                                .arg(host)
+                                .arg(errorType)
+                                .arg(mainFrame ? 1 : 0);
+    const bool firstReport =
+        !private_->tbank_reported_certificate_failures.contains(failureKey);
+    if (firstReport) {
+        private_->tbank_reported_certificate_failures.insert(failureKey);
+    }
+    if (!mainFrame
+        && errorType
+            == QWebEngineCertificateError::CertificateAuthorityInvalid
+        && isTBankDeviceCollector(url)) {
+        if (firstReport) {
+            qInfo().noquote()
+                << "T-Bank Russian-CA device collector rejected: host="
+                << host << "frame=subresource";
+        }
+        return {};
+    }
+
     const auto reason = certificateReason(errorType);
     const auto message = mainFrame
         ? QStringLiteral(
@@ -1160,10 +1214,12 @@ QString AppController::reportTBankCertificateError(
               "доверенные сертификаты.")
               .arg(host, reason);
 
-    qWarning().noquote()
-        << "T-Bank TLS certificate rejected: host=" << host
-        << "type=" << errorType
-        << "frame=" << (mainFrame ? "main" : "subresource");
+    if (firstReport) {
+        qWarning().noquote()
+            << "T-Bank TLS certificate rejected: host=" << host
+            << "type=" << errorType
+            << "frame=" << (mainFrame ? "main" : "subresource");
+    }
     if (tbank_login_active_
         && (mainFrame || private_->tbank_candidate_session.isEmpty())) {
         private_->tbank_certificate_failure = message;
@@ -2535,6 +2591,7 @@ void AppController::beginTBankLogin() {
     private_->tbank_rejected_psid_seen = false;
     private_->tbank_cookie_count = 0;
     private_->tbank_certificate_failure.clear();
+    private_->tbank_reported_certificate_failures.clear();
     tbank_login_active_ = true;
     tbank_login_status_ = QStringLiteral(
         "Введите телефон, пароль и код только на странице Т-Банка");

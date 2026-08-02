@@ -166,6 +166,12 @@ TEST_CASE("T-Bank is bundled while other retail banks remain adapter slots") {
         QUrl(QStringLiteral("https://user@id.tinkoff.ru/auth/"))));
     CHECK_FALSE(controller.isAllowedTBankLoginUrl(
         QUrl(QStringLiteral("https://id.tinkoff.ru:8443/auth/"))));
+    CHECK(controller.isBlockedTBankLoginSubresource(
+        QUrl(QStringLiteral("https://mddc.tbank.ru/collect"))));
+    CHECK(controller.isBlockedTBankLoginSubresource(
+        QUrl(QStringLiteral("https://mddc.tinkoff.ru/collect"))));
+    CHECK_FALSE(controller.isBlockedTBankLoginSubresource(
+        QUrl(QStringLiteral("https://mddc.tbank.ru.evil.example/"))));
 
     for (const auto& connectorId :
          {QStringLiteral("alfa-retail"), QStringLiteral("sber-retail"),
@@ -235,6 +241,12 @@ TEST_CASE("T-Bank TLS diagnostics expose no URL secrets") {
     CHECK_FALSE(message.contains(QStringLiteral("private")));
     CHECK_FALSE(message.contains(QStringLiteral("session-secret")));
     CHECK_FALSE(message.contains(QStringLiteral("otp")));
+
+    const auto deviceCollectorMessage =
+        controller.reportTBankCertificateError(
+            QUrl(QStringLiteral("https://mddc.tbank.ru/collect?token=secret")),
+            -202, false);
+    CHECK(deviceCollectorMessage.isEmpty());
 }
 
 TEST_CASE("official bank tokens have independent credential state") {
