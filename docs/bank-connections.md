@@ -87,6 +87,15 @@ mean that authentication failed:
 - The malformed `t-static.ruimagessolid` favicon URL is rejected by the bank
   page's own Content Security Policy.
 
+The isolated login browser disables non-proxied WebRTC UDP before WebEngine
+starts. This prevents the direct UDP probes responsible for the public STUN
+lookups while retaining WebRTC's TCP and configured-proxy paths. It also
+filters the known WebGPU, geolocation-order, and malformed-favicon console
+messages listed above. An unknown JavaScript error still produces one generic
+warning without forwarding bank-controlled message text that could contain
+private data. Navigation, loading, and certificate errors continue to use
+their dedicated handlers.
+
 `net_error -202` is different: Chromium rejected a certificate whose authority
 is not trusted. WealthTracker rejects it too. The connection status and runtime
 log report only the failing hostname, numeric certificate category, and whether
