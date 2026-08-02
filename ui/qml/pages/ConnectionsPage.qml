@@ -270,13 +270,13 @@ Item {
                             }
 
                             onCertificateError: function(error) {
+                                let message = App.reportTBankCertificateError(
+                                    error.url, error.type, error.isMainFrame)
                                 error.rejectCertificate()
                                 if (!error.isMainFrame)
                                     return
                                 connectionDialog.tbankPageLoading = false
-                                connectionDialog.tbankPageError = qsTr(
-                                    "Сертификат страницы входа отклонён: ")
-                                    + error.description
+                                connectionDialog.tbankPageError = message
                                 tbankReadyTimer.stop()
                             }
                         }

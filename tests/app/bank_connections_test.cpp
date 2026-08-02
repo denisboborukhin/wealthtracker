@@ -211,8 +211,30 @@ TEST_CASE("T-Bank login UI bounds loading and exposes navigation failures") {
     CHECK(source.contains(QByteArrayLiteral("tbankPageError")));
     CHECK(source.contains(QByteArrayLiteral("retryTBankPage")));
     CHECK(source.contains(QByteArrayLiteral("onCertificateError")));
+    CHECK(source.contains(QByteArrayLiteral(
+        "App.reportTBankCertificateError")));
+    CHECK_FALSE(source.contains(QByteArrayLiteral("error.description")));
     CHECK(source.contains(QByteArrayLiteral("App.tbankSessionAvailable")));
     CHECK(source.contains(QByteArrayLiteral("Проверить сессию")));
+}
+
+TEST_CASE("T-Bank TLS diagnostics expose no URL secrets") {
+    auto credentials = std::make_unique<MemoryCredentialBackend>();
+    wealthtracker::app::AppController controller(std::move(credentials),
+                                                  nullptr);
+    const auto message = controller.reportTBankCertificateError(
+        QUrl(QStringLiteral(
+            "https://user:password@id.tbank.ru/private/login"
+            "?psid=session-secret#otp")),
+        -202, true);
+
+    CHECK(message.contains(QStringLiteral("id.tbank.ru")));
+    CHECK(message.contains(QStringLiteral("не является доверенным")));
+    CHECK_FALSE(message.contains(QStringLiteral("user")));
+    CHECK_FALSE(message.contains(QStringLiteral("password")));
+    CHECK_FALSE(message.contains(QStringLiteral("private")));
+    CHECK_FALSE(message.contains(QStringLiteral("session-secret")));
+    CHECK_FALSE(message.contains(QStringLiteral("otp")));
 }
 
 TEST_CASE("official bank tokens have independent credential state") {

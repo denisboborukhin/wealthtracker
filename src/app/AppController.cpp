@@ -22,6 +22,7 @@
 #include <QTemporaryFile>
 #include <QTimer>
 #include <QUrl>
+#include <QWebEngineCertificateError>
 #include <QWebEngineCookieStore>
 #include <QQuickWebEngineProfile>
 
@@ -245,6 +246,33 @@ bool isTBankCookieDomain(QString domain) {
     }
     return domain == QStringLiteral("tbank.ru")
         || domain.endsWith(QStringLiteral(".tbank.ru"));
+}
+
+QString certificateHost(const QUrl& url) {
+    const auto host = QString::fromLatin1(
+        QUrl::toAce(url.host().toLower()));
+    if (host.isEmpty() || host.size() > 253) {
+        return QStringLiteral("неизвестный узел");
+    }
+    return host;
+}
+
+QString certificateReason(const int errorType) {
+    using Type = QWebEngineCertificateError::Type;
+    switch (static_cast<Type>(errorType)) {
+    case Type::CertificateCommonNameInvalid:
+        return QStringLiteral("имя узла не совпадает с сертификатом");
+    case Type::CertificateDateInvalid:
+        return QStringLiteral("сертификат просрочен или ещё не действует");
+    case Type::CertificateAuthorityInvalid:
+        return QStringLiteral("центр сертификации не является доверенным");
+    case Type::CertificateRevoked:
+        return QStringLiteral("сертификат отозван");
+    case Type::CertificateKnownInterceptionBlocked:
+        return QStringLiteral("обнаружен заблокированный перехват TLS");
+    default:
+        return QStringLiteral("ошибка сертификата, код %1").arg(errorType);
+    }
 }
 
 bool isRetailBankConnector(const QString& connectorId) {
@@ -851,6 +879,7 @@ public:
     QString configured_zen_state_key;
     QPointer<QQuickWebEngineProfile> tbank_web_profile;
     QByteArray tbank_candidate_session;
+    QString tbank_certificate_failure;
     bool tbank_cookie_capture_pending = false;
     bool tbank_rejected_psid_seen = false;
     int tbank_cookie_count = 0;
@@ -1089,6 +1118,7 @@ void AppController::attachTBankWebProfile(QObject* profileObject) {
 
                 private_->tbank_candidate_session.fill('\0');
                 private_->tbank_candidate_session = std::move(candidate);
+                private_->tbank_certificate_failure.clear();
                 if (!private_->tbank_cookie_capture_pending) {
                     tbank_login_status_ = QStringLiteral(
                         "Сессия обнаружена. Нажмите «Подключить», чтобы проверить доступ.");
@@ -1112,6 +1142,35 @@ bool AppController::isAllowedTBankLoginUrl(const QUrl& url) const {
     return host == QStringLiteral("tbank.ru")
         || host.endsWith(QStringLiteral(".tbank.ru"))
         || host == QStringLiteral("id.tinkoff.ru");
+}
+
+QString AppController::reportTBankCertificateError(
+    const QUrl& url, const int errorType, const bool mainFrame) {
+    const auto host = certificateHost(url);
+    const auto reason = certificateReason(errorType);
+    const auto message = mainFrame
+        ? QStringLiteral(
+              "Сертификат страницы входа %1 отклонён: %2. Проверьте дату и "
+              "время macOS, VPN/прокси и доверенные сертификаты в Связке "
+              "ключей.")
+              .arg(host, reason)
+        : QStringLiteral(
+              "Отклонён сертификат ресурса %1: %2. Если вход не "
+              "завершается, проверьте дату и время macOS, VPN/прокси и "
+              "доверенные сертификаты.")
+              .arg(host, reason);
+
+    qWarning().noquote()
+        << "T-Bank TLS certificate rejected: host=" << host
+        << "type=" << errorType
+        << "frame=" << (mainFrame ? "main" : "subresource");
+    if (tbank_login_active_
+        && (mainFrame || private_->tbank_candidate_session.isEmpty())) {
+        private_->tbank_certificate_failure = message;
+        tbank_login_status_ = message;
+        emit tbankConnectionChanged();
+    }
+    return message;
 }
 
 bool AppController::tbankConnected() const noexcept {
@@ -2475,6 +2534,7 @@ void AppController::beginTBankLogin() {
     private_->tbank_cookie_capture_pending = false;
     private_->tbank_rejected_psid_seen = false;
     private_->tbank_cookie_count = 0;
+    private_->tbank_certificate_failure.clear();
     tbank_login_active_ = true;
     tbank_login_status_ = QStringLiteral(
         "Введите телефон, пароль и код только на странице Т-Банка");
@@ -2512,7 +2572,9 @@ void AppController::confirmTBankLogin() {
             return;
         }
         private_->tbank_cookie_capture_pending = false;
-        if (private_->tbank_rejected_psid_seen) {
+        if (!private_->tbank_certificate_failure.isEmpty()) {
+            tbank_login_status_ = private_->tbank_certificate_failure;
+        } else if (private_->tbank_rejected_psid_seen) {
             tbank_login_status_ = QStringLiteral(
                 "Т-Банк создал psid с неподходящими параметрами безопасности. "
                 "Перезапустите вход; значение cookie не было сохранено.");
