@@ -21,7 +21,11 @@ set(CMAKE_AUTORCC ON)
 set(CMAKE_INCLUDE_CURRENT_DIR ON)
 
 find_package(Boost REQUIRED)
-find_package(Qt6 6.11 REQUIRED COMPONENTS Core Gui Qml Quick QuickControls2 Network Concurrent)
+find_package(
+    Qt6 6.11 REQUIRED
+    COMPONENTS Core Gui Qml Quick QuickControls2 Network Concurrent
+               WebEngineCore WebEngineQuick
+)
 find_package(sqlcipher REQUIRED CONFIG)
 find_package(libsodium REQUIRED CONFIG)
 find_package(xlsxio REQUIRED CONFIG)
@@ -145,6 +149,8 @@ qt_add_resources(
         "/org/wealthtracker/runtime"
     FILES
         scripts/zen_plugin_host.mjs
+        bundles/tbank-retail/preferences.xml
+        bundles/tbank-retail/tbank-retail.cjs
 )
 target_link_libraries(
     app
@@ -153,6 +159,8 @@ target_link_libraries(
         Qt6::Gui
         Qt6::Qml
         Qt6::Quick
+        Qt6::WebEngineCore
+        Qt6::WebEngineQuick
         core
         storage
         platform
@@ -203,6 +211,7 @@ target_link_libraries(
     wealthtracker
     PRIVATE
         app
+        Qt6::WebEngineQuick
         Qt6::QuickControls2
         Qt6::Concurrent
 )
@@ -274,6 +283,16 @@ if(BUILD_TESTING)
     enable_strict_warnings(connectors_tests)
     enable_sanitizers(connectors_tests)
     catch_discover_tests(connectors_tests)
+
+    find_program(NODE_EXECUTABLE node)
+    if(NODE_EXECUTABLE)
+        add_test(
+            NAME tbank_bundle_test
+            COMMAND
+                "${NODE_EXECUTABLE}"
+                "${CMAKE_CURRENT_SOURCE_DIR}/tests/scripts/tbank_bundle_test.cjs"
+        )
+    endif()
 
     add_executable(app_tests
         tests/app/test_main.cpp

@@ -6,19 +6,24 @@
 #include <QFile>
 #include <QFileInfo>
 #include <QHash>
+#include <QJsonArray>
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QLocale>
 #include <QNetworkAccessManager>
+#include <QNetworkCookie>
 #include <QNetworkReply>
 #include <QPointer>
 #include <QProcess>
 #include <QSettings>
+#include <QSaveFile>
 #include <QSet>
 #include <QStandardPaths>
 #include <QTemporaryFile>
 #include <QTimer>
 #include <QUrl>
+#include <QWebEngineCookieStore>
+#include <QQuickWebEngineProfile>
 
 #include <algorithm>
 #include <cstddef>
@@ -155,6 +160,108 @@ const QStringList& supportedConnectorIds() {
     return ids;
 }
 
+struct RetailBankDefinition {
+    QString connectorId;
+    QString institution;
+    QString accent;
+};
+
+const QVector<RetailBankDefinition>& retailBankDefinitions() {
+    static const QVector<RetailBankDefinition> banks{
+        {QStringLiteral("tbank-retail"), QStringLiteral("Т-Банк"),
+         QStringLiteral("#F9C74F")},
+        {QStringLiteral("alfa-retail"), QStringLiteral("Альфа-Банк"),
+         QStringLiteral("#EF4444")},
+        {QStringLiteral("sber-retail"), QStringLiteral("Сбер"),
+         QStringLiteral("#22C55E")},
+        {QStringLiteral("vtb-retail"), QStringLiteral("ВТБ"),
+         QStringLiteral("#2563EB")},
+    };
+    return banks;
+}
+
+constexpr auto tbankRetailPluginId = "tbank-retail";
+constexpr auto tbankRetailOrigin = "https://www.tbank.ru";
+constexpr auto tbankBundleResource =
+    ":/org/wealthtracker/runtime/bundles/tbank-retail/tbank-retail.cjs";
+constexpr auto tbankPreferencesResource =
+    ":/org/wealthtracker/runtime/bundles/tbank-retail/preferences.xml";
+
+std::expected<void, QString> copyResourceFile(const QString& resourcePath,
+                                              const QString& destination) {
+    QFile source(resourcePath);
+    if (!source.open(QIODevice::ReadOnly)) {
+        return std::unexpected(
+            QStringLiteral("Не найден встроенный ресурс Т-Банка"));
+    }
+    const auto contents = source.readAll();
+    QFile existing(destination);
+    if (existing.open(QIODevice::ReadOnly)
+        && existing.readAll() == contents) {
+        QFile::setPermissions(destination, QFileDevice::ReadOwner);
+        return {};
+    }
+
+    QSaveFile output(destination);
+    if (!output.open(QIODevice::WriteOnly)
+        || output.write(contents) != contents.size()
+        || !output.commit()) {
+        return std::unexpected(
+            QStringLiteral("Не удалось подготовить встроенный bundle Т-Банка"));
+    }
+    QFile::setPermissions(destination, QFileDevice::ReadOwner);
+    return {};
+}
+
+std::expected<QString, QString> extractedTBankBundlePath() {
+    const auto directory =
+        QStandardPaths::writableLocation(QStandardPaths::AppLocalDataLocation)
+        + QStringLiteral("/bundles/tbank-retail-v1");
+    if (directory.isEmpty() || !QDir{}.mkpath(directory)) {
+        return std::unexpected(
+            QStringLiteral("Не удалось создать каталог bundle Т-Банка"));
+    }
+    const auto bundlePath =
+        directory + QStringLiteral("/tbank-retail.cjs");
+    const auto preferencesPath =
+        directory + QStringLiteral("/preferences.xml");
+    if (auto copied = copyResourceFile(
+            QString::fromLatin1(tbankBundleResource), bundlePath);
+        !copied) {
+        return std::unexpected(copied.error());
+    }
+    if (auto copied = copyResourceFile(
+            QString::fromLatin1(tbankPreferencesResource), preferencesPath);
+        !copied) {
+        return std::unexpected(copied.error());
+    }
+    return QFileInfo(bundlePath).canonicalFilePath();
+}
+
+bool isTBankCookieDomain(QString domain) {
+    domain = domain.toLower();
+    if (domain.startsWith(QLatin1Char('.'))) {
+        domain.remove(0, 1);
+    }
+    return domain == QStringLiteral("tbank.ru")
+        || domain.endsWith(QStringLiteral(".tbank.ru"));
+}
+
+bool isRetailBankConnector(const QString& connectorId) {
+    return std::ranges::any_of(
+        retailBankDefinitions(), [&connectorId](const auto& bank) {
+            return bank.connectorId == connectorId;
+        });
+}
+
+QString retailBankInstitution(const QString& connectorId) {
+    const auto match = std::ranges::find_if(
+        retailBankDefinitions(), [&connectorId](const auto& bank) {
+            return bank.connectorId == connectorId;
+        });
+    return match == retailBankDefinitions().cend() ? QString{} : match->institution;
+}
+
 QString formatMinorUnits(const std::int64_t minorUnits) {
     const bool negative = minorUnits < 0;
     const auto magnitude = negative
@@ -207,13 +314,95 @@ bool checkedAdd(std::int64_t& total, const std::int64_t value) {
 }
 
 QString connectorAccent(const QString& connectorId) {
-    if (connectorId == QStringLiteral("alfa-api")) {
+    if (connectorId == QStringLiteral("alfa-api") ||
+        connectorId == QStringLiteral("alfa-retail")) {
         return QStringLiteral("#EF4444");
     }
-    if (connectorId == QStringLiteral("tbank-business")) {
+    if (connectorId == QStringLiteral("tbank-business") ||
+        connectorId == QStringLiteral("tbank-retail")) {
         return QStringLiteral("#F9C74F");
     }
+    if (connectorId == QStringLiteral("sber-retail")) {
+        return QStringLiteral("#22C55E");
+    }
     return QStringLiteral("#2563EB");
+}
+
+constexpr int zenAutoUpdateIntervalHours = 6;
+constexpr int zenAutoUpdateIntervalSeconds =
+    zenAutoUpdateIntervalHours * 60 * 60;
+
+std::optional<QDateTime> settingsDateTime(const QString& key) {
+    const auto value = QSettings{}.value(key).toString();
+    if (value.isEmpty()) {
+        return std::nullopt;
+    }
+    auto parsed = QDateTime::fromString(value, Qt::ISODateWithMs);
+    if (!parsed.isValid()) {
+        parsed = QDateTime::fromString(value, Qt::ISODate);
+    }
+    return parsed.isValid() ? std::optional(parsed.toUTC()) : std::nullopt;
+}
+
+QString formatSyncDateTime(const QDateTime& value) {
+    auto local = value.toLocalTime();
+    return QLocale(QLocale::Russian, QLocale::Russia)
+        .toString(local, QStringLiteral("d MMMM, HH:mm"));
+}
+
+bool canPersistZenPreference(
+    const wealthtracker::connectors::ZenPluginPreference& field) {
+    using wealthtracker::connectors::ZenPluginPreferenceKind;
+    return !field.sensitive && field.kind != ZenPluginPreferenceKind::Password;
+}
+
+QString zenPreferenceKindName(
+    wealthtracker::connectors::ZenPluginPreferenceKind kind);
+
+QJsonObject savedZenPluginPreferences() {
+    const auto encoded =
+        QSettings{}.value(QStringLiteral("zenPlugin/preferences"))
+            .toByteArray();
+    if (encoded.isEmpty() || encoded.size() > 64 * 1024) {
+        return {};
+    }
+    QJsonParseError error;
+    const auto document = QJsonDocument::fromJson(encoded, &error);
+    if (error.error != QJsonParseError::NoError || !document.isObject()) {
+        return {};
+    }
+    return document.object();
+}
+
+QJsonObject persistableZenPreferences(
+    const ZenPluginDescriptor& descriptor, const QJsonObject& preferences) {
+    QJsonObject safe;
+    for (const auto& field : descriptor.preferences) {
+        if (canPersistZenPreference(field) && preferences.contains(field.key)) {
+            safe.insert(field.key, preferences.value(field.key));
+        }
+    }
+    return safe;
+}
+
+QVariantList zenPluginFieldVariants(const ZenPluginDescriptor& descriptor) {
+    const auto saved = savedZenPluginPreferences();
+    QVariantList fields;
+    for (const auto& field : descriptor.preferences) {
+        const auto savedValue = saved.value(field.key);
+        fields.push_back(QVariantMap{
+            {QStringLiteral("key"), field.key},
+            {QStringLiteral("label"), field.label},
+            {QStringLiteral("kind"), zenPreferenceKindName(field.kind)},
+            {QStringLiteral("defaultValue"),
+             savedValue.isUndefined()
+                 ? QVariant(field.defaultValue)
+                 : savedValue.toVariant()},
+            {QStringLiteral("required"), field.required},
+            {QStringLiteral("sensitive"), field.sensitive},
+        });
+    }
+    return fields;
 }
 
 QString nodeExecutable() {
@@ -642,6 +831,10 @@ public:
           tbank_business(network),
           modulbank(network) {}
 
+    ~AppControllerPrivate() {
+        tbank_candidate_session.fill('\0');
+    }
+
     std::unique_ptr<CredentialBackend> credentials;
     QNetworkAccessManager network;
     wealthtracker::connectors::TInvestClient investment;
@@ -652,7 +845,15 @@ public:
     QHash<QString, QString> bank_institutions;
     std::optional<ZenPluginDescriptor> zen_descriptor;
     std::unique_ptr<ZenPluginRunner> zen_runner;
+    QTimer zen_auto_update_timer;
+    QDateTime next_zen_auto_update_at;
     QString zen_prompt_id;
+    QString configured_zen_state_key;
+    QPointer<QQuickWebEngineProfile> tbank_web_profile;
+    QByteArray tbank_candidate_session;
+    bool tbank_cookie_capture_pending = false;
+    bool tbank_rejected_psid_seen = false;
+    int tbank_cookie_count = 0;
 };
 
 AppController::AppController(QObject* parent)
@@ -711,6 +912,8 @@ AppController::AppController(std::unique_ptr<CredentialBackend> credentials,
                 configuredBundle);
         if (descriptor) {
             private_->zen_descriptor = std::move(*descriptor);
+            private_->configured_zen_state_key =
+                zenStateCredentialKey(*private_->zen_descriptor);
             zen_plugin_id_ = private_->zen_descriptor->pluginId;
             zen_plugin_bundle_path_ =
                 private_->zen_descriptor->bundlePath;
@@ -719,21 +922,43 @@ AppController::AppController(std::unique_ptr<CredentialBackend> credentials,
                     .value(QStringLiteral("zenPlugin/institution"),
                            zen_plugin_id_)
                     .toString();
-            for (const auto& field :
-                 private_->zen_descriptor->preferences) {
-                zen_plugin_fields_.push_back(QVariantMap{
-                    {QStringLiteral("key"), field.key},
-                    {QStringLiteral("label"), field.label},
-                    {QStringLiteral("kind"),
-                     zenPreferenceKindName(field.kind)},
-                    {QStringLiteral("defaultValue"),
-                     field.defaultValue},
-                    {QStringLiteral("required"), field.required},
-                    {QStringLiteral("sensitive"), field.sensitive},
-                });
+            zen_plugin_fields_ =
+                zenPluginFieldVariants(*private_->zen_descriptor);
+            if (zen_plugin_id_ == QString::fromLatin1(tbankRetailPluginId)
+                && private_->credentials
+                && private_->credentials->supported()) {
+                auto state = private_->credentials->get(
+                    private_->configured_zen_state_key);
+                if (state && *state) {
+                    QByteArray encoded = std::move(**state);
+                    const auto document = QJsonDocument::fromJson(encoded);
+                    encoded.fill('\0');
+                    const auto psid = document.object()
+                                          .value(QStringLiteral("pluginData"))
+                                          .toObject()
+                                          .value(QStringLiteral("psid"))
+                                          .toString();
+                    tbank_connected_ = psid.size() >= 16
+                        && settingsDateTime(
+                            QStringLiteral("zenPlugin/lastSyncAt"))
+                            .has_value();
+                }
             }
         }
     }
+    private_->zen_auto_update_timer.setSingleShot(true);
+    connect(&private_->zen_auto_update_timer, &QTimer::timeout, this,
+            [this] {
+                if (zenPluginAutoUpdate() && private_->zen_descriptor &&
+                    !zen_plugin_running_) {
+                    if (!synchronizeZenPlugin()) {
+                        scheduleZenPluginAutoUpdateAfter(
+                            QDateTime::currentDateTimeUtc());
+                        emit zenPluginChanged();
+                    }
+                }
+            });
+    refreshZenPluginAutoUpdateSchedule();
     refreshBankConnections();
     import_status_ = QStringLiteral("Нет импортированных выписок");
     sync_status_ = QStringLiteral("Нет синхронизированных подключений");
@@ -799,26 +1024,156 @@ bool AppController::zenPluginRunning() const noexcept {
     return zen_plugin_running_;
 }
 
+bool AppController::zenPluginAutoUpdate() const {
+    return QSettings{}.value(QStringLiteral("zenPlugin/autoUpdate"), false)
+        .toBool();
+}
+
+QString AppController::zenPluginLastSync() const {
+    const auto lastSync =
+        settingsDateTime(QStringLiteral("zenPlugin/lastSyncAt"));
+    return lastSync ? formatSyncDateTime(*lastSync)
+                    : QStringLiteral("Нет успешного обновления");
+}
+
+QString AppController::zenPluginNextSync() const {
+    if (!zenPluginAutoUpdate()) {
+        return QStringLiteral("Выключено");
+    }
+    if (!private_->zen_descriptor) {
+        return QStringLiteral("Выберите bundle");
+    }
+    if (!private_->next_zen_auto_update_at.isValid()) {
+        return QStringLiteral("После первого успешного запуска");
+    }
+    return formatSyncDateTime(private_->next_zen_auto_update_at);
+}
+
+void AppController::attachTBankWebProfile(QObject* profileObject) {
+    auto* profile = qobject_cast<QQuickWebEngineProfile*>(profileObject);
+    if (!profile || private_->tbank_web_profile == profile) {
+        return;
+    }
+    if (private_->tbank_web_profile) {
+        disconnect(private_->tbank_web_profile->cookieStore(), nullptr,
+                   this, nullptr);
+    }
+    private_->tbank_web_profile = profile;
+    profile->setOffTheRecord(true);
+    profile->setHttpCacheType(QQuickWebEngineProfile::MemoryHttpCache);
+    profile->setPersistentCookiesPolicy(
+        QQuickWebEngineProfile::NoPersistentCookies);
+    profile->setPersistentPermissionsPolicy(
+        QQuickWebEngineProfile::PersistentPermissionsPolicy::StoreInMemory);
+    profile->setHttpAcceptLanguage(QStringLiteral("ru-RU,ru;q=0.9"));
+    connect(profile->cookieStore(), &QWebEngineCookieStore::cookieAdded,
+            this, [this](const QNetworkCookie& cookie) {
+                if (!tbank_login_active_
+                    || !isTBankCookieDomain(cookie.domain())) {
+                    return;
+                }
+                ++private_->tbank_cookie_count;
+                if (cookie.name() != QByteArrayLiteral("psid")) {
+                    return;
+                }
+
+                auto candidate = cookie.value();
+                if (!cookie.isSecure() || candidate.size() < 16
+                    || candidate.size() > 4096 || candidate.contains('\0')
+                    || candidate.contains('\r') || candidate.contains('\n')
+                    || candidate.contains(';')) {
+                    candidate.fill('\0');
+                    private_->tbank_rejected_psid_seen = true;
+                    return;
+                }
+
+                private_->tbank_candidate_session.fill('\0');
+                private_->tbank_candidate_session = std::move(candidate);
+                if (!private_->tbank_cookie_capture_pending) {
+                    tbank_login_status_ = QStringLiteral(
+                        "Сессия обнаружена. Нажмите «Подключить», чтобы проверить доступ.");
+                    emit tbankConnectionChanged();
+                    return;
+                }
+
+                private_->tbank_cookie_capture_pending = false;
+                auto session = std::move(private_->tbank_candidate_session);
+                private_->tbank_candidate_session.clear();
+                acceptTBankSession(std::move(session));
+            }, Qt::QueuedConnection);
+}
+
+bool AppController::isAllowedTBankLoginUrl(const QUrl& url) const {
+    if (!url.isValid() || url.scheme() != QStringLiteral("https")
+        || !url.userInfo().isEmpty() || url.port(-1) != -1) {
+        return false;
+    }
+    const auto host = url.host().toLower();
+    return host == QStringLiteral("tbank.ru")
+        || host.endsWith(QStringLiteral(".tbank.ru"))
+        || host == QStringLiteral("id.tinkoff.ru");
+}
+
+bool AppController::tbankConnected() const noexcept {
+    return tbank_connected_;
+}
+
+bool AppController::tbankLoginActive() const noexcept {
+    return tbank_login_active_;
+}
+
+bool AppController::tbankSessionAvailable() const noexcept {
+    return !private_->tbank_candidate_session.isEmpty();
+}
+
+QString AppController::tbankLoginStatus() const {
+    return tbank_login_status_;
+}
+
+QUrl AppController::tbankLoginUrl() const {
+    return QUrl(QStringLiteral("https://www.tbank.ru/login"));
+}
+
 void AppController::refreshBankConnections() {
+    const bool tbankBundleSelected = private_->zen_descriptor
+        && private_->zen_descriptor->pluginId
+            == QString::fromLatin1(tbankRetailPluginId);
+    const bool externalBundleSelected = private_->zen_descriptor
+        && !tbankBundleSelected;
+    const auto localZenStatus = [this, externalBundleSelected] {
+        if (nodeExecutable().isEmpty()) {
+            return QStringLiteral("Требуется Node.js");
+        }
+        if (!externalBundleSelected) {
+            return QStringLiteral("Выберите bundle");
+        }
+        if (zen_plugin_running_) {
+            return QStringLiteral("Синхронизация");
+        }
+        return zenPluginAutoUpdate() ? QStringLiteral("Автообновление")
+                                     : QStringLiteral("Настроен");
+    }();
     bank_connections_.replace({
-        {QStringLiteral("zenplugins-local"),
-         private_->zen_descriptor
-             ? zen_plugin_institution_
-             : QStringLiteral("Локальный ZenPlugins"),
-         QStringLiteral("Счета, остатки и операции"),
-         QStringLiteral("Внешний bundle · локальный процесс"),
-         nodeExecutable().isEmpty()
-             ? QStringLiteral("Требуется Node.js")
-             : private_->zen_descriptor
-                 ? QStringLiteral("Настроен")
-                 : QStringLiteral("Выберите bundle"),
-         private_->zen_descriptor.has_value(),
-         !nodeExecutable().isEmpty()},
         {QStringLiteral("tbank-retail"),
          QStringLiteral("Т-Банк"),
          QStringLiteral("Карты, счета и операции"),
-         QStringLiteral("Локальный интерактивный плагин"),
-         QStringLiteral("Нет официального API"),
+         QStringLiteral("Вход на tbank.ru · локальный bundle"),
+         tbank_login_active_
+             ? QStringLiteral("Вход в банк")
+             : zen_plugin_running_ && tbankBundleSelected
+                 ? QStringLiteral("Синхронизация")
+                 : tbank_connected_
+                     ? zenPluginAutoUpdate()
+                         ? QStringLiteral("Автообновление")
+                         : QStringLiteral("Подключено")
+                     : QStringLiteral("Требуется вход"),
+         tbank_connected_,
+         !nodeExecutable().isEmpty()},
+        {QStringLiteral("alfa-retail"),
+         QStringLiteral("Альфа-Банк"),
+         QStringLiteral("Карты, счета и операции"),
+         QStringLiteral("Телефон + код · локальный адаптер"),
+         QStringLiteral("Нужен адаптер"),
          false,
          false},
         {QStringLiteral("tbank-business"),
@@ -851,15 +1206,15 @@ void AppController::refreshBankConnections() {
         {QStringLiteral("sber-retail"),
          QStringLiteral("Сбер"),
          QStringLiteral("Карты, счета и операции"),
-         QStringLiteral("Локальный интерактивный плагин"),
-         QStringLiteral("Нет официального API"),
+         QStringLiteral("Телефон + код · локальный адаптер"),
+         QStringLiteral("Нужен адаптер"),
          false,
          false},
         {QStringLiteral("vtb-retail"),
          QStringLiteral("ВТБ"),
          QStringLiteral("Карты, счета и операции"),
-         QStringLiteral("Локальный интерактивный плагин"),
-         QStringLiteral("Нет официального API"),
+         QStringLiteral("Телефон + код · локальный адаптер"),
+         QStringLiteral("Нужен адаптер"),
          false,
          false},
         {QStringLiteral("t-invest"),
@@ -871,7 +1226,51 @@ void AppController::refreshBankConnections() {
              : QStringLiteral("Требуется токен"),
          connected_bank_ids_.contains(QStringLiteral("t-invest")),
          true},
+        {QStringLiteral("zenplugins-local"),
+         externalBundleSelected
+             ? zen_plugin_institution_
+             : QStringLiteral("Локальный ZenPlugins"),
+         QStringLiteral("Счета, остатки и операции"),
+         QStringLiteral("Внешний bundle · локальный процесс"),
+         localZenStatus,
+         externalBundleSelected,
+         !nodeExecutable().isEmpty()},
     });
+}
+
+void AppController::refreshZenPluginAutoUpdateSchedule() {
+    private_->zen_auto_update_timer.stop();
+    private_->next_zen_auto_update_at = {};
+
+    if (!zenPluginAutoUpdate() || !private_->zen_descriptor) {
+        return;
+    }
+    const auto lastSync =
+        settingsDateTime(QStringLiteral("zenPlugin/lastSyncAt"));
+    if (!lastSync) {
+        return;
+    }
+    scheduleZenPluginAutoUpdateAfter(*lastSync);
+}
+
+void AppController::scheduleZenPluginAutoUpdateAfter(const QDateTime& from) {
+    if (!zenPluginAutoUpdate() || !private_->zen_descriptor) {
+        return;
+    }
+
+    const auto now = QDateTime::currentDateTimeUtc();
+    auto next = from.toUTC().addSecs(zenAutoUpdateIntervalSeconds);
+    auto secondsUntilNext = now.secsTo(next);
+    if (secondsUntilNext < 10) {
+        secondsUntilNext = 10;
+        next = now.addSecs(secondsUntilNext);
+    }
+
+    private_->next_zen_auto_update_at = next;
+    const auto milliseconds =
+        std::min<qint64>(secondsUntilNext * 1000LL,
+                         std::numeric_limits<int>::max());
+    private_->zen_auto_update_timer.start(static_cast<int>(milliseconds));
 }
 
 void AppController::loadDemoData() {
@@ -1518,6 +1917,17 @@ bool AppController::inspectZenPluginBundle(const QUrl& source) {
         return false;
     }
 
+    const auto previousStateKey =
+        private_->zen_descriptor ? zenStateCredentialKey(*private_->zen_descriptor)
+                                 : QString{};
+    const auto newStateKey = zenStateCredentialKey(*descriptor);
+    if (!previousStateKey.isEmpty() && previousStateKey != newStateKey) {
+        QSettings settings;
+        settings.remove(QStringLiteral("zenPlugin/preferences"));
+        settings.remove(QStringLiteral("zenPlugin/lastSyncAt"));
+        settings.setValue(QStringLiteral("zenPlugin/autoUpdate"), false);
+    }
+
     private_->zen_descriptor = std::move(*descriptor);
     zen_plugin_id_ = private_->zen_descriptor->pluginId;
     zen_plugin_bundle_path_ =
@@ -1526,18 +1936,10 @@ bool AppController::inspectZenPluginBundle(const QUrl& source) {
         zen_plugin_id_ == QStringLiteral("altabanka-rs")
         ? QStringLiteral("Alta Banka (Сербия)")
         : zen_plugin_id_;
-    zen_plugin_fields_.clear();
-    for (const auto& field : private_->zen_descriptor->preferences) {
-        zen_plugin_fields_.push_back(QVariantMap{
-            {QStringLiteral("key"), field.key},
-            {QStringLiteral("label"), field.label},
-            {QStringLiteral("kind"),
-             zenPreferenceKindName(field.kind)},
-            {QStringLiteral("defaultValue"), field.defaultValue},
-            {QStringLiteral("required"), field.required},
-            {QStringLiteral("sensitive"), field.sensitive},
-        });
-    }
+    zen_plugin_fields_ =
+        zenPluginFieldVariants(*private_->zen_descriptor);
+    refreshZenPluginAutoUpdateSchedule();
+    refreshBankConnections();
     sync_status_ =
         QStringLiteral("%1: bundle проверен · полей %2")
             .arg(zen_plugin_id_)
@@ -1556,10 +1958,36 @@ bool AppController::startZenPlugin(
         emit syncStatusChanged();
         return false;
     }
+    if (private_->zen_descriptor->pluginId
+        == QString::fromLatin1(tbankRetailPluginId)) {
+        const auto builtInPath = extractedTBankBundlePath();
+        if (!builtInPath
+            || QFileInfo(private_->zen_descriptor->bundlePath)
+                    .canonicalFilePath()
+                != *builtInPath) {
+            sync_status_ = builtInPath
+                ? QStringLiteral("Встроенный bundle Т-Банка имеет неверный путь")
+                : builtInPath.error();
+            emit syncStatusChanged();
+            return false;
+        }
+        auto verified =
+            wealthtracker::connectors::inspectZenPluginBundle(*builtInPath);
+        if (!verified
+            || verified->pluginId != QString::fromLatin1(tbankRetailPluginId)) {
+            sync_status_ = QStringLiteral(
+                "Не удалось проверить встроенный bundle Т-Банка");
+            emit syncStatusChanged();
+            return false;
+        }
+        private_->zen_descriptor = std::move(*verified);
+        zen_plugin_fields_ =
+            zenPluginFieldVariants(*private_->zen_descriptor);
+    }
     const auto node = nodeExecutable();
     if (node.isEmpty()) {
         sync_status_ =
-            QStringLiteral("Для внешних JavaScript-плагинов нужен Node.js 18+");
+            QStringLiteral("Для Т-Банка и JavaScript-плагинов нужен Node.js 18+");
         emit syncStatusChanged();
         return false;
     }
@@ -1649,7 +2077,14 @@ bool AppController::startZenPlugin(
         .state = std::move(state),
         .from = from,
         .to = QDateTime::currentDateTimeUtc(),
+        .allowedOrigins =
+            private_->zen_descriptor->pluginId
+                == QString::fromLatin1(tbankRetailPluginId)
+            ? QStringList{QString::fromLatin1(tbankRetailOrigin)}
+            : QStringList{},
     };
+    const auto safePreferences =
+        persistableZenPreferences(request.descriptor, request.preferences);
     auto startMessage =
         wealthtracker::connectors::makeZenPluginStartMessage(
             request);
@@ -1675,7 +2110,7 @@ bool AppController::startZenPlugin(
             emit zenPluginChanged();
             emit syncStatusChanged();
         },
-        [this, batchKey, stateKey,
+        [this, batchKey, stateKey, safePreferences, pluginId,
          displayName](NormalizedBatch batch, QJsonObject newState) {
             auto encoded =
                 QJsonDocument(newState).toJson(
@@ -1683,10 +2118,37 @@ bool AppController::startZenPlugin(
             const auto stored =
                 private_->credentials->put(stateKey, encoded);
             encoded.fill('\0');
+            bool oldStateRemoved = true;
+            if (stored
+                && !private_->configured_zen_state_key.isEmpty()
+                && private_->configured_zen_state_key != stateKey) {
+                oldStateRemoved =
+                    private_->credentials
+                        ->remove(
+                            private_->configured_zen_state_key)
+                        .has_value();
+            }
+            if (stored) {
+                private_->configured_zen_state_key = stateKey;
+            }
 
             const auto accountCount = batch.accounts.size();
             const auto transactionCount =
                 batch.transactions.size();
+            for (auto existing =
+                     private_->bank_batches.begin();
+                 existing != private_->bank_batches.end();) {
+                if (existing.key().startsWith(
+                        QStringLiteral("zen:"))
+                    && existing.key() != batchKey) {
+                    private_->bank_institutions.remove(
+                        existing.key());
+                    existing =
+                        private_->bank_batches.erase(existing);
+                } else {
+                    ++existing;
+                }
+            }
             private_->bank_batches.insert(batchKey,
                                           std::move(batch));
             private_->bank_institutions.insert(batchKey,
@@ -1700,9 +2162,31 @@ bool AppController::startZenPlugin(
             settings.setValue(
                 QStringLiteral("zenPlugin/institution"),
                 displayName);
+            settings.setValue(
+                QStringLiteral("zenPlugin/preferences"),
+                QJsonDocument(safePreferences).toJson(
+                    QJsonDocument::Compact));
+            settings.setValue(
+                QStringLiteral("zenPlugin/lastSyncAt"),
+                QDateTime::currentDateTimeUtc().toString(
+                    Qt::ISODateWithMs));
+            zen_plugin_fields_ =
+                zenPluginFieldVariants(*private_->zen_descriptor);
             zen_plugin_running_ = false;
             zen_plugin_prompt_.clear();
             private_->zen_prompt_id.clear();
+            if (pluginId == QString::fromLatin1(tbankRetailPluginId)) {
+                tbank_connected_ = true;
+                tbank_login_active_ = false;
+                private_->tbank_candidate_session.fill('\0');
+                private_->tbank_candidate_session.clear();
+                tbank_login_status_ = QStringLiteral(
+                    "Т-Банк подключён. Сессия сохранена в системном хранилище.");
+                if (private_->tbank_web_profile) {
+                    private_->tbank_web_profile->cookieStore()
+                        ->deleteAllCookies();
+                }
+            }
             sync_status_ =
                 QStringLiteral("%1: счетов %2 · операций %3")
                     .arg(displayName)
@@ -1711,19 +2195,54 @@ bool AppController::startZenPlugin(
             if (!stored) {
                 sync_status_ += QStringLiteral(
                     " · состояние сессии не сохранено");
+            } else if (!oldStateRemoved) {
+                sync_status_ += QStringLiteral(
+                    " · старое состояние не удалено");
             }
+            refreshZenPluginAutoUpdateSchedule();
             refreshBankConnections();
             emit zenPluginChanged();
             emit syncStatusChanged();
+            if (pluginId == QString::fromLatin1(tbankRetailPluginId)) {
+                emit tbankConnectionChanged();
+            }
         },
-        [this, displayName](const QString& error) {
+        [this, displayName, pluginId, stateKey](const QString& error) {
             zen_plugin_running_ = false;
             zen_plugin_prompt_.clear();
             private_->zen_prompt_id.clear();
             sync_status_ =
                 QStringLiteral("%1: %2").arg(displayName, error);
+            if (pluginId == QString::fromLatin1(tbankRetailPluginId)) {
+                tbank_login_status_ = error;
+                if (tbank_login_active_) {
+                    tbank_connected_ = false;
+                    if (private_->credentials) {
+                        (void)private_->credentials->remove(stateKey);
+                    }
+                } else if (error.contains(
+                               QStringLiteral("Сессия Т-Банка истекла"))) {
+                    tbank_connected_ = false;
+                    if (private_->credentials) {
+                        (void)private_->credentials->remove(stateKey);
+                    }
+                }
+                if (tbank_login_active_
+                    && error.contains(
+                        QStringLiteral("Сессия Т-Банка истекла"))) {
+                    tbank_login_status_ = QStringLiteral(
+                        "Сессия ещё не авторизована. Завершите вход на "
+                        "странице банка и нажмите «Подключить» снова.");
+                }
+            }
+            scheduleZenPluginAutoUpdateAfter(
+                QDateTime::currentDateTimeUtc());
+            refreshBankConnections();
             emit zenPluginChanged();
             emit syncStatusChanged();
+            if (pluginId == QString::fromLatin1(tbankRetailPluginId)) {
+                emit tbankConnectionChanged();
+            }
         },
         this);
 
@@ -1738,14 +2257,57 @@ bool AppController::startZenPlugin(
         zen_plugin_running_ = false;
         sync_status_ =
             QStringLiteral("Не удалось подготовить локальный host плагина");
+        refreshBankConnections();
         emit zenPluginChanged();
         emit syncStatusChanged();
         return false;
     }
     startMessage->fill('\0');
+    refreshBankConnections();
     emit zenPluginChanged();
     emit syncStatusChanged();
     return true;
+}
+
+bool AppController::synchronizeZenPlugin() {
+    if (!private_->zen_descriptor) {
+        sync_status_ = QStringLiteral("Сначала выберите собранный bundle");
+        emit syncStatusChanged();
+        return false;
+    }
+    auto preferences = savedZenPluginPreferences().toVariantMap();
+    const auto displayName =
+        zen_plugin_institution_.trimmed().isEmpty()
+            ? private_->zen_descriptor->pluginId
+            : zen_plugin_institution_;
+    return startZenPlugin(displayName, preferences);
+}
+
+void AppController::setZenPluginAutoUpdate(const bool enabled) {
+    if (enabled && !private_->zen_descriptor) {
+        sync_status_ =
+            QStringLiteral("Сначала выберите и запустите локальный bundle");
+        emit syncStatusChanged();
+        return;
+    }
+    QSettings settings;
+    settings.setValue(QStringLiteral("zenPlugin/autoUpdate"), enabled);
+    refreshZenPluginAutoUpdateSchedule();
+    refreshBankConnections();
+    if (enabled) {
+        sync_status_ =
+            settingsDateTime(QStringLiteral("zenPlugin/lastSyncAt"))
+                ? QStringLiteral(
+                      "Локальный плагин будет обновляться каждые %1 ч при запущенном приложении")
+                      .arg(zenAutoUpdateIntervalHours)
+                : QStringLiteral(
+                      "Автообновление начнётся после первого успешного запуска плагина");
+    } else {
+        sync_status_ =
+            QStringLiteral("Автообновление локального плагина выключено");
+    }
+    emit zenPluginChanged();
+    emit syncStatusChanged();
 }
 
 bool AppController::answerZenPluginPrompt(const QString& value) {
@@ -1785,34 +2347,68 @@ void AppController::cancelZenPlugin() {
     zen_plugin_prompt_.clear();
     private_->zen_prompt_id.clear();
     sync_status_ = QStringLiteral("Синхронизация плагина отменена");
+    refreshBankConnections();
     emit zenPluginChanged();
     emit syncStatusChanged();
 }
 
 void AppController::removeZenPlugin() {
+    const bool removingTBank = private_->zen_descriptor
+        && private_->zen_descriptor->pluginId
+            == QString::fromLatin1(tbankRetailPluginId);
     cancelZenPlugin();
-    if (private_->zen_descriptor && private_->credentials) {
-        const auto removed = private_->credentials->remove(
-            zenStateCredentialKey(*private_->zen_descriptor));
-        if (!removed) {
-            sync_status_ = removed.error();
-            emit syncStatusChanged();
-            return;
+    if (private_->credentials) {
+        QSet<QString> stateKeys;
+        if (private_->zen_descriptor) {
+            stateKeys.insert(
+                zenStateCredentialKey(*private_->zen_descriptor));
         }
-        private_->bank_batches.remove(
-            QStringLiteral("zen:")
-            + private_->zen_descriptor->pluginId);
-        private_->bank_institutions.remove(
-            QStringLiteral("zen:")
-            + private_->zen_descriptor->pluginId);
+        if (!private_->configured_zen_state_key.isEmpty()) {
+            stateKeys.insert(private_->configured_zen_state_key);
+        }
+        for (const auto& stateKey : stateKeys) {
+            const auto removed =
+                private_->credentials->remove(stateKey);
+            if (!removed) {
+                sync_status_ = removed.error();
+                emit syncStatusChanged();
+                return;
+            }
+        }
+        for (auto existing =
+                 private_->bank_batches.begin();
+             existing != private_->bank_batches.end();) {
+            if (existing.key().startsWith(
+                    QStringLiteral("zen:"))) {
+                private_->bank_institutions.remove(existing.key());
+                existing =
+                    private_->bank_batches.erase(existing);
+            } else {
+                ++existing;
+            }
+        }
     }
     QSettings settings;
     settings.remove(QStringLiteral("zenPlugin"));
+    private_->zen_auto_update_timer.stop();
+    private_->next_zen_auto_update_at = {};
     private_->zen_descriptor.reset();
+    private_->configured_zen_state_key.clear();
     zen_plugin_fields_.clear();
     zen_plugin_id_.clear();
     zen_plugin_bundle_path_.clear();
     zen_plugin_institution_.clear();
+    if (removingTBank) {
+        tbank_connected_ = false;
+        tbank_login_active_ = false;
+        private_->tbank_candidate_session.fill('\0');
+        private_->tbank_candidate_session.clear();
+        private_->tbank_cookie_capture_pending = false;
+        tbank_login_status_ = QStringLiteral("Т-Банк отключён");
+        if (private_->tbank_web_profile) {
+            private_->tbank_web_profile->cookieStore()->deleteAllCookies();
+        }
+    }
     if (!demo_mode_) {
         rebuildBankModels();
     }
@@ -1821,6 +2417,206 @@ void AppController::removeZenPlugin() {
     refreshBankConnections();
     emit zenPluginChanged();
     emit syncStatusChanged();
+    if (removingTBank) {
+        emit tbankConnectionChanged();
+    }
+}
+
+bool AppController::prepareTBankConnection() {
+    const auto reportFailure = [this](QString message) {
+        sync_status_ = std::move(message);
+        tbank_login_status_ = sync_status_;
+        emit syncStatusChanged();
+        emit tbankConnectionChanged();
+        return false;
+    };
+    if (zen_plugin_running_) {
+        return reportFailure(QStringLiteral(
+            "Сначала завершите текущую синхронизацию"));
+    }
+    const auto path = extractedTBankBundlePath();
+    if (!path) {
+        return reportFailure(path.error());
+    }
+    if (!private_->zen_descriptor
+        || private_->zen_descriptor->pluginId
+            != QString::fromLatin1(tbankRetailPluginId)
+        || private_->zen_descriptor->bundlePath != *path) {
+        if (!inspectZenPluginBundle(QUrl::fromLocalFile(*path))) {
+            return reportFailure(sync_status_);
+        }
+    }
+    zen_plugin_institution_ = QStringLiteral("Т-Банк");
+    refreshBankConnections();
+    emit zenPluginChanged();
+    return true;
+}
+
+void AppController::beginTBankLogin() {
+    if (!prepareTBankConnection()) {
+        return;
+    }
+    if (!private_->credentials || !private_->credentials->supported()) {
+        tbank_login_status_ = QStringLiteral(
+            "Системное хранилище секретов недоступно");
+        emit tbankConnectionChanged();
+        return;
+    }
+    auto* profile = private_->tbank_web_profile.data();
+    if (!profile) {
+        tbank_login_status_ = QStringLiteral(
+            "Встроенное окно входа Т-Банка ещё не готово");
+        emit tbankConnectionChanged();
+        return;
+    }
+    profile->cookieStore()->deleteAllCookies();
+    private_->tbank_candidate_session.fill('\0');
+    private_->tbank_candidate_session.clear();
+    private_->tbank_cookie_capture_pending = false;
+    private_->tbank_rejected_psid_seen = false;
+    private_->tbank_cookie_count = 0;
+    tbank_login_active_ = true;
+    tbank_login_status_ = QStringLiteral(
+        "Введите телефон, пароль и код только на странице Т-Банка");
+    refreshBankConnections();
+    emit tbankConnectionChanged();
+}
+
+void AppController::confirmTBankLogin() {
+    if (!tbank_login_active_ || zen_plugin_running_
+        || private_->tbank_cookie_capture_pending) {
+        return;
+    }
+    auto* profile = private_->tbank_web_profile.data();
+    if (!profile) {
+        tbank_login_status_ = QStringLiteral(
+            "Встроенное окно входа Т-Банка недоступно");
+        emit tbankConnectionChanged();
+        return;
+    }
+    if (!private_->tbank_candidate_session.isEmpty()) {
+        auto session = std::move(private_->tbank_candidate_session);
+        private_->tbank_candidate_session.clear();
+        acceptTBankSession(std::move(session));
+        return;
+    }
+    private_->tbank_cookie_capture_pending = true;
+    private_->tbank_rejected_psid_seen = false;
+    private_->tbank_cookie_count = 0;
+    tbank_login_status_ = QStringLiteral(
+        "Проверяем сессию и доступ к счетам…");
+    profile->cookieStore()->loadAllCookies();
+    emit tbankConnectionChanged();
+    QTimer::singleShot(5000, this, [this] {
+        if (!private_->tbank_cookie_capture_pending) {
+            return;
+        }
+        private_->tbank_cookie_capture_pending = false;
+        if (private_->tbank_rejected_psid_seen) {
+            tbank_login_status_ = QStringLiteral(
+                "Т-Банк создал psid с неподходящими параметрами безопасности. "
+                "Перезапустите вход; значение cookie не было сохранено.");
+        } else if (private_->tbank_cookie_count > 0) {
+            tbank_login_status_ = QStringLiteral(
+                "Авторизованная сессия ещё не создана. Дождитесь страницы со "
+                "счетами Т-Банка и нажмите «Проверить сессию» снова.");
+        } else {
+            tbank_login_status_ = QStringLiteral(
+                "Т-Банк не создал cookies. Проверьте ошибку загрузки или "
+                "сертификата и повторите вход.");
+        }
+        emit tbankConnectionChanged();
+    });
+}
+
+void AppController::cancelTBankLogin() {
+    if (!tbank_login_active_) {
+        return;
+    }
+    tbank_login_active_ = false;
+    private_->tbank_candidate_session.fill('\0');
+    private_->tbank_candidate_session.clear();
+    private_->tbank_cookie_capture_pending = false;
+    tbank_login_status_ = QStringLiteral("Вход отменён");
+    if (private_->tbank_web_profile) {
+        private_->tbank_web_profile->cookieStore()->deleteAllCookies();
+    }
+    if (!tbank_connected_ && private_->credentials
+        && private_->zen_descriptor
+        && private_->zen_descriptor->pluginId
+            == QString::fromLatin1(tbankRetailPluginId)) {
+        (void)private_->credentials->remove(
+            zenStateCredentialKey(*private_->zen_descriptor));
+    }
+    refreshBankConnections();
+    emit tbankConnectionChanged();
+}
+
+void AppController::acceptTBankSession(QByteArray session) {
+    if (!tbank_login_active_ || session.size() < 16 || session.size() > 4096
+        || session.contains('\0') || session.contains('\r')
+        || session.contains('\n') || session.contains(';')
+        || !prepareTBankConnection()) {
+        session.fill('\0');
+        return;
+    }
+
+    const auto stateKey = zenStateCredentialKey(*private_->zen_descriptor);
+    QString sessionValue = QString::fromUtf8(session);
+    session.fill('\0');
+    const QJsonObject state{
+        {QStringLiteral("pluginData"),
+         QJsonObject{{QStringLiteral("psid"), sessionValue}}},
+        {QStringLiteral("cookies"), QJsonArray{}}};
+    auto encoded = QJsonDocument(state).toJson(QJsonDocument::Compact);
+    sessionValue.fill(QChar{'\0'});
+    const auto stored = private_->credentials->put(stateKey, encoded);
+    encoded.fill('\0');
+    if (!stored) {
+        tbank_login_status_ = stored.error();
+        emit tbankConnectionChanged();
+        return;
+    }
+
+    private_->configured_zen_state_key = stateKey;
+    QSettings settings;
+    settings.setValue(QStringLiteral("zenPlugin/bundlePath"),
+                      private_->zen_descriptor->bundlePath);
+    settings.setValue(QStringLiteral("zenPlugin/institution"),
+                      QStringLiteral("Т-Банк"));
+    settings.remove(QStringLiteral("zenPlugin/lastSyncAt"));
+    tbank_connected_ = false;
+    tbank_login_status_ = QStringLiteral(
+        "Сессия получена. Проверяем доступ и загружаем операции…");
+    refreshBankConnections();
+    emit tbankConnectionChanged();
+
+    const auto preferences = savedZenPluginPreferences().toVariantMap();
+    if (!startZenPlugin(QStringLiteral("Т-Банк"), preferences)) {
+        (void)private_->credentials->remove(stateKey);
+        tbank_login_status_ = sync_status_;
+        emit tbankConnectionChanged();
+    }
+}
+
+void AppController::disconnectTBank() {
+    if (private_->zen_descriptor
+        && private_->zen_descriptor->pluginId
+            == QString::fromLatin1(tbankRetailPluginId)) {
+        removeZenPlugin();
+        return;
+    }
+    tbank_connected_ = false;
+    tbank_login_active_ = false;
+    private_->tbank_candidate_session.fill('\0');
+    private_->tbank_candidate_session.clear();
+    private_->tbank_cookie_capture_pending = false;
+    tbank_login_status_ = QStringLiteral("Т-Банк отключён");
+    if (private_->tbank_web_profile) {
+        private_->tbank_web_profile->cookieStore()->deleteAllCookies();
+    }
+    refreshBankConnections();
+    emit tbankConnectionChanged();
 }
 
 void AppController::describeBankConnection(const QString& connectorId) {
@@ -1832,6 +2628,14 @@ void AppController::describeBankConnection(const QString& connectorId) {
             "код и commit перед запуском. Пароли и одноразовые коды не "
             "сохраняются; состояние сессии хранится в системном хранилище "
             "ключей.");
+    } else if (connectorId == QStringLiteral("tbank-retail")) {
+        connection_message_ = QStringLiteral(
+            "WealthTracker открывает официальную страницу входа Т-Банка во "
+            "встроенном изолированном окне. Телефон, пароль и код вводятся "
+            "непосредственно на tbank.ru и не передаются приложению. После "
+            "входа сохраняется только сессионный psid в системном хранилище "
+            "ключей. Локальный MIT-bundle использует его только для чтения "
+            "счетов и операций; при истечении сессии потребуется войти снова.");
     } else if (connectorId == QStringLiteral("alfa-api")) {
         connection_message_ = QStringLiteral(
             "Нужен access token приложения Альфа-Банка со scope для счетов и "
@@ -1848,6 +2652,19 @@ void AppController::describeBankConnection(const QString& connectorId) {
     } else if (connectorId == QStringLiteral("t-invest")) {
         connection_message_ =
             QStringLiteral("Т-Инвестиции подключаются официальным токеном только для чтения.");
+    } else if (isRetailBankConnector(connectorId)) {
+        const auto institution = retailBankInstitution(connectorId);
+        connection_message_ =
+            QStringLiteral(
+                "%1 в розничном режиме обычно требует вход по номеру телефона "
+                "и одноразовому коду. Встроенного чистого адаптера для этого "
+                "банка пока нет: нужен отдельный локальный bundle или будущий "
+                "адаптер, который вы сможете проверить перед запуском. После "
+                "успешного первого входа WealthTracker хранит только состояние "
+                "сессии в системном хранилище ключей и может автообновлять "
+                "данные при запущенном приложении. Пароли и одноразовые коды "
+                "не сохраняются.")
+                .arg(institution);
     } else {
         connection_message_ =
             QStringLiteral(

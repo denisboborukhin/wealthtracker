@@ -7,8 +7,11 @@
 #include <QQuickWindow>
 #include <QQuickStyle>
 #include <QTimer>
+#include <QtWebEngineQuick/qtwebenginequickglobal.h>
 
 int main(int argc, char* argv[]) {
+    QCoreApplication::setAttribute(Qt::AA_ShareOpenGLContexts);
+    QtWebEngineQuick::initialize();
     QGuiApplication application(argc, argv);
     QGuiApplication::setApplicationName(QStringLiteral("WealthTracker"));
     QGuiApplication::setOrganizationName(QStringLiteral("WealthTracker"));

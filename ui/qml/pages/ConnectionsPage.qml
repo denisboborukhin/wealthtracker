@@ -2,10 +2,35 @@ import QtQuick
 import QtQuick.Controls
 import QtQuick.Dialogs as PlatformDialogs
 import QtQuick.Layouts
+import QtWebEngine
 import "../components"
 
 Item {
     id: page
+
+    function openConnection(connectorId, institution, method, status,
+                            connected, available) {
+        App.describeBankConnection(connectorId)
+        connectionDialog.connectorId = connectorId
+        connectionDialog.institution = institution
+        connectionDialog.method = method
+        connectionDialog.status = status
+        connectionDialog.connected = connected
+        connectionDialog.available = available
+        connectionDialog.open()
+        if (connectorId === "tbank-retail")
+            App.prepareTBankConnection()
+    }
+
+    WebEngineProfilePrototype {
+        id: tbankProfile
+        storageName: ""
+        httpCacheType: WebEngineProfile.MemoryHttpCache
+        persistentCookiesPolicy: WebEngineProfile.NoPersistentCookies
+        persistentPermissionsPolicy: WebEngineProfile.StoreInMemory
+    }
+
+    Component.onCompleted: App.attachTBankWebProfile(tbankProfile.instance())
 
     PlatformDialogs.FileDialog {
         id: pluginBundleDialog
@@ -19,7 +44,8 @@ Item {
         parent: Overlay.overlay
         modal: true
         focus: true
-        width: 520
+        width: builtinTBank && App.tbankLoginActive
+               ? Math.min(parent.width - 64, 760) : 520
         x: Math.round((parent.width - width) / 2)
         y: Math.round((parent.height - height) / 2)
         padding: 0
@@ -30,8 +56,14 @@ Item {
         property string status: ""
         property bool connected: false
         property bool available: false
+        property string tbankPageError: ""
+        property bool tbankPageLoading: false
+        readonly property bool builtinTBank:
+            connectorId === "tbank-retail"
         readonly property bool localPlugin:
-            connectorId === "zenplugins-local"
+            connectorId === "zenplugins-local" || builtinTBank
+        readonly property bool effectiveConnected:
+            builtinTBank ? App.tbankConnected : connected
 
         function pluginPreferences() {
             let result = {}
@@ -48,6 +80,13 @@ Item {
                 if (field.sensitive)
                     field.clearValue()
             }
+        }
+
+        function retryTBankPage() {
+            tbankPageError = ""
+            tbankPageLoading = true
+            tbankReadyTimer.restart()
+            tbankLoginView.reload()
         }
 
         background: Rectangle {
@@ -147,7 +186,7 @@ Item {
 
                 StatusBadge {
                     visible: connectionDialog.available
-                             && connectionDialog.connected
+                             && connectionDialog.effectiveConnected
                              && !connectionDialog.localPlugin
                     text: qsTr("Подключено")
                     tone: "positive"
@@ -155,11 +194,166 @@ Item {
 
                 ColumnLayout {
                     Layout.fillWidth: true
+                    visible: connectionDialog.builtinTBank
+                             && !connectionDialog.effectiveConnected
+                    spacing: 10
+
+                    Text {
+                        Layout.fillWidth: true
+                        text: App.tbankLoginStatus.length > 0
+                              ? App.tbankLoginStatus
+                              : qsTr("Нажмите «Войти», затем завершите вход на официальной странице Т-Банка.")
+                        color: Theme.text
+                        font.pixelSize: 12
+                        wrapMode: Text.WordWrap
+                    }
+
+                    Rectangle {
+                        Layout.fillWidth: true
+                        Layout.preferredHeight: Math.max(
+                            280, Math.min(450, connectionDialog.parent.height - 300))
+                        visible: App.tbankLoginActive
+                        color: Theme.surfaceRaised
+                        radius: 8
+                        border.color: Theme.border
+                        clip: true
+
+                        WebEngineView {
+                            id: tbankLoginView
+                            anchors.fill: parent
+                            anchors.margins: 1
+                            profile: tbankProfile.instance()
+                            url: App.tbankLoginActive
+                                 ? App.tbankLoginUrl : "about:blank"
+
+                            onNavigationRequested: function(request) {
+                                if (!request.isMainFrame)
+                                    return
+                                if (!App.isAllowedTBankLoginUrl(request.url)) {
+                                    request.reject()
+                                    connectionDialog.tbankPageLoading = false
+                                    connectionDialog.tbankPageError = qsTr(
+                                        "Т-Банк перенаправил вход на неожиданный адрес. Переход заблокирован.")
+                                    tbankReadyTimer.stop()
+                                }
+                            }
+
+                            onLoadingChanged: function(request) {
+                                if (request.status === WebEngineView.LoadStartedStatus) {
+                                    connectionDialog.tbankPageLoading = true
+                                    if (!tbankReadyTimer.running)
+                                        tbankReadyTimer.start()
+                                    return
+                                }
+                                if (request.status === WebEngineView.LoadFailedStatus) {
+                                    connectionDialog.tbankPageLoading = false
+                                    connectionDialog.tbankPageError = qsTr(
+                                        "Не удалось загрузить страницу входа Т-Банка: ")
+                                        + request.errorString
+                                    tbankReadyTimer.stop()
+                                    return
+                                }
+                                if (request.status === WebEngineView.LoadSucceededStatus) {
+                                    let loadedUrl = request.url.toString().toLowerCase()
+                                    let loginReady = loadedUrl.indexOf(
+                                        "https://id.tbank.ru/auth/step") === 0
+                                        || (loadedUrl.indexOf(
+                                                "https://www.tbank.ru/auth/") === 0
+                                            && loadedUrl.indexOf(
+                                                "https://www.tbank.ru/auth/login") !== 0)
+                                    if (loginReady) {
+                                        connectionDialog.tbankPageLoading = false
+                                        connectionDialog.tbankPageError = ""
+                                        tbankReadyTimer.stop()
+                                    }
+                                }
+                            }
+
+                            onCertificateError: function(error) {
+                                error.rejectCertificate()
+                                if (!error.isMainFrame)
+                                    return
+                                connectionDialog.tbankPageLoading = false
+                                connectionDialog.tbankPageError = qsTr(
+                                    "Сертификат страницы входа отклонён: ")
+                                    + error.description
+                                tbankReadyTimer.stop()
+                            }
+                        }
+
+                        Rectangle {
+                            anchors.left: parent.left
+                            anchors.top: parent.top
+                            height: 3
+                            width: parent.width
+                                   * tbankLoginView.loadProgress / 100
+                            visible: connectionDialog.tbankPageLoading
+                            color: Theme.primary
+                        }
+
+                        Rectangle {
+                            anchors.fill: parent
+                            anchors.margins: 1
+                            visible: connectionDialog.tbankPageError.length > 0
+                            color: Theme.surface
+
+                            ColumnLayout {
+                                anchors.centerIn: parent
+                                width: Math.min(parent.width - 48, 440)
+                                spacing: 14
+
+                                Text {
+                                    Layout.fillWidth: true
+                                    text: connectionDialog.tbankPageError
+                                    color: Theme.text
+                                    font.pixelSize: 13
+                                    horizontalAlignment: Text.AlignHCenter
+                                    wrapMode: Text.WordWrap
+                                }
+                                ActionButton {
+                                    Layout.alignment: Qt.AlignHCenter
+                                    text: qsTr("Повторить")
+                                    primary: true
+                                    onClicked: connectionDialog.retryTBankPage()
+                                }
+                            }
+                        }
+
+                        Timer {
+                            id: tbankReadyTimer
+                            interval: 25000
+                            repeat: false
+                            onTriggered: {
+                                if (!App.tbankLoginActive)
+                                    return
+                                tbankLoginView.stop()
+                                connectionDialog.tbankPageLoading = false
+                                connectionDialog.tbankPageError = qsTr(
+                                    "Страница входа Т-Банка не ответила за 25 секунд. Проверьте сеть и повторите.")
+                            }
+                        }
+                    }
+
+                    Text {
+                        Layout.fillWidth: true
+                        visible: App.tbankLoginActive
+                        text: qsTr("Поля принадлежат официальной странице tbank.ru. WealthTracker не читает телефон, пароль или код; после подтверждения сохранится только банковская сессия.")
+                        color: Theme.textMuted
+                        font.pixelSize: 10
+                        wrapMode: Text.WordWrap
+                    }
+                }
+
+                ColumnLayout {
+                    Layout.fillWidth: true
                     visible: connectionDialog.localPlugin
+                             && (!connectionDialog.builtinTBank
+                                 || connectionDialog.effectiveConnected)
                     spacing: 12
 
                     RowLayout {
                         Layout.fillWidth: true
+                        visible: !connectionDialog.builtinTBank
                         ColumnLayout {
                             Layout.fillWidth: true
                             spacing: 2
@@ -190,7 +384,8 @@ Item {
 
                     ColumnLayout {
                         Layout.fillWidth: true
-                        visible: App.zenPluginId.length > 0
+                        visible: !connectionDialog.builtinTBank
+                                 && App.zenPluginId.length > 0
                                  && !App.zenPluginRunning
                         spacing: 7
 
@@ -269,7 +464,8 @@ Item {
                                 MinimalSwitch {
                                     id: checkboxField
                                     visible: modelData.kind === "checkbox"
-                                    checked: modelData.defaultValue === "true"
+                                    checked: modelData.defaultValue === true
+                                             || modelData.defaultValue === "true"
                                 }
                             }
                         }
@@ -278,6 +474,45 @@ Item {
                             Layout.fillWidth: true
                             text: qsTr("Поля входа живут только до завершения запуска. Bundle — сторонний код без песочницы; запускайте только проверенную сборку.")
                             color: Theme.warning
+                            font.pixelSize: 10
+                            wrapMode: Text.WordWrap
+                        }
+                    }
+
+                    ColumnLayout {
+                        Layout.fillWidth: true
+                        visible: App.zenPluginId.length > 0
+                        spacing: 7
+
+                        StatusBadge {
+                            visible: connectionDialog.builtinTBank
+                            text: App.zenPluginRunning
+                                  ? qsTr("Синхронизация")
+                                  : qsTr("Подключено")
+                            tone: App.zenPluginRunning ? "neutral" : "positive"
+                        }
+
+                        RowLayout {
+                            Layout.fillWidth: true
+                            Text {
+                                Layout.fillWidth: true
+                                text: qsTr("Автообновление")
+                                color: Theme.text
+                                font.pixelSize: 12
+                                font.weight: Font.Medium
+                            }
+                            MinimalSwitch {
+                                checked: App.zenPluginAutoUpdate
+                                enabled: !App.zenPluginRunning
+                                onToggled: App.setZenPluginAutoUpdate(checked)
+                            }
+                        }
+
+                        Text {
+                            Layout.fillWidth: true
+                            text: qsTr("Последнее: ") + App.zenPluginLastSync
+                                  + qsTr(" · Следующее: ") + App.zenPluginNextSync
+                            color: Theme.textMuted
                             font.pixelSize: 10
                             wrapMode: Text.WordWrap
                         }
@@ -340,7 +575,7 @@ Item {
                     }
                     ActionButton {
                         visible: connectionDialog.available
-                                 && !connectionDialog.connected
+                                 && !connectionDialog.effectiveConnected
                                  && !connectionDialog.localPlugin
                         text: qsTr("Сохранить токен")
                         primary: true
@@ -355,7 +590,7 @@ Item {
                     }
                     ActionButton {
                         visible: connectionDialog.available
-                                 && connectionDialog.connected
+                                 && connectionDialog.effectiveConnected
                                  && !connectionDialog.localPlugin
                         text: qsTr("Синхронизировать")
                         primary: true
@@ -366,7 +601,7 @@ Item {
                     }
                     ActionButton {
                         visible: connectionDialog.available
-                                 && connectionDialog.connected
+                                 && connectionDialog.effectiveConnected
                                  && !connectionDialog.localPlugin
                         text: qsTr("Отключить")
                         destructive: true
@@ -376,7 +611,45 @@ Item {
                         }
                     }
                     ActionButton {
+                        visible: connectionDialog.builtinTBank
+                                 && !connectionDialog.effectiveConnected
+                                 && !App.tbankLoginActive
+                        text: qsTr("Войти на tbank.ru")
+                        primary: true
+                        onClicked: {
+                            connectionDialog.tbankPageError = ""
+                            App.beginTBankLogin()
+                            connectionDialog.tbankPageLoading = App.tbankLoginActive
+                            if (App.tbankLoginActive)
+                                tbankReadyTimer.restart()
+                            else
+                                tbankReadyTimer.stop()
+                        }
+                    }
+                    ActionButton {
+                        visible: connectionDialog.builtinTBank
+                                 && App.tbankLoginActive
+                                 && !App.zenPluginRunning
+                        text: App.tbankSessionAvailable
+                              ? qsTr("Подключить")
+                              : qsTr("Проверить сессию")
+                        primary: true
+                        onClicked: App.confirmTBankLogin()
+                    }
+                    ActionButton {
+                        visible: connectionDialog.builtinTBank
+                                 && App.tbankLoginActive
+                        text: qsTr("Отмена")
+                        destructive: true
+                        onClicked: {
+                            if (App.zenPluginRunning)
+                                App.cancelZenPlugin()
+                            App.cancelTBankLogin()
+                        }
+                    }
+                    ActionButton {
                         visible: connectionDialog.localPlugin
+                                 && !connectionDialog.builtinTBank
                                  && App.zenPluginRunning
                                  && App.zenPluginPrompt.length === 0
                         text: qsTr("Отменить")
@@ -385,6 +658,7 @@ Item {
                     }
                     ActionButton {
                         visible: connectionDialog.localPlugin
+                                 && !connectionDialog.builtinTBank
                                  && App.zenPluginRunning
                                  && App.zenPluginPrompt.length > 0
                         text: qsTr("Передать")
@@ -398,6 +672,16 @@ Item {
                     }
                     ActionButton {
                         visible: connectionDialog.localPlugin
+                                 && !App.zenPluginRunning
+                                 && App.zenPluginId.length > 0
+                                 && (!connectionDialog.builtinTBank
+                                     || connectionDialog.effectiveConnected)
+                        text: qsTr("Обновить")
+                        onClicked: App.synchronizeZenPlugin()
+                    }
+                    ActionButton {
+                        visible: connectionDialog.localPlugin
+                                 && !connectionDialog.builtinTBank
                                  && !App.zenPluginRunning
                                  && App.zenPluginId.length > 0
                         text: qsTr("Запустить")
@@ -414,10 +698,16 @@ Item {
                         visible: connectionDialog.localPlugin
                                  && !App.zenPluginRunning
                                  && App.zenPluginId.length > 0
-                        text: qsTr("Удалить")
+                                 && (!connectionDialog.builtinTBank
+                                     || connectionDialog.effectiveConnected)
+                        text: connectionDialog.builtinTBank
+                              ? qsTr("Отключить") : qsTr("Удалить")
                         destructive: true
                         onClicked: {
-                            App.removeZenPlugin()
+                            if (connectionDialog.builtinTBank)
+                                App.disconnectTBank()
+                            else
+                                App.removeZenPlugin()
                             connectionDialog.close()
                         }
                     }
@@ -426,6 +716,14 @@ Item {
         }
 
         onClosed: {
+            tbankReadyTimer.stop()
+            tbankPageError = ""
+            tbankPageLoading = false
+            if (connectionDialog.builtinTBank && App.tbankLoginActive) {
+                if (App.zenPluginRunning)
+                    App.cancelZenPlugin()
+                App.cancelTBankLogin()
+            }
             tokenField.clear()
             pluginPromptField.clear()
             clearSensitivePluginFields()
@@ -563,16 +861,13 @@ Item {
                                 text: connectorRow.connected ? qsTr("Управление")
                                       : connectorRow.available ? qsTr("Подключить")
                                                                : qsTr("Подробнее")
-                                onClicked: {
-                                    App.describeBankConnection(connectorRow.connectorId)
-                                    connectionDialog.connectorId = connectorRow.connectorId
-                                    connectionDialog.institution = connectorRow.institution
-                                    connectionDialog.method = connectorRow.method
-                                    connectionDialog.status = connectorRow.status
-                                    connectionDialog.connected = connectorRow.connected
-                                    connectionDialog.available = connectorRow.available
-                                    connectionDialog.open()
-                                }
+                                onClicked: page.openConnection(
+                                    connectorRow.connectorId,
+                                    connectorRow.institution,
+                                    connectorRow.method,
+                                    connectorRow.status,
+                                    connectorRow.connected,
+                                    connectorRow.available)
                             }
                         }
 
@@ -589,7 +884,7 @@ Item {
 
         Text {
             Layout.fillWidth: true
-            text: qsTr("ZenPlugins подключаются только из выбранной вами локальной сборки. В текущем upstream нет retail-плагинов для Альфа-Банка России, Т-Банка, Сбера или ВТБ; altabanka-rs — это Alta Banka в Сербии.")
+            text: qsTr("Т-Банк подключается через официальную страницу входа и встроенный read-only bundle. Для Альфа-Банка, Сбера и ВТБ по-прежнему нужен отдельный проверяемый локальный адаптер.")
             color: Theme.textMuted
             font.pixelSize: 11
             wrapMode: Text.WordWrap

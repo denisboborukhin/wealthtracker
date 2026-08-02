@@ -3,9 +3,11 @@
 #include "app/FinanceModels.hpp"
 
 #include <QByteArray>
+#include <QDateTime>
 #include <QObject>
 #include <QSet>
 #include <QString>
+#include <QUrl>
 #include <QVariantList>
 #include <QVariantMap>
 
@@ -56,6 +58,14 @@ class AppController final : public QObject {
     Q_PROPERTY(QString zenPluginPrompt READ zenPluginPrompt NOTIFY zenPluginChanged)
     Q_PROPERTY(bool zenPluginPromptSecret READ zenPluginPromptSecret NOTIFY zenPluginChanged)
     Q_PROPERTY(bool zenPluginRunning READ zenPluginRunning NOTIFY zenPluginChanged)
+    Q_PROPERTY(bool zenPluginAutoUpdate READ zenPluginAutoUpdate NOTIFY zenPluginChanged)
+    Q_PROPERTY(QString zenPluginLastSync READ zenPluginLastSync NOTIFY zenPluginChanged)
+    Q_PROPERTY(QString zenPluginNextSync READ zenPluginNextSync NOTIFY zenPluginChanged)
+    Q_PROPERTY(bool tbankConnected READ tbankConnected NOTIFY tbankConnectionChanged)
+    Q_PROPERTY(bool tbankLoginActive READ tbankLoginActive NOTIFY tbankConnectionChanged)
+    Q_PROPERTY(bool tbankSessionAvailable READ tbankSessionAvailable NOTIFY tbankConnectionChanged)
+    Q_PROPERTY(QString tbankLoginStatus READ tbankLoginStatus NOTIFY tbankConnectionChanged)
+    Q_PROPERTY(QUrl tbankLoginUrl READ tbankLoginUrl CONSTANT)
 
 public:
     explicit AppController(QObject* parent = nullptr);
@@ -88,6 +98,14 @@ public:
     [[nodiscard]] QString zenPluginPrompt() const;
     [[nodiscard]] bool zenPluginPromptSecret() const noexcept;
     [[nodiscard]] bool zenPluginRunning() const noexcept;
+    [[nodiscard]] bool zenPluginAutoUpdate() const;
+    [[nodiscard]] QString zenPluginLastSync() const;
+    [[nodiscard]] QString zenPluginNextSync() const;
+    [[nodiscard]] bool tbankConnected() const noexcept;
+    [[nodiscard]] bool tbankLoginActive() const noexcept;
+    [[nodiscard]] bool tbankSessionAvailable() const noexcept;
+    [[nodiscard]] QString tbankLoginStatus() const;
+    [[nodiscard]] QUrl tbankLoginUrl() const;
 
     Q_INVOKABLE void loadDemoData();
     Q_INVOKABLE void clearDemoData();
@@ -104,9 +122,18 @@ public:
     Q_INVOKABLE bool inspectZenPluginBundle(const QUrl& source);
     Q_INVOKABLE bool startZenPlugin(const QString& institution,
                                     const QVariantMap& preferences);
+    Q_INVOKABLE bool synchronizeZenPlugin();
+    Q_INVOKABLE void setZenPluginAutoUpdate(bool enabled);
     Q_INVOKABLE bool answerZenPluginPrompt(const QString& value);
     Q_INVOKABLE void cancelZenPlugin();
     Q_INVOKABLE void removeZenPlugin();
+    Q_INVOKABLE void attachTBankWebProfile(QObject* profile);
+    Q_INVOKABLE [[nodiscard]] bool isAllowedTBankLoginUrl(const QUrl& url) const;
+    Q_INVOKABLE bool prepareTBankConnection();
+    Q_INVOKABLE void beginTBankLogin();
+    Q_INVOKABLE void confirmTBankLogin();
+    Q_INVOKABLE void cancelTBankLogin();
+    Q_INVOKABLE void disconnectTBank();
 
 signals:
     void dashboardChanged();
@@ -117,6 +144,7 @@ signals:
     void investmentConnectedChanged();
     void connectionMessageChanged();
     void zenPluginChanged();
+    void tbankConnectionChanged();
 
 private:
     AccountModel accounts_;
@@ -135,6 +163,9 @@ private:
     QString zen_plugin_prompt_;
     bool zen_plugin_prompt_secret_ = true;
     bool zen_plugin_running_ = false;
+    bool tbank_connected_ = false;
+    bool tbank_login_active_ = false;
+    QString tbank_login_status_;
     QString live_net_worth_ = QStringLiteral("0 ₽");
     QString live_monthly_income_ = QStringLiteral("0 ₽");
     QString live_monthly_spending_ = QStringLiteral("0 ₽");
@@ -146,6 +177,9 @@ private:
     std::unique_ptr<AppControllerPrivate> private_;
 
     void refreshBankConnections();
+    void refreshZenPluginAutoUpdateSchedule();
+    void scheduleZenPluginAutoUpdateAfter(const QDateTime& from);
+    void acceptTBankSession(QByteArray session);
     void rebuildBankModels();
 };
 

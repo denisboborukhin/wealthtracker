@@ -6,6 +6,7 @@
 #include <QCoreApplication>
 #include <QElapsedTimer>
 #include <QEventLoop>
+#include <QFile>
 #include <QHash>
 #include <QSettings>
 #include <QStandardPaths>
@@ -59,6 +60,19 @@ bool connectionState(QAbstractItemModel* model, const QString& connectorId) {
     return false;
 }
 
+QVariant connectionValue(QAbstractItemModel* model, const QString& connectorId,
+                         const int role) {
+    using wealthtracker::app::ConnectionModel;
+    for (int row = 0; row < model->rowCount(); ++row) {
+        const auto index = model->index(row, 0);
+        if (model->data(index, ConnectionModel::ConnectorIdRole).toString() ==
+            connectorId) {
+            return model->data(index, role);
+        }
+    }
+    return {};
+}
+
 bool waitUntil(const std::function<bool()>& predicate,
                const int timeoutMilliseconds = 5000) {
     QElapsedTimer timer;
@@ -106,6 +120,101 @@ TEST_CASE("new installations start with empty data and optional demo mode") {
     CHECK(controller.accounts()->rowCount() == 0);
 }
 
+TEST_CASE("T-Bank is bundled while other retail banks remain adapter slots") {
+    auto credentials = std::make_unique<MemoryCredentialBackend>();
+    wealthtracker::app::AppController controller(std::move(credentials),
+                                                  nullptr);
+
+    const auto tbankAvailable = connectionValue(
+        controller.bankConnections(), QStringLiteral("tbank-retail"),
+        wealthtracker::app::ConnectionModel::AvailableRole).toBool();
+    CHECK(tbankAvailable
+          == !QStandardPaths::findExecutable(QStringLiteral("node")).isEmpty());
+    CHECK_FALSE(connectionState(controller.bankConnections(),
+                                QStringLiteral("tbank-retail")));
+    CHECK_FALSE(controller.tbankSessionAvailable());
+    CHECK(connectionValue(controller.bankConnections(),
+                          QStringLiteral("tbank-retail"),
+                          wealthtracker::app::ConnectionModel::MethodRole)
+              .toString()
+              .contains(QStringLiteral("tbank.ru")));
+    CHECK(connectionValue(controller.bankConnections(),
+                          QStringLiteral("tbank-retail"),
+                          wealthtracker::app::ConnectionModel::StatusRole)
+              .toString()
+              .contains(QStringLiteral("вход")));
+    controller.describeBankConnection(QStringLiteral("tbank-retail"));
+    CHECK(controller.connectionMessage().contains(QStringLiteral("psid")));
+    CHECK(controller.connectionMessage().contains(
+        QStringLiteral("не передаются приложению")));
+
+    CHECK(controller.isAllowedTBankLoginUrl(
+        QUrl(QStringLiteral("https://www.tbank.ru/auth/login/"))));
+    CHECK(controller.isAllowedTBankLoginUrl(
+        QUrl(QStringLiteral("https://id.tbank.ru/auth/step?cid=test"))));
+    CHECK(controller.isAllowedTBankLoginUrl(
+        QUrl(QStringLiteral("https://id.tinkoff.ru/auth/getuaid?k=test"))));
+    CHECK_FALSE(controller.isAllowedTBankLoginUrl(
+        QUrl(QStringLiteral("https://www.tinkoff.ru/"))));
+    CHECK_FALSE(controller.isAllowedTBankLoginUrl(
+        QUrl(QStringLiteral("https://evil.tinkoff.ru/"))));
+    CHECK_FALSE(controller.isAllowedTBankLoginUrl(
+        QUrl(QStringLiteral("https://tbank.ru.evil.example/"))));
+    CHECK_FALSE(controller.isAllowedTBankLoginUrl(
+        QUrl(QStringLiteral("http://id.tinkoff.ru/auth/"))));
+    CHECK_FALSE(controller.isAllowedTBankLoginUrl(
+        QUrl(QStringLiteral("https://user@id.tinkoff.ru/auth/"))));
+    CHECK_FALSE(controller.isAllowedTBankLoginUrl(
+        QUrl(QStringLiteral("https://id.tinkoff.ru:8443/auth/"))));
+
+    for (const auto& connectorId :
+         {QStringLiteral("alfa-retail"), QStringLiteral("sber-retail"),
+          QStringLiteral("vtb-retail")}) {
+        CHECK_FALSE(connectionValue(controller.bankConnections(), connectorId,
+                                    wealthtracker::app::ConnectionModel::
+                                        AvailableRole)
+                        .toBool());
+        CHECK(connectionValue(controller.bankConnections(), connectorId,
+                              wealthtracker::app::ConnectionModel::MethodRole)
+                  .toString()
+                  .contains(QStringLiteral("Телефон + код")));
+        CHECK(connectionValue(controller.bankConnections(), connectorId,
+                              wealthtracker::app::ConnectionModel::StatusRole)
+                  .toString()
+                  .contains(QStringLiteral("адаптер")));
+    }
+}
+
+TEST_CASE("T-Bank runtime bundle is embedded in the application") {
+    QFile bundle(QStringLiteral(
+        ":/org/wealthtracker/runtime/bundles/tbank-retail/tbank-retail.cjs"));
+    QFile preferences(QStringLiteral(
+        ":/org/wealthtracker/runtime/bundles/tbank-retail/preferences.xml"));
+    REQUIRE(bundle.open(QIODevice::ReadOnly));
+    REQUIRE(preferences.open(QIODevice::ReadOnly));
+    const auto source = bundle.readAll();
+    CHECK(source.contains(QByteArrayLiteral("accounts_light_ib")));
+    CHECK(source.contains(QByteArrayLiteral("apiGet('operations'")));
+    CHECK(preferences.readAll().contains(QByteArrayLiteral("startDate")));
+}
+
+TEST_CASE("T-Bank login UI bounds loading and exposes navigation failures") {
+    QFile page(QStringLiteral(
+        WEALTHTRACKER_SOURCE_DIR "/ui/qml/pages/ConnectionsPage.qml"));
+    REQUIRE(page.open(QIODevice::ReadOnly));
+    const auto source = page.readAll();
+    CHECK(source.contains(QByteArrayLiteral(
+        "App.isAllowedTBankLoginUrl(request.url)")));
+    CHECK(source.contains(QByteArrayLiteral(
+        "WebEngineView.LoadFailedStatus")));
+    CHECK(source.contains(QByteArrayLiteral("interval: 25000")));
+    CHECK(source.contains(QByteArrayLiteral("tbankPageError")));
+    CHECK(source.contains(QByteArrayLiteral("retryTBankPage")));
+    CHECK(source.contains(QByteArrayLiteral("onCertificateError")));
+    CHECK(source.contains(QByteArrayLiteral("App.tbankSessionAvailable")));
+    CHECK(source.contains(QByteArrayLiteral("Проверить сессию")));
+}
+
 TEST_CASE("official bank tokens have independent credential state") {
     auto credentials = std::make_unique<MemoryCredentialBackend>();
     auto* stored = credentials.get();
@@ -149,8 +258,11 @@ TEST_CASE("application runs a selected local bundle through the embedded host") 
     }
     const ZenSettingsCleanup cleanup;
     auto credentials = std::make_unique<MemoryCredentialBackend>();
+    auto* stored = credentials.get();
     wealthtracker::app::AppController controller(std::move(credentials),
                                                   nullptr);
+    const auto baselineCredentialCount = stored->values.size();
+    REQUIRE(stored->values.contains(QStringLiteral("database-key")));
     const auto fixture = QStringLiteral(
         WEALTHTRACKER_SOURCE_DIR
         "/tests/fixtures/zen_plugin_fixture.cjs");
@@ -159,6 +271,10 @@ TEST_CASE("application runs a selected local bundle through the embedded host") 
         QUrl::fromLocalFile(fixture)));
     CHECK(controller.zenPluginId()
           == QStringLiteral("zen_plugin_fixture"));
+    controller.setZenPluginAutoUpdate(true);
+    CHECK(controller.zenPluginAutoUpdate());
+    CHECK(controller.zenPluginNextSync().contains(
+        QStringLiteral("первого успешного запуска")));
     REQUIRE(controller.startZenPlugin(
         QStringLiteral("Fixture Bank"),
         {{QStringLiteral("login"), QStringLiteral("fixture")},
@@ -179,8 +295,29 @@ TEST_CASE("application runs a selected local bundle through the embedded host") 
     CHECK_FALSE(controller.demoMode());
     CHECK(controller.syncStatus().contains(
         QStringLiteral("Fixture Bank")));
+    CHECK(stored->values.size() == baselineCredentialCount + 1);
+    CHECK(controller.zenPluginLastSync() !=
+          QStringLiteral("Нет успешного обновления"));
+    CHECK_FALSE(controller.zenPluginNextSync().contains(
+        QStringLiteral("первого успешного запуска")));
+
+    const auto savedPreferences =
+        QSettings{}.value(QStringLiteral("zenPlugin/preferences"))
+            .toByteArray();
+    CHECK(savedPreferences.contains("fixture"));
+    CHECK(savedPreferences.contains("startDate"));
+    CHECK_FALSE(savedPreferences.contains("session-only-secret"));
+    CHECK_FALSE(savedPreferences.contains("password"));
+    CHECK_FALSE(controller.synchronizeZenPlugin());
+    CHECK(controller.syncStatus().contains(QStringLiteral("Пароль")));
 
     controller.removeZenPlugin();
+    CHECK(controller.accounts()->rowCount() == 0);
+    CHECK(controller.transactions()->rowCount() == 0);
+    CHECK(stored->values.size() == baselineCredentialCount);
+    CHECK(stored->values.contains(QStringLiteral("database-key")));
+    CHECK(controller.zenPluginId().isEmpty());
+    CHECK_FALSE(controller.zenPluginAutoUpdate());
 }
 
 TEST_CASE("bank connection state rejects malformed and unknown tokens") {
