@@ -224,6 +224,33 @@ TEST_CASE("T-Bank login UI bounds loading and exposes navigation failures") {
     CHECK(source.contains(QByteArrayLiteral("Проверить сессию")));
 }
 
+TEST_CASE("T-Bank login filters known renderer diagnostic noise") {
+    QFile page(QStringLiteral(
+        WEALTHTRACKER_SOURCE_DIR "/ui/qml/pages/ConnectionsPage.qml"));
+    REQUIRE(page.open(QIODevice::ReadOnly));
+    const auto pageSource = page.readAll();
+    CHECK(pageSource.contains(QByteArrayLiteral(
+        "onJavaScriptConsoleMessage")));
+    CHECK(pageSource.contains(QByteArrayLiteral(
+        "t-static.ruimagessolid/favicon.png")));
+    CHECK(pageSource.contains(QByteArrayLiteral("GeolocationCollector:")));
+    CHECK(pageSource.contains(QByteArrayLiteral(
+        "Failed to create WebGPU Context Provider")));
+    CHECK_FALSE(pageSource.contains(QByteArrayLiteral("console.warn(message)")));
+
+    QFile mainSourceFile(QStringLiteral(
+        WEALTHTRACKER_SOURCE_DIR "/src/app/main.cpp"));
+    REQUIRE(mainSourceFile.open(QIODevice::ReadOnly));
+    const auto mainSource = mainSourceFile.readAll();
+    const auto privacyPolicy = mainSource.indexOf(QByteArrayLiteral(
+        "--force-webrtc-ip-handling-policy=disable_non_proxied_udp"));
+    const auto webEngineInitialization = mainSource.indexOf(
+        QByteArrayLiteral("QtWebEngineQuick::initialize()"));
+    REQUIRE(privacyPolicy >= 0);
+    REQUIRE(webEngineInitialization >= 0);
+    CHECK(privacyPolicy < webEngineInitialization);
+}
+
 TEST_CASE("T-Bank TLS diagnostics expose no URL secrets") {
     auto credentials = std::make_unique<MemoryCredentialBackend>();
     wealthtracker::app::AppController controller(std::move(credentials),

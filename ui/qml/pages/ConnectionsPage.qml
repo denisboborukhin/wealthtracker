@@ -58,6 +58,7 @@ Item {
         property bool available: false
         property string tbankPageError: ""
         property bool tbankPageLoading: false
+        property bool tbankConsoleWarningReported: false
         readonly property bool builtinTBank:
             connectorId === "tbank-retail"
         readonly property bool localPlugin:
@@ -85,6 +86,7 @@ Item {
         function retryTBankPage() {
             tbankPageError = ""
             tbankPageLoading = true
+            tbankConsoleWarningReported = false
             tbankReadyTimer.restart()
             tbankLoginView.reload()
         }
@@ -278,6 +280,26 @@ Item {
                                 connectionDialog.tbankPageLoading = false
                                 connectionDialog.tbankPageError = message
                                 tbankReadyTimer.stop()
+                            }
+
+                            onJavaScriptConsoleMessage: function(level, message) {
+                                const knownNoise =
+                                    message.indexOf(
+                                        "t-static.ruimagessolid/favicon.png") >= 0
+                                    || message.indexOf(
+                                        "GeolocationCollector:") === 0
+                                    || message.indexOf(
+                                        "Failed to create WebGPU Context Provider") >= 0
+                                if (knownNoise)
+                                    return
+
+                                if (level === WebEngineView.ErrorMessageLevel
+                                        && !connectionDialog
+                                            .tbankConsoleWarningReported) {
+                                    connectionDialog.tbankConsoleWarningReported = true
+                                    console.warn(
+                                        "T-Bank login page reported an unexpected JavaScript error")
+                                }
                             }
                         }
 
@@ -618,6 +640,7 @@ Item {
                         primary: true
                         onClicked: {
                             connectionDialog.tbankPageError = ""
+                            connectionDialog.tbankConsoleWarningReported = false
                             App.beginTBankLogin()
                             connectionDialog.tbankPageLoading = App.tbankLoginActive
                             if (App.tbankLoginActive)
@@ -719,6 +742,7 @@ Item {
             tbankReadyTimer.stop()
             tbankPageError = ""
             tbankPageLoading = false
+            tbankConsoleWarningReported = false
             if (connectionDialog.builtinTBank && App.tbankLoginActive) {
                 if (App.zenPluginRunning)
                     App.cancelZenPlugin()
