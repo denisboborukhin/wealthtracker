@@ -1,5 +1,6 @@
 # Local planning and agent notes
 /tasks/
+/temp/
 
 # CMake / Conan build output
 /build/
@@ -40,4 +41,3 @@ compile_commands.json
 *.pkg
 *.msi
 *.app/
-
