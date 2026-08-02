@@ -33,6 +33,10 @@ sharing reproduction material.
 - T-Bank TLS diagnostics contain only the ASCII hostname, numeric certificate
   category, and main-frame/subresource scope. URL paths, query strings,
   cookies, and credentials are not included in status text or runtime logs.
+- The isolated login profile blocks only `mddc.tbank.ru` and
+  `mddc.tinkoff.ru`, whose optional device-collector subresources use the
+  Russian Trusted CA. WealthTracker does not install that root, accept their
+  authority-invalid certificates, or weaken validation for any other host.
 - The built-in T-Bank importer is restricted to the exact HTTPS origin
   `https://www.tbank.ru`, blocks redirects, and implements only account,
   balance, and operation reads. The underlying retail web API is undocumented

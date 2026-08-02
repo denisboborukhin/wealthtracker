@@ -93,7 +93,18 @@ log report only the failing hostname, numeric certificate category, and whether
 the failure was for the main frame or a subresource. URL paths, query strings,
 cookies, and credentials are deliberately omitted.
 
-When `-202` prevents login:
+T-Bank currently loads `mddc.tbank.ru` and `mddc.tinkoff.ru` as device-data
+collector subresources. Their certificates are issued by the Russian Trusted
+Sub CA, which is not trusted by macOS and Chromium by default. T-Bank documents
+the same CA migration and uses `mddc.tbank.ru` in its
+[certificate setup example](https://developer.tbank.ru/docs/tls-settings).
+WealthTracker blocks these two exact hosts before a request is sent. It neither
+installs the Russian root system-wide nor ignores the certificate failure, and
+their optional failure does not replace login/session status. Any certificate
+error from another host, or from the main login frame, remains visible and
+fatal.
+
+When `-202` from any other host prevents login:
 
 1. Ensure macOS date and time are set automatically.
 2. Open `https://www.tbank.ru/login` in a regular browser on the same Mac and
