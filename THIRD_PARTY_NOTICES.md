@@ -16,8 +16,17 @@ dependencies retain their own licenses:
 - Catch2 — Boost Software License 1.0:
   <https://github.com/catchorg/Catch2>
 
+The clean-room retail T-Bank adapter was informed by the endpoint and browser
+session behavior documented in `jfk9w-go/tbank-api`, which is MIT-licensed:
+<https://github.com/jfk9w-go/tbank-api>. WealthTracker does not embed that Go
+library; the notice records protocol provenance and its compatible license.
+
+Node.js is an optional user-installed runtime for retail T-Bank and external
+local plugins; it is not included in WealthTracker packages. ZenPlugins source
+and generated bundles are GPL-3.0, are not included in this repository or
+release packages, and remain separately obtained works selected by the user.
+
 Release packages must include the generated Conan dependency inventory, Qt
 LGPL text, Qt SBOM for the shipped version, and notices for the third-party
 components embedded in the selected Qt modules. Qt libraries are distributed
 dynamically and must remain replaceable by the user.
-

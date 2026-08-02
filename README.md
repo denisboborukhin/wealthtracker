@@ -15,22 +15,44 @@ store and copied into temporary memory only while a request is constructed.
 - Read-only T-Bank Business account and statement synchronization.
 - Read-only Modulbank synchronization, including its public sandbox.
 - Read-only synchronization with T-Invest using a user-created token.
-- A local interactive-session contract for future retail-bank plugins.
+- Retail T-Bank login through the official `tbank.ru` page, followed by
+  read-only account, balance, and operation synchronization.
+- A local compatibility bridge for separately built, modular ZenPlugins
+  bundles, including dynamic login fields and one-time-code prompts.
 - Accounts, balances, transaction splits, categories, rules, and transfers.
 - Income, spending, savings, net-worth, and investment analytics.
 - Russian interface with localization support.
 
-The bundled live connectors use documented bank APIs only. They do not scrape
-web or mobile banking sessions and never ask for a bank password or SMS code.
-T-Bank Business and Modulbank cover business accounts. Alfa-Bank B2C requires
-an access token issued to a registered integration; WealthTracker does not yet
-run Alfa's Authorization Code flow itself. Retail T-Bank, Sber, and VTB login
-plugins are not bundled, and the Connections page reports that limitation
-instead of presenting a non-functional login form.
+The official live connectors use documented bank APIs. T-Bank Business and
+Modulbank cover business accounts. Alfa-Bank B2C requires an access token
+issued to a registered integration; WealthTracker does not yet run Alfa's
+Authorization Code flow itself.
+
+Retail T-Bank is a separate, explicitly unofficial integration. WealthTracker
+embeds the official T-Bank login page, where the user enters their phone,
+password, and one-time code directly into `tbank.ru`. The application reads
+only the resulting `psid` session cookie, stores it in the operating-system
+credential store, and passes it to the bundled MIT-licensed read-only adapter.
+The adapter can contact only `https://www.tbank.ru` and never calls payment,
+transfer, card-management, or trading endpoints. Because T-Bank does not
+publish this retail web API, the connection can break when the bank changes
+its site and may require signing in again.
+
+Retail Alfa-Bank, Sber, and VTB adapters are not yet bundled. The Connections
+page shows them as explicit local-adapter slots instead of presenting a
+non-functional bank login form.
 
 The connector design is informed by the local, normalized plugin flow used by
 ZenMoney. WealthTracker does not copy or embed ZenPlugins source: ZenPlugins is
-GPL-3.0 while this project is MIT-licensed.
+GPL-3.0 while this project is MIT-licensed. A user can select a bundle built in
+a separate ZenPlugins checkout. WealthTracker runs it as a child process and
+normalizes the result through a bounded JSON-lines protocol. The external
+bundle is not sandboxed, so only run code and commits you have reviewed.
+
+The often-confused `altabanka-rs` plugin is for Alta Banka in Serbia (`.rs`,
+RSD), not Alfa-Bank Russia. At the upstream revision inspected on
+2026-07-22, ZenPlugins does not include retail plugins for Alfa-Bank Russia,
+T-Bank, Sber, or VTB.
 
 ## Technology
 
@@ -39,6 +61,7 @@ GPL-3.0 while this project is MIT-licensed.
 - CMake and Conan 2
 - SQLCipher and libsodium
 - Catch2
+- Node.js 18+ for retail T-Bank and external ZenPlugins bundles
 
 ## Build
 
@@ -59,6 +82,44 @@ conan install . \
 cmake --build --preset macos-debug
 ctest --preset macos-debug
 ```
+
+## Run
+
+After a Debug build:
+
+```sh
+./build/macos-debug/WealthTracker.app/Contents/MacOS/WealthTracker
+```
+
+On Windows, run `build/windows-debug/WealthTracker.exe`.
+
+To connect retail T-Bank, open **Connections → Т-Банк**, choose **Войти на
+tbank.ru**, complete the bank's login page, and then choose **Подключить**.
+After the first successful import, auto-update can refresh the same session
+while the application is running.
+
+## Use an external ZenPlugins bundle
+
+Clone and build ZenPlugins outside this repository so its GPL-3.0 source and
+bundle remain separate:
+
+```sh
+git clone https://github.com/zenmoney/ZenPlugins.git
+cd ZenPlugins
+corepack enable
+yarn
+yarn build <plugin-id>
+```
+
+In WealthTracker, open **Connections → Local ZenPlugins**, choose
+`ZenPlugins/build/<plugin-id>.js`, review the detected fields, and run it.
+Keep the bundle in that `build/` directory: the app reads the corresponding
+`src/plugins/<plugin-id>/preferences.xml` to construct the local form.
+Passwords and one-time codes remain session-only. Non-secret stable fields
+such as phone, login, or start date can be saved locally so a compatible
+session-based bundle can auto-refresh while the app is running. Plugin data
+and cookies returned for reuse are stored in the operating-system credential
+store.
 
 See [Bank connections](docs/bank-connections.md),
 [Building](docs/building.md), [Architecture](docs/architecture.md), and

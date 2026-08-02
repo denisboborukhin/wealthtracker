@@ -1,10 +1,11 @@
 # Bank connections
 
-WealthTracker ships only documented, read-only API connections. A connection
-token is saved under a separate key in macOS Keychain or Windows Credential
-Manager. The application never stores that token in its database, follows no
-HTTP redirects automatically, and sends requests only to the exact host listed
-for the connector.
+WealthTracker ships documented, read-only API connections and an optional
+local bridge for external ZenPlugins bundles. An official connection token is
+saved under a separate key in macOS Keychain or Windows Credential Manager.
+The application never stores that token in its database, follows no HTTP
+redirects automatically, and sends official requests only to the exact host
+listed for the connector.
 
 ## Support matrix
 
@@ -14,15 +15,64 @@ for the connector.
 | T-Bank Business | Yes | Yes | Yes | An organization with the required T-API permissions |
 | Modulbank | Yes | Yes | Yes | A Modulbank business customer or the public sandbox |
 | T-Invest | Yes | Portfolio | Yes | A user with a read-only investment token |
-| Retail T-Bank | No | No | No | No supported official consumer account API |
-| Sber retail | No | No | No | No supported official consumer account API |
-| VTB retail | No | No | No | No supported official consumer account API |
+| Retail T-Bank | Yes | Yes | Yes | A retail customer who signs in on the official T-Bank page |
+| External modular ZenPlugin | Plugin-dependent | Plugin-dependent | Plugin-dependent | A user who separately reviewed and built the plugin |
+| Retail Alfa-Bank | Adapter-required | Adapter-required | Adapter-required | Needs a separate local phone-code adapter |
+| Sber retail | Adapter-required | Adapter-required | Adapter-required | Needs a separate local phone-code adapter |
+| VTB retail | Adapter-required | Adapter-required | Adapter-required | Needs a separate local phone-code adapter |
 
-The three bank connectors retrieve up to the previous 12 months and follow
+The documented API connectors retrieve up to the previous 12 months and follow
 every pagination cursor. Data is normalized locally and combined across
 connected banks. RUB totals are used for dashboard summaries; foreign-currency
 accounts remain visible in their original currencies and are not silently
 converted.
+
+## Retail T-Bank
+
+The built-in retail connection uses two isolated parts:
+
+1. A private, off-the-record Qt WebEngine profile opens
+   `https://www.tbank.ru/login`. Phone, password, and one-time-code fields are
+   owned by the bank page; WealthTracker does not read them.
+2. During login, WealthTracker retains only the latest secure `psid` cookie for
+   a `tbank.ru` domain in process memory. After the user explicitly confirms,
+   it validates that session by reading accounts and operations. Only a valid
+   session is kept in macOS Keychain or Windows Credential Manager; it is not
+   written to the finance database, logs, or QML settings.
+
+The bundled adapter makes `GET` requests only to these paths at the exact
+origin `https://www.tbank.ru`:
+
+- `/api/common/v1/ping`
+- `/api/common/v1/accounts_light_ib`
+- `/api/common/v1/operations`
+
+The local host blocks other origins and all redirects for this bundle. The
+login page itself may load resources required by T-Bank. Top-level browser
+navigation is restricted to `tbank.ru`, its subdomains, and exactly
+`id.tinkoff.ru`; the latter is T-Bank's legacy identity migration step in the
+current login chain. Other `tinkoff.ru` hosts remain blocked. Browser storage
+is off-the-record and is cleared after a successful connection or cancellation.
+
+This is an undocumented retail web API, not T-Bank's supported OpenAPI. It may
+change without notice. An expired or rejected session is removed from the
+credential store and the application asks the user to sign in again. Automatic
+refresh runs every six hours while WealthTracker is open; it stores no phone,
+password, or one-time code.
+
+Connection steps:
+
+1. Install Node.js 18 or newer.
+2. Open **Connections → Т-Банк** and choose **Войти на tbank.ru**.
+3. Complete the official bank page.
+4. Wait for **Сессия обнаружена**, then choose **Подключить**. If the bank page
+   has completed but the message has not appeared, choose **Проверить сессию**
+   to enumerate already-created cookies. The app validates the session before
+   marking the connection as active or closing the login page.
+
+Certificate errors stop the login and are displayed in the dialog. Fix the
+local certificate trust or TLS-inspection configuration instead of bypassing
+the warning.
 
 ## Alfa-Bank B2C API
 
@@ -75,10 +125,52 @@ Removing a connection deletes its credential-store entry and removes its
 in-memory synchronized data from the current view. Other connected banks remain
 intact.
 
-## Why retail password login is not included
+## External ZenPlugins
 
-ZenMoney demonstrates a useful local plugin architecture, but a bank-specific
-implementation still needs a maintained endpoint strategy and a compatible
-license. WealthTracker does not copy GPL-3.0 ZenPlugins code into this
-MIT-licensed repository and does not ship fragile password-scraping against
-private web or mobile endpoints.
+WealthTracker can execute a modular, fetch-based bundle built in a separate
+ZenPlugins checkout:
+
+1. Install Node.js 18 or newer.
+2. Clone `https://github.com/zenmoney/ZenPlugins.git` outside WealthTracker.
+3. Run `corepack enable`, `yarn`, and `yarn build <plugin-id>`.
+4. Open **Connections → Local ZenPlugins**.
+5. Choose `build/<plugin-id>.js`, review the detected preferences, enter the
+   session-only login values, and choose **Run**.
+6. Answer OTP prompts in the same dialog.
+7. Enable auto-update only after the first successful run if the bundle can
+   reuse returned session state.
+
+The app infers the preference schema from
+`src/plugins/<plugin-id>/preferences.xml`. It accepts only bounded scalar
+fields and normalizes the plugin's accounts and transactions in C++. Passwords
+and OTP responses are not persisted. Non-secret stable preferences, for
+example a phone number or start date, are saved in local settings so a
+compatible session-based bundle can refresh again. Returned plugin data and
+cookies are stored under a bundle-specific key in the operating-system
+credential store.
+
+This is an explicit trust boundary. The bundle is third-party JavaScript
+running as a local child process without an operating-system sandbox. Its
+network destinations are controlled by that bundle, not by the allowlists used
+for the built-in official clients. Review its source and pinned commit before
+running it.
+
+## Other retail-bank availability
+
+ZenPlugins is GPL-3.0, so WealthTracker does not copy its source or generated
+bundles into this MIT repository. The external process boundary lets the user
+obtain and run such a bundle separately.
+
+The Connections page includes first-class rows for retail Alfa-Bank, Sber, and
+VTB because those are target user flows: phone number, one-time code, then
+reusable session state. Those rows are adapter slots, not built-in working
+connectors. Once a clean-room adapter or a user-built compatible bundle exists,
+it should authenticate locally, return normalized accounts, balances, and
+operations, and store only revocable session state through the same
+credential-store path.
+
+The upstream tree inspected at commit `b9b5bcf` on 2026-07-22 does not contain
+retail plugins for Alfa-Bank Russia, T-Bank, Sber, or VTB. The linked
+`altabanka-rs` plugin is Alta Banka Serbia: it uses `online.altabanka.rs`, RSD
+accounts, and an OTP from the Alta mobile app. It must not be presented as an
+Alfa-Bank Russia connector.

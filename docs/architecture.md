@@ -9,13 +9,15 @@ limited to Qt `moc`, operating-system ABI, and third-party C API boundaries.
 - `core`: domain values, financial rules, categorization, and analytics.
 - `storage`: SQLCipher connection, migrations, repositories, and backups.
 - `platform`: credential storage, secure memory, and OS integration.
-- `connectors`: file imports and explicitly read-only network integrations.
+- `connectors`: file imports, read-only API integrations, and validation plus
+  normalization for external local plugin messages.
 - `app`: composition, use cases, and QML-facing controllers.
 - `ui`: QML pages, components, and translations.
 
-QML does not receive database handles, encryption keys, tokens, or arbitrary
-network access. Controllers expose narrow asynchronous operations and immutable
-models.
+QML does not receive database handles, encryption keys, or tokens. Controllers
+expose narrow asynchronous operations and immutable models. The only embedded
+browser is an off-the-record T-Bank login view with top-level navigation
+restricted to `tbank.ru` and its subdomains.
 
 ## Data flow
 
@@ -45,11 +47,45 @@ Password and one-time-code fields must declare `Never` retention. A connector
 may retain a revocable session or refresh token in the operating system's
 credential store, but it cannot expose secrets to QML.
 
-Every network connector declares an HTTPS host allowlist. Write, trading,
-payment, and transfer endpoints are outside the contract.
+Every built-in network connector declares an HTTPS host allowlist. Write,
+trading, payment, and transfer endpoints are outside that contract.
 
-The interface is a clean-room C++ design inspired by ZenMoney's local plugin
-model, not a source or binary compatibility layer. No retail-bank plugin is
-bundled yet. The current live connector is T-Invest's official read-only API;
-retail banks remain available through statement import until audited
-bank-specific plugins are implemented.
+Retail T-Bank uses the same normalized plugin result boundary with a bundled
+MIT adapter, but authentication stays in the official bank page:
+
+1. Qt WebEngine opens `tbank.ru/login` in an off-the-record profile.
+2. The user enters credentials and MFA into the bank-owned document.
+3. After explicit confirmation, C++ accepts only a secure `psid` cookie for a
+   `tbank.ru` domain and places it in the credential store.
+4. The local Node host exposes `fetch` only for the exact
+   `https://www.tbank.ru` origin, permits only `GET`/`HEAD`, and blocks
+   redirects.
+5. The adapter validates the session, reads accounts and operations, and emits
+   ordinary normalized plugin records.
+6. C++ validates those records before updating application models. Only a
+   successful import marks the connection active and closes the login view.
+
+The retail endpoints are undocumented and are deliberately isolated from the
+official API clients. A bank-side change becomes a connector failure rather
+than expanding network or write permissions.
+
+External ZenPlugins use a separate trust boundary:
+
+1. C++ validates a user-selected bundle and its `preferences.xml`.
+2. The app extracts its MIT host script to a private temporary file.
+3. Node.js executes the separately built bundle in a child process.
+4. The app and host exchange bounded JSON-lines messages over stdin/stdout.
+5. User prompts travel as typed events; passwords and OTPs are not retained.
+6. C++ validates and normalizes the result before it reaches application
+   models.
+7. Returned plugin state is stored in the operating-system credential store.
+8. Successful runs record a local timestamp and non-secret stable preferences,
+   letting a compatible session-based bundle refresh on a timer while the app
+   is running.
+
+The host does not sandbox user-selected external JavaScript. An empty allowlist
+preserves its existing network behavior; this is intentional and visible in
+the UI because installing an external bundle is an explicit arbitrary-code
+trust decision. Built-in bundles always receive a non-empty exact-origin
+allowlist. Neither GPL plugin source nor generated ZenPlugins bundles are part
+of the MIT distribution.
