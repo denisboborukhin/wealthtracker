@@ -2,6 +2,8 @@
 
 #include <catch2/catch_test_macros.hpp>
 
+#include <QPersistentModelIndex>
+
 using wealthtracker::app::AccountModel;
 using wealthtracker::app::AccountRow;
 using wealthtracker::app::ConnectionModel;
@@ -66,4 +68,46 @@ TEST_CASE("connection model exposes connector availability separately from state
     CHECK_FALSE(model.data(model.index(0), ConnectionModel::AvailableRole).toBool());
     CHECK(model.data(model.index(1), ConnectionModel::ConnectedRole).toBool());
     CHECK(roles.value(ConnectionModel::AvailableRole) == QByteArrayLiteral("available"));
+}
+
+TEST_CASE("connection updates preserve delegates while a click handler is active") {
+    ConnectionModel model;
+    model.replace({
+        {QStringLiteral("tbank-retail"), QStringLiteral("Т-Банк"),
+         QStringLiteral("Accounts"), QStringLiteral("Browser login"),
+         QStringLiteral("Login required"), false, true},
+        {QStringLiteral("t-invest"), QStringLiteral("Т-Инвестиции"),
+         QStringLiteral("Portfolio"), QStringLiteral("Read-only API"),
+         QStringLiteral("Token required"), false, true},
+    });
+
+    const QPersistentModelIndex clickedRow(model.index(0, 0));
+    int resetCount = 0;
+    int changedCount = 0;
+    QObject::connect(&model, &QAbstractItemModel::modelReset,
+                     [&resetCount] { ++resetCount; });
+    QObject::connect(
+        &model, &QAbstractItemModel::dataChanged,
+        [&changedCount](const QModelIndex&, const QModelIndex&,
+                        const QList<int>& roles) {
+            ++changedCount;
+            CHECK(roles.contains(ConnectionModel::StatusRole));
+        });
+
+    model.replace({
+        {QStringLiteral("tbank-retail"), QStringLiteral("Т-Банк"),
+         QStringLiteral("Accounts"), QStringLiteral("Browser login"),
+         QStringLiteral("Opening login"), false, true},
+        {QStringLiteral("t-invest"), QStringLiteral("Т-Инвестиции"),
+         QStringLiteral("Portfolio"), QStringLiteral("Read-only API"),
+         QStringLiteral("Token required"), false, true},
+    });
+
+    CHECK(resetCount == 0);
+    CHECK(changedCount == 1);
+    REQUIRE(clickedRow.isValid());
+    CHECK(model.data(clickedRow, ConnectionModel::ConnectorIdRole).toString()
+          == QStringLiteral("tbank-retail"));
+    CHECK(model.data(clickedRow, ConnectionModel::StatusRole).toString()
+          == QStringLiteral("Opening login"));
 }

@@ -1,5 +1,6 @@
 #include "app/FinanceModels.hpp"
 
+#include <algorithm>
 #include <utility>
 
 namespace wealthtracker::app {
@@ -182,6 +183,45 @@ QHash<int, QByteArray> ConnectionModel::roleNames() const {
 }
 
 void ConnectionModel::replace(QVector<ConnectionRow> rows) {
+    const bool sameRows = rows_.size() == rows.size()
+        && std::equal(rows_.cbegin(), rows_.cend(), rows.cbegin(),
+                      [](const ConnectionRow& current,
+                         const ConnectionRow& replacement) {
+                          return current.connectorId == replacement.connectorId;
+                      });
+    if (sameRows) {
+        for (qsizetype rowIndex = 0; rowIndex < rows.size(); ++rowIndex) {
+            const auto& current = rows_.at(rowIndex);
+            const auto& replacement = rows.at(rowIndex);
+            QList<int> changedRoles;
+            if (current.institution != replacement.institution) {
+                changedRoles.push_back(InstitutionRole);
+            }
+            if (current.scope != replacement.scope) {
+                changedRoles.push_back(ScopeRole);
+            }
+            if (current.method != replacement.method) {
+                changedRoles.push_back(MethodRole);
+            }
+            if (current.status != replacement.status) {
+                changedRoles.push_back(StatusRole);
+            }
+            if (current.connected != replacement.connected) {
+                changedRoles.push_back(ConnectedRole);
+            }
+            if (current.available != replacement.available) {
+                changedRoles.push_back(AvailableRole);
+            }
+            if (changedRoles.isEmpty()) {
+                continue;
+            }
+            rows_[rowIndex] = replacement;
+            const auto changedIndex = index(static_cast<int>(rowIndex), 0);
+            emit dataChanged(changedIndex, changedIndex, changedRoles);
+        }
+        return;
+    }
+
     beginResetModel();
     rows_ = std::move(rows);
     endResetModel();
