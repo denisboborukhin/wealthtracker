@@ -19,9 +19,16 @@ available.
 Logs redact credentials, authorization headers, account identifiers, and
 imported descriptions. No telemetry or remote crash reporter is present.
 
+The retail T-Bank browser uses an off-the-record profile. Optional device and
+analytics collectors are blocked by exact hostname. The one Russian-CA endpoint
+required by login, `api-common.tinkoff.ru`, is accepted only for Chromium's
+unknown-authority error when the verified chain ends at the pinned official
+Russian Trusted Root CA. This does not alter the operating-system trust store;
+all host-name, date, revocation, interception, and other certificate errors
+remain fatal.
+
 ## Backups
 
 Portable backups are encrypted with a distinct user passphrase and include an
 authenticated manifest containing schema and application versions. Plain CSV
 exports require a warning because they are not encrypted.
-

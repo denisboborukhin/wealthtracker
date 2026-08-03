@@ -97,21 +97,34 @@ private data. Navigation, loading, and certificate errors continue to use
 their dedicated handlers.
 
 `net_error -202` is different: Chromium rejected a certificate whose authority
-is not trusted. WealthTracker rejects it too. The connection status and runtime
-log report only the failing hostname, numeric certificate category, and whether
-the failure was for the main frame or a subresource. URL paths, query strings,
-cookies, and credentials are deliberately omitted.
+is not trusted. WealthTracker rejects it by default. The connection status and
+runtime log report only the failing hostname, numeric certificate category, and
+whether the failure was for the main frame or a subresource. URL paths, query
+strings, cookies, and credentials are deliberately omitted.
 
 T-Bank currently loads `mddc.tbank.ru` and `mddc.tinkoff.ru` as device-data
 collector subresources. Their certificates are issued by the Russian Trusted
 Sub CA, which is not trusted by macOS and Chromium by default. T-Bank documents
 the same CA migration and uses `mddc.tbank.ru` in its
 [certificate setup example](https://developer.tbank.ru/docs/tls-settings).
-WealthTracker blocks these two exact hosts before a request is sent. It neither
-installs the Russian root system-wide nor ignores the certificate failure, and
-their optional failure does not replace login/session status. Any certificate
-error from another host, or from the main login frame, remains visible and
-fatal.
+WealthTracker blocks these two exact hosts before a request is sent. It also
+blocks the optional analytics hosts `api-statist.tinkoff.ru` and
+`api-statist.dev-tcsgroup.io`; the latter's observed name-mismatch error is
+never overridden.
+
+The authenticated page also contacts `api-common.tinkoff.ru`, which is required
+for the login flow and now uses the same Russian CA. For this one exact host,
+WealthTracker accepts only an overridable `CertificateAuthorityInvalid` error
+whose Chromium-validated peer chain ends at the pinned SHA-256 fingerprint of
+the official Russian Trusted Root CA. Intermediate rotations are allowed below
+that pinned root. Host-name mismatch, expiry, revocation, interception, every
+other error category, every other host, and every different root remain fatal.
+
+This policy neither installs the Russian root system-wide nor enables a generic
+certificate-ignore flag. It is applied only while the off-the-record T-Bank
+login profile is active. The read-only adapter continues to call
+`www.tbank.ru`, whose current certificate is accepted by the normal system
+trust store.
 
 When `-202` from any other host prevents login:
 
