@@ -135,6 +135,11 @@ enable_sanitizers(connectors)
 add_library(app STATIC)
 target_sources(
     app
+    PUBLIC
+        FILE_SET CXX_MODULES
+        TYPE CXX_MODULES
+        FILES
+            src/app/tbank_tls.cppm
     PRIVATE
         include/app/AppController.hpp
         include/app/FinanceModels.hpp
@@ -300,6 +305,7 @@ if(BUILD_TESTING)
         tests/app/bank_connections_test.cpp
     )
     target_link_libraries(app_tests PRIVATE app Catch2::Catch2)
+    set_property(TARGET app_tests PROPERTY CXX_SCAN_FOR_MODULES ON)
     target_compile_definitions(
         app_tests
         PRIVATE

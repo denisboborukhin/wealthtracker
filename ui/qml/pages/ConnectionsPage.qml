@@ -272,6 +272,10 @@ Item {
                             }
 
                             onCertificateError: function(error) {
+                                if (App.canTrustTBankCertificate(error)) {
+                                    error.acceptCertificate()
+                                    return
+                                }
                                 let message = App.reportTBankCertificateError(
                                     error.url, error.type, error.isMainFrame)
                                 error.rejectCertificate()

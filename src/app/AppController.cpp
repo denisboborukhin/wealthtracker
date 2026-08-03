@@ -36,10 +36,13 @@
 #include <limits>
 #include <optional>
 #include <span>
+#include <string>
 #include <utility>
+#include <vector>
 
 import wt.connectors;
 import wt.platform;
+import wt.tbank_tls;
 
 namespace wealthtracker::app {
 namespace {
@@ -277,10 +280,9 @@ QString certificateReason(const int errorType) {
     }
 }
 
-bool isTBankDeviceCollector(const QUrl& url) {
-    const auto host = url.host().toLower();
-    return host == QStringLiteral("mddc.tbank.ru")
-        || host == QStringLiteral("mddc.tinkoff.ru");
+bool isBlockedTBankSubresource(const QUrl& url) {
+    return is_blocked_tbank_login_subresource(
+        url.host().toLower().toStdString());
 }
 
 class TBankLoginRequestInterceptor final
@@ -289,7 +291,7 @@ public:
     using QWebEngineUrlRequestInterceptor::QWebEngineUrlRequestInterceptor;
 
     void interceptRequest(QWebEngineUrlRequestInfo& info) override {
-        if (isTBankDeviceCollector(info.requestUrl())) {
+        if (isBlockedTBankSubresource(info.requestUrl())) {
             info.block(true);
         }
     }
@@ -907,6 +909,7 @@ public:
     QByteArray tbank_candidate_session;
     QString tbank_certificate_failure;
     QSet<QString> tbank_reported_certificate_failures;
+    QSet<QString> tbank_reported_trusted_certificates;
     bool tbank_cookie_capture_pending = false;
     bool tbank_rejected_psid_seen = false;
     int tbank_cookie_count = 0;
@@ -1174,7 +1177,32 @@ bool AppController::isAllowedTBankLoginUrl(const QUrl& url) const {
 }
 
 bool AppController::isBlockedTBankLoginSubresource(const QUrl& url) const {
-    return isTBankDeviceCollector(url);
+    return isBlockedTBankSubresource(url);
+}
+
+bool AppController::canTrustTBankCertificate(
+    const QWebEngineCertificateError& error) {
+    std::vector<std::string> chainFingerprints;
+    const auto chain = error.certificateChain();
+    chainFingerprints.reserve(static_cast<std::size_t>(chain.size()));
+    for (const auto& certificate : chain) {
+        chainFingerprints.push_back(
+            certificate.digest(QCryptographicHash::Sha256)
+                .toHex()
+                .toStdString());
+    }
+    const auto host = certificateHost(error.url());
+    const bool trusted = is_trusted_tbank_certificate(TBankCertificateEvidence{
+        host.toStdString(),
+        static_cast<int>(error.type()), error.isOverridable(),
+        chainFingerprints});
+    if (trusted
+        && !private_->tbank_reported_trusted_certificates.contains(host)) {
+        private_->tbank_reported_trusted_certificates.insert(host);
+        qInfo().noquote()
+            << "T-Bank pinned Russian-CA chain accepted: host=" << host;
+    }
+    return trusted;
 }
 
 QString AppController::reportTBankCertificateError(
@@ -1189,14 +1217,11 @@ QString AppController::reportTBankCertificateError(
     if (firstReport) {
         private_->tbank_reported_certificate_failures.insert(failureKey);
     }
-    if (!mainFrame
-        && errorType
-            == QWebEngineCertificateError::CertificateAuthorityInvalid
-        && isTBankDeviceCollector(url)) {
+    if (!mainFrame && isBlockedTBankSubresource(url)) {
         if (firstReport) {
             qInfo().noquote()
-                << "T-Bank Russian-CA device collector rejected: host="
-                << host << "frame=subresource";
+                << "T-Bank optional subresource rejected: host=" << host
+                << "frame=subresource";
         }
         return {};
     }
@@ -2592,6 +2617,7 @@ void AppController::beginTBankLogin() {
     private_->tbank_cookie_count = 0;
     private_->tbank_certificate_failure.clear();
     private_->tbank_reported_certificate_failures.clear();
+    private_->tbank_reported_trusted_certificates.clear();
     tbank_login_active_ = true;
     tbank_login_status_ = QStringLiteral(
         "Введите телефон, пароль и код только на странице Т-Банка");

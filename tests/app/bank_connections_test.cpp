@@ -17,6 +17,10 @@
 #include <functional>
 #include <memory>
 #include <optional>
+#include <string>
+#include <vector>
+
+import wt.tbank_tls;
 
 namespace {
 
@@ -170,8 +174,14 @@ TEST_CASE("T-Bank is bundled while other retail banks remain adapter slots") {
         QUrl(QStringLiteral("https://mddc.tbank.ru/collect"))));
     CHECK(controller.isBlockedTBankLoginSubresource(
         QUrl(QStringLiteral("https://mddc.tinkoff.ru/collect"))));
+    CHECK(controller.isBlockedTBankLoginSubresource(
+        QUrl(QStringLiteral("https://api-statist.tinkoff.ru/events"))));
+    CHECK(controller.isBlockedTBankLoginSubresource(
+        QUrl(QStringLiteral("https://api-statist.dev-tcsgroup.io/events"))));
     CHECK_FALSE(controller.isBlockedTBankLoginSubresource(
         QUrl(QStringLiteral("https://mddc.tbank.ru.evil.example/"))));
+    CHECK_FALSE(controller.isBlockedTBankLoginSubresource(
+        QUrl(QStringLiteral("https://api-statist.tinkoff.ru.evil.example/"))));
 
     for (const auto& connectorId :
          {QStringLiteral("alfa-retail"), QStringLiteral("sber-retail"),
@@ -218,10 +228,42 @@ TEST_CASE("T-Bank login UI bounds loading and exposes navigation failures") {
     CHECK(source.contains(QByteArrayLiteral("retryTBankPage")));
     CHECK(source.contains(QByteArrayLiteral("onCertificateError")));
     CHECK(source.contains(QByteArrayLiteral(
+        "App.canTrustTBankCertificate(error)")));
+    CHECK(source.contains(QByteArrayLiteral("error.acceptCertificate()")));
+    CHECK(source.contains(QByteArrayLiteral(
         "App.reportTBankCertificateError")));
     CHECK_FALSE(source.contains(QByteArrayLiteral("error.description")));
     CHECK(source.contains(QByteArrayLiteral("App.tbankSessionAvailable")));
     CHECK(source.contains(QByteArrayLiteral("Проверить сессию")));
+}
+
+TEST_CASE("T-Bank Russian-CA trust requires exact host error and root pin") {
+    using wealthtracker::app::TBankCertificateEvidence;
+    using wealthtracker::app::is_trusted_tbank_certificate;
+    const std::string root{
+        "d26d2d0231b7c39f92cc738512ba54103519e4405d68b5bd703e9788ca8ecf31"};
+    const std::string leaf{
+        "015438de596351e39658aadc152a5109aafc884820caafed7d0165ac962aaea1"};
+    const std::string intermediate{
+        "2155785036c900dbb5f1bb2a1569c80c55595bd6bf94867a29bbddbc7d88a3f2"};
+    const std::vector<std::string> completeChain{leaf, intermediate, root};
+
+    CHECK(is_trusted_tbank_certificate(TBankCertificateEvidence{
+        "api-common.tinkoff.ru", -202, true, completeChain}));
+    CHECK_FALSE(is_trusted_tbank_certificate(TBankCertificateEvidence{
+        "api-common.tinkoff.ru.evil.example", -202, true, completeChain}));
+    CHECK_FALSE(is_trusted_tbank_certificate(TBankCertificateEvidence{
+        "api-statist.tinkoff.ru", -202, true, completeChain}));
+    CHECK_FALSE(is_trusted_tbank_certificate(TBankCertificateEvidence{
+        "api-common.tinkoff.ru", -200, true, completeChain}));
+    CHECK_FALSE(is_trusted_tbank_certificate(TBankCertificateEvidence{
+        "api-common.tinkoff.ru", -202, false, completeChain}));
+    CHECK_FALSE(is_trusted_tbank_certificate(TBankCertificateEvidence{
+        "api-common.tinkoff.ru", -202, true,
+        std::span<const std::string>{completeChain.data(), 2}}));
+    const std::vector<std::string> misplacedRoot{root, intermediate};
+    CHECK_FALSE(is_trusted_tbank_certificate(TBankCertificateEvidence{
+        "api-common.tinkoff.ru", -202, true, misplacedRoot}));
 }
 
 TEST_CASE("T-Bank login filters known renderer diagnostic noise") {

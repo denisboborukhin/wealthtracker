@@ -10,6 +10,7 @@
 #include <QUrl>
 #include <QVariantList>
 #include <QVariantMap>
+#include <QWebEngineCertificateError>
 
 #include <expected>
 #include <memory>
@@ -130,6 +131,8 @@ public:
     Q_INVOKABLE void attachTBankWebProfile(QObject* profile);
     Q_INVOKABLE [[nodiscard]] bool isAllowedTBankLoginUrl(const QUrl& url) const;
     [[nodiscard]] bool isBlockedTBankLoginSubresource(const QUrl& url) const;
+    Q_INVOKABLE [[nodiscard]] bool canTrustTBankCertificate(
+        const QWebEngineCertificateError& error);
     Q_INVOKABLE [[nodiscard]] QString reportTBankCertificateError(
         const QUrl& url, int errorType, bool mainFrame);
     Q_INVOKABLE bool prepareTBankConnection();
