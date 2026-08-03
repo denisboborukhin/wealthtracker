@@ -62,7 +62,7 @@ async function importsAccountsAndOperations () {
   const transactions = []
   let result
   global.ZenMoney = {
-    getData: (key, fallback) => key === 'psid'
+    getData: (key, fallback) => key === 'sessionId'
       ? 'verified-session-123456'
       : fallback,
     addAccount: records => accounts.push(...records),
@@ -112,7 +112,9 @@ async function rejectsExpiredSessions () {
     headers: { 'Content-Type': 'application/json' }
   })
   global.ZenMoney = {
-    getData: () => 'expired-session-123456',
+    getData: (key, fallback) => key === 'psid'
+      ? 'expired-session-123456'
+      : fallback,
     addAccount: () => assert.fail('Expired session imported an account'),
     addTransaction: () => assert.fail('Expired session imported a transaction'),
     setResult: () => assert.fail('Expired session reported success')

@@ -20,6 +20,7 @@
 #include <string>
 #include <vector>
 
+import wt.tbank_session;
 import wt.tbank_tls;
 
 namespace {
@@ -148,7 +149,8 @@ TEST_CASE("T-Bank is bundled while other retail banks remain adapter slots") {
               .toString()
               .contains(QStringLiteral("вход")));
     controller.describeBankConnection(QStringLiteral("tbank-retail"));
-    CHECK(controller.connectionMessage().contains(QStringLiteral("psid")));
+    CHECK(controller.connectionMessage().contains(
+        QStringLiteral("идентификатор API-сессии")));
     CHECK(controller.connectionMessage().contains(
         QStringLiteral("не передаются приложению")));
 
@@ -264,6 +266,44 @@ TEST_CASE("T-Bank Russian-CA trust requires exact host error and root pin") {
     const std::vector<std::string> misplacedRoot{root, intermediate};
     CHECK_FALSE(is_trusted_tbank_certificate(TBankCertificateEvidence{
         "api-common.tinkoff.ru", -202, true, misplacedRoot}));
+}
+
+TEST_CASE("T-Bank API session observation requires an exact read API request") {
+    using wealthtracker::app::TBankSessionRequestEvidence;
+    using wealthtracker::app::is_tbank_session_request;
+    using wealthtracker::app::is_valid_tbank_session_id;
+    const std::string sessionId{"observed-session-123456"};
+
+    CHECK(is_valid_tbank_session_id(sessionId));
+    CHECK(is_tbank_session_request(TBankSessionRequestEvidence{
+        "https", "api-common.tinkoff.ru", "/api/common/v1/ping", -1,
+        false, 1, sessionId}));
+    CHECK(is_tbank_session_request(TBankSessionRequestEvidence{
+        "https", "www.tbank.ru", "/api/common/v1/accounts_light_ib", 443,
+        false, 1, sessionId}));
+    CHECK_FALSE(is_tbank_session_request(TBankSessionRequestEvidence{
+        "http", "api-common.tinkoff.ru", "/api/common/v1/ping", -1,
+        false, 1, sessionId}));
+    CHECK_FALSE(is_tbank_session_request(TBankSessionRequestEvidence{
+        "https", "api-common.tinkoff.ru.evil.example",
+        "/api/common/v1/ping", -1, false, 1, sessionId}));
+    CHECK_FALSE(is_tbank_session_request(TBankSessionRequestEvidence{
+        "https", "api-common.tinkoff.ru", "/unrelated", -1, false,
+        1, sessionId}));
+    CHECK_FALSE(is_tbank_session_request(TBankSessionRequestEvidence{
+        "https", "api-common.tinkoff.ru", "/api/common/v1/ping", 8443,
+        false, 1, sessionId}));
+    CHECK_FALSE(is_tbank_session_request(TBankSessionRequestEvidence{
+        "https", "api-common.tinkoff.ru", "/api/common/v1/ping", -1,
+        true, 1, sessionId}));
+    CHECK_FALSE(is_tbank_session_request(TBankSessionRequestEvidence{
+        "https", "api-common.tinkoff.ru", "/api/common/v1/ping", -1,
+        false, 2, sessionId}));
+    const std::string malformedId{"session;injected-value"};
+    CHECK_FALSE(is_tbank_session_request(TBankSessionRequestEvidence{
+        "https", "api-common.tinkoff.ru", "/api/common/v1/ping", -1,
+        false, 1, malformedId}));
+    CHECK_FALSE(is_valid_tbank_session_id("too-short"));
 }
 
 TEST_CASE("T-Bank login filters known renderer diagnostic noise") {

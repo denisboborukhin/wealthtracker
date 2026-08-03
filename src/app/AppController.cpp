@@ -10,6 +10,7 @@
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QLocale>
+#include <QMetaObject>
 #include <QNetworkAccessManager>
 #include <QNetworkCookie>
 #include <QNetworkReply>
@@ -22,6 +23,7 @@
 #include <QTemporaryFile>
 #include <QTimer>
 #include <QUrl>
+#include <QUrlQuery>
 #include <QWebEngineCertificateError>
 #include <QWebEngineCookieStore>
 #include <QWebEngineUrlRequestInfo>
@@ -42,6 +44,7 @@
 
 import wt.connectors;
 import wt.platform;
+import wt.tbank_session;
 import wt.tbank_tls;
 
 namespace wealthtracker::app {
@@ -285,16 +288,45 @@ bool isBlockedTBankSubresource(const QUrl& url) {
         url.host().toLower().toStdString());
 }
 
+std::optional<QByteArray> observedTBankSession(const QUrl& url) {
+    const auto values = QUrlQuery(url).allQueryItemValues(
+        QStringLiteral("sessionid"), QUrl::FullyDecoded);
+    QByteArray sessionId;
+    if (values.size() == 1) {
+        sessionId = values.front().toUtf8();
+    }
+    const auto scheme = url.scheme().toLower().toStdString();
+    const auto host = url.host().toLower().toStdString();
+    const auto path = url.path(QUrl::FullyDecoded).toStdString();
+    const auto sessionView = std::string_view{
+        sessionId.constData(), static_cast<std::size_t>(sessionId.size())};
+    if (!is_tbank_session_request(TBankSessionRequestEvidence{
+            scheme, host, path, url.port(-1), !url.userInfo().isEmpty(),
+            static_cast<std::size_t>(values.size()), sessionView})) {
+        sessionId.fill('\0');
+        return std::nullopt;
+    }
+    return sessionId;
+}
+
 class TBankLoginRequestInterceptor final
     : public QWebEngineUrlRequestInterceptor {
 public:
-    using QWebEngineUrlRequestInterceptor::QWebEngineUrlRequestInterceptor;
+    explicit TBankLoginRequestInterceptor(
+        std::function<void(QByteArray)> observeSession)
+        : observe_session_(std::move(observeSession)) {}
 
     void interceptRequest(QWebEngineUrlRequestInfo& info) override {
+        if (auto session = observedTBankSession(info.requestUrl())) {
+            observe_session_(std::move(*session));
+        }
         if (isBlockedTBankSubresource(info.requestUrl())) {
             info.block(true);
         }
     }
+
+private:
+    std::function<void(QByteArray)> observe_session_;
 };
 
 bool isRetailBankConnector(const QString& connectorId) {
@@ -903,13 +935,14 @@ public:
     QString zen_prompt_id;
     QString configured_zen_state_key;
     std::unique_ptr<QWebEngineUrlRequestInterceptor>
-        tbank_request_interceptor =
-            std::make_unique<TBankLoginRequestInterceptor>();
+        tbank_request_interceptor;
     QPointer<QQuickWebEngineProfile> tbank_web_profile;
     QByteArray tbank_candidate_session;
+    bool tbank_candidate_from_api = false;
     QString tbank_certificate_failure;
     QSet<QString> tbank_reported_certificate_failures;
     QSet<QString> tbank_reported_trusted_certificates;
+    bool tbank_reported_api_session = false;
     bool tbank_cookie_capture_pending = false;
     bool tbank_rejected_psid_seen = false;
     int tbank_cookie_count = 0;
@@ -928,6 +961,16 @@ AppController::AppController(std::unique_ptr<CredentialBackend> credentials,
       bank_connections_(this),
       private_(
           std::make_unique<AppControllerPrivate>(std::move(credentials))) {
+    private_->tbank_request_interceptor =
+        std::make_unique<TBankLoginRequestInterceptor>(
+            [this](QByteArray session) {
+                QMetaObject::invokeMethod(
+                    this,
+                    [this, session = std::move(session)]() mutable {
+                        observeTBankSession(std::move(session), true);
+                    },
+                    Qt::QueuedConnection);
+            });
     if (private_->credentials && private_->credentials->supported()) {
         auto database_key =
             private_->credentials->get(QStringLiteral("database-key"));
@@ -992,15 +1035,25 @@ AppController::AppController(std::unique_ptr<CredentialBackend> credentials,
                     QByteArray encoded = std::move(**state);
                     const auto document = QJsonDocument::fromJson(encoded);
                     encoded.fill('\0');
-                    const auto psid = document.object()
-                                          .value(QStringLiteral("pluginData"))
-                                          .toObject()
+                    const auto pluginData = document.object()
+                                                .value(QStringLiteral("pluginData"))
+                                                .toObject();
+                    auto sessionId =
+                        pluginData
+                            .value(QStringLiteral("sessionId"))
+                            .toString(pluginData
                                           .value(QStringLiteral("psid"))
-                                          .toString();
-                    tbank_connected_ = psid.size() >= 16
+                                          .toString());
+                    auto sessionBytes = sessionId.toUtf8();
+                    tbank_connected_ = is_valid_tbank_session_id(
+                        std::string_view{
+                            sessionBytes.constData(),
+                            static_cast<std::size_t>(sessionBytes.size())})
                         && settingsDateTime(
                             QStringLiteral("zenPlugin/lastSyncAt"))
                             .has_value();
+                    sessionBytes.fill('\0');
+                    sessionId.fill(QChar{'\0'});
                 }
             }
         }
@@ -1147,21 +1200,7 @@ void AppController::attachTBankWebProfile(QObject* profileObject) {
                     private_->tbank_rejected_psid_seen = true;
                     return;
                 }
-
-                private_->tbank_candidate_session.fill('\0');
-                private_->tbank_candidate_session = std::move(candidate);
-                private_->tbank_certificate_failure.clear();
-                if (!private_->tbank_cookie_capture_pending) {
-                    tbank_login_status_ = QStringLiteral(
-                        "Сессия обнаружена. Нажмите «Подключить», чтобы проверить доступ.");
-                    emit tbankConnectionChanged();
-                    return;
-                }
-
-                private_->tbank_cookie_capture_pending = false;
-                auto session = std::move(private_->tbank_candidate_session);
-                private_->tbank_candidate_session.clear();
-                acceptTBankSession(std::move(session));
+                observeTBankSession(std::move(candidate), false);
             }, Qt::QueuedConnection);
 }
 
@@ -1245,8 +1284,11 @@ QString AppController::reportTBankCertificateError(
             << "type=" << errorType
             << "frame=" << (mainFrame ? "main" : "subresource");
     }
+    const bool requiredApi =
+        host == QStringLiteral("api-common.tinkoff.ru");
     if (tbank_login_active_
-        && (mainFrame || private_->tbank_candidate_session.isEmpty())) {
+        && (mainFrame || requiredApi
+            || private_->tbank_candidate_session.isEmpty())) {
         private_->tbank_certificate_failure = message;
         tbank_login_status_ = message;
         emit tbankConnectionChanged();
@@ -2320,6 +2362,7 @@ bool AppController::startZenPlugin(
                 tbank_login_active_ = false;
                 private_->tbank_candidate_session.fill('\0');
                 private_->tbank_candidate_session.clear();
+                private_->tbank_candidate_from_api = false;
                 tbank_login_status_ = QStringLiteral(
                     "Т-Банк подключён. Сессия сохранена в системном хранилище.");
                 if (private_->tbank_web_profile) {
@@ -2543,6 +2586,7 @@ void AppController::removeZenPlugin() {
         tbank_login_active_ = false;
         private_->tbank_candidate_session.fill('\0');
         private_->tbank_candidate_session.clear();
+        private_->tbank_candidate_from_api = false;
         private_->tbank_cookie_capture_pending = false;
         tbank_login_status_ = QStringLiteral("Т-Банк отключён");
         if (private_->tbank_web_profile) {
@@ -2612,12 +2656,14 @@ void AppController::beginTBankLogin() {
     profile->cookieStore()->deleteAllCookies();
     private_->tbank_candidate_session.fill('\0');
     private_->tbank_candidate_session.clear();
+    private_->tbank_candidate_from_api = false;
     private_->tbank_cookie_capture_pending = false;
     private_->tbank_rejected_psid_seen = false;
     private_->tbank_cookie_count = 0;
     private_->tbank_certificate_failure.clear();
     private_->tbank_reported_certificate_failures.clear();
     private_->tbank_reported_trusted_certificates.clear();
+    private_->tbank_reported_api_session = false;
     tbank_login_active_ = true;
     tbank_login_status_ = QStringLiteral(
         "Введите телефон, пароль и код только на странице Т-Банка");
@@ -2640,6 +2686,7 @@ void AppController::confirmTBankLogin() {
     if (!private_->tbank_candidate_session.isEmpty()) {
         auto session = std::move(private_->tbank_candidate_session);
         private_->tbank_candidate_session.clear();
+        private_->tbank_candidate_from_api = false;
         acceptTBankSession(std::move(session));
         return;
     }
@@ -2681,6 +2728,7 @@ void AppController::cancelTBankLogin() {
     tbank_login_active_ = false;
     private_->tbank_candidate_session.fill('\0');
     private_->tbank_candidate_session.clear();
+    private_->tbank_candidate_from_api = false;
     private_->tbank_cookie_capture_pending = false;
     tbank_login_status_ = QStringLiteral("Вход отменён");
     if (private_->tbank_web_profile) {
@@ -2697,10 +2745,54 @@ void AppController::cancelTBankLogin() {
     emit tbankConnectionChanged();
 }
 
+void AppController::observeTBankSession(QByteArray session,
+                                        const bool apiRequest) {
+    const auto view = std::string_view{
+        session.constData(), static_cast<std::size_t>(session.size())};
+    if (!tbank_login_active_ || !is_valid_tbank_session_id(view)) {
+        session.fill('\0');
+        return;
+    }
+    if (!apiRequest && private_->tbank_candidate_from_api) {
+        session.fill('\0');
+        return;
+    }
+    if (private_->tbank_candidate_from_api == apiRequest
+        && private_->tbank_candidate_session == session) {
+        session.fill('\0');
+        return;
+    }
+
+    private_->tbank_candidate_session.fill('\0');
+    private_->tbank_candidate_session = std::move(session);
+    private_->tbank_candidate_from_api = apiRequest;
+    if (apiRequest && !private_->tbank_reported_api_session) {
+        private_->tbank_reported_api_session = true;
+        qInfo() << "T-Bank API session candidate observed";
+    }
+    if (!private_->tbank_cookie_capture_pending) {
+        if (private_->tbank_certificate_failure.isEmpty()) {
+            tbank_login_status_ = apiRequest
+                ? QStringLiteral(
+                      "API-сессия обнаружена. Завершите вход и нажмите «Подключить» для проверки.")
+                : QStringLiteral(
+                      "Сессия обнаружена. Нажмите «Подключить», чтобы проверить доступ.");
+        }
+        emit tbankConnectionChanged();
+        return;
+    }
+
+    private_->tbank_cookie_capture_pending = false;
+    auto candidate = std::move(private_->tbank_candidate_session);
+    private_->tbank_candidate_session.clear();
+    private_->tbank_candidate_from_api = false;
+    acceptTBankSession(std::move(candidate));
+}
+
 void AppController::acceptTBankSession(QByteArray session) {
-    if (!tbank_login_active_ || session.size() < 16 || session.size() > 4096
-        || session.contains('\0') || session.contains('\r')
-        || session.contains('\n') || session.contains(';')
+    const auto view = std::string_view{
+        session.constData(), static_cast<std::size_t>(session.size())};
+    if (!tbank_login_active_ || !is_valid_tbank_session_id(view)
         || !prepareTBankConnection()) {
         session.fill('\0');
         return;
@@ -2711,7 +2803,7 @@ void AppController::acceptTBankSession(QByteArray session) {
     session.fill('\0');
     const QJsonObject state{
         {QStringLiteral("pluginData"),
-         QJsonObject{{QStringLiteral("psid"), sessionValue}}},
+         QJsonObject{{QStringLiteral("sessionId"), sessionValue}}},
         {QStringLiteral("cookies"), QJsonArray{}}};
     auto encoded = QJsonDocument(state).toJson(QJsonDocument::Compact);
     sessionValue.fill(QChar{'\0'});
@@ -2755,6 +2847,7 @@ void AppController::disconnectTBank() {
     tbank_login_active_ = false;
     private_->tbank_candidate_session.fill('\0');
     private_->tbank_candidate_session.clear();
+    private_->tbank_candidate_from_api = false;
     private_->tbank_cookie_capture_pending = false;
     tbank_login_status_ = QStringLiteral("Т-Банк отключён");
     if (private_->tbank_web_profile) {
@@ -2778,8 +2871,9 @@ void AppController::describeBankConnection(const QString& connectorId) {
             "WealthTracker открывает официальную страницу входа Т-Банка во "
             "встроенном изолированном окне. Телефон, пароль и код вводятся "
             "непосредственно на tbank.ru и не передаются приложению. После "
-            "входа сохраняется только сессионный psid в системном хранилище "
-            "ключей. Локальный MIT-bundle использует его только для чтения "
+            "входа сохраняется только непрозрачный идентификатор API-сессии "
+            "в системном хранилище ключей. Локальный MIT-bundle использует "
+            "его только для чтения "
             "счетов и операций; при истечении сессии потребуется войти снова.");
     } else if (connectorId == QStringLiteral("alfa-api")) {
         connection_message_ = QStringLiteral(

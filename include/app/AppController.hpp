@@ -185,6 +185,7 @@ private:
     void refreshBankConnections();
     void refreshZenPluginAutoUpdateSchedule();
     void scheduleZenPluginAutoUpdateAfter(const QDateTime& from);
+    void observeTBankSession(QByteArray session, bool apiRequest);
     void acceptTBankSession(QByteArray session);
     void rebuildBankModels();
 };
