@@ -27,6 +27,15 @@ Russian Trusted Root CA. This does not alter the operating-system trust store;
 all host-name, date, revocation, interception, and other certificate errors
 remain fatal.
 
+The request interceptor may retain one bounded opaque `sessionid` only from an
+exact HTTPS common-API request to `api-common.tinkoff.ru` or `www.tbank.ru`.
+Duplicate parameters, credentials in the URL authority, unexpected ports,
+lookalike hosts, unrelated paths, and control characters are rejected. A
+secure same-bank `psid` cookie is only a fallback. The candidate is validated
+through read-only account requests immediately after it is placed in the
+credential store and is removed again if validation fails. The browser profile
+and its other storage are discarded.
+
 ## Backups
 
 Portable backups are encrypted with a distinct user passphrase and include an

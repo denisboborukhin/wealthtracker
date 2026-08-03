@@ -34,11 +34,14 @@ The built-in retail connection uses two isolated parts:
 1. A private, off-the-record Qt WebEngine profile opens
    `https://www.tbank.ru/login`. Phone, password, and one-time-code fields are
    owned by the bank page; WealthTracker does not read them.
-2. During login, WealthTracker retains only the latest secure `psid` cookie for
-   a `tbank.ru` domain in process memory. After the user explicitly confirms,
-   it validates that session by reading accounts and operations. Only a valid
-   session is kept in macOS Keychain or Windows Credential Manager; it is not
-   written to the finance database, logs, or QML settings.
+2. During login, WealthTracker observes only the opaque `sessionid` parameter
+   already used by the bank page on exact HTTPS common-API requests. A secure
+   `psid` cookie for a `tbank.ru` domain is retained only as a compatibility
+   fallback. After the user explicitly confirms, the adapter validates the
+   candidate by reading accounts and operations. Only a valid opaque session
+   identifier is kept in macOS Keychain or Windows Credential Manager; the
+   browser profile, cookie jar, local storage, phone, password, and OTP are not
+   persisted or written to logs and QML settings.
 
 The bundled adapter makes `GET` requests only to these paths at the exact
 origin `https://www.tbank.ru`:
@@ -60,15 +63,27 @@ credential store and the application asks the user to sign in again. Automatic
 refresh runs every six hours while WealthTracker is open; it stores no phone,
 password, or one-time code.
 
+ZenMoney's former public retail Tinkoff plugin used a different direct API
+flow: it stored a generated device identifier, PIN hash, and previous API
+session so it could create a new `sessionid` without a browser. ZenMoney
+[removed that plugin as deprecated and non-working in 2020](https://github.com/zenmoney/ZenPlugins/commit/1efdd11c671ea5f5d18cd5e4bb26a12189780c0b).
+An independent T-Bank web-API client likewise reports that the direct SMS
+confirmation flow has been broken since June 2024 and recommends browser-based
+authentication ([package documentation](https://pkg.go.dev/github.com/jfk9w-go/tbank-api#AuthFlow)).
+WealthTracker therefore does not revive that obsolete password/SMS protocol.
+It reuses the current bank page's own opaque API session and retains no reusable
+PIN or device credential.
+
 Connection steps:
 
 1. Install Node.js 18 or newer.
 2. Open **Connections → Т-Банк** and choose **Войти на tbank.ru**.
 3. Complete the official bank page.
-4. Wait for **Сессия обнаружена**, then choose **Подключить**. If the bank page
-   has completed but the message has not appeared, choose **Проверить сессию**
-   to enumerate already-created cookies. The app validates the session before
-   marking the connection as active or closing the login page.
+4. Wait for **API-сессия обнаружена** or **Сессия обнаружена**, then choose
+   **Подключить**. If the bank page has completed but neither message has
+   appeared, choose **Проверить сессию** to enumerate the secure-cookie
+   fallback. The app validates the session before marking the connection as
+   active or closing the login page.
 
 Certificate errors stop the login and are displayed in the dialog. Fix the
 local certificate trust or TLS-inspection configuration instead of bypassing

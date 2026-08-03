@@ -55,14 +55,18 @@ MIT adapter, but authentication stays in the official bank page:
 
 1. Qt WebEngine opens `tbank.ru/login` in an off-the-record profile.
 2. The user enters credentials and MFA into the bank-owned document.
-3. After explicit confirmation, C++ accepts only a secure `psid` cookie for a
-   `tbank.ru` domain and places it in the credential store.
-4. The local Node host exposes `fetch` only for the exact
+3. C++ observes only a bounded `sessionid` value on exact HTTPS requests from
+   the bank page to its common read API. A secure `psid` cookie for a
+   `tbank.ru` domain remains a compatibility fallback.
+4. After explicit confirmation, only that opaque session identifier is placed
+   in the operating-system credential store. The cookie jar, local storage,
+   browser cache, phone, password, and OTP are not persisted.
+5. The local Node host exposes `fetch` only for the exact
    `https://www.tbank.ru` origin, permits only `GET`/`HEAD`, and blocks
    redirects.
-5. The adapter validates the session, reads accounts and operations, and emits
+6. The adapter validates the session, reads accounts and operations, and emits
    ordinary normalized plugin records.
-6. C++ validates those records before updating application models. Only a
+7. C++ validates those records before updating application models. Only a
    successful import marks the connection active and closes the login view.
 
 The retail endpoints are undocumented and are deliberately isolated from the
