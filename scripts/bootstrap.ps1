@@ -12,7 +12,6 @@ python -m venv $ToolDir
 
 & "$ToolDir/Scripts/aqt.exe" install-qt `
     windows desktop 6.11.1 win64_msvc2022_64 `
-    -m qtpositioning qtwebchannel qtwebengine `
     -O "$ProjectDir/build/qt"
 
 Write-Host "Tools installed under $ToolDir"

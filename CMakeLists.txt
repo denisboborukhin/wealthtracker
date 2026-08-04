@@ -24,7 +24,6 @@ find_package(Boost REQUIRED)
 find_package(
     Qt6 6.11 REQUIRED
     COMPONENTS Core Gui Qml Quick QuickControls2 Network Concurrent
-               WebEngineCore WebEngineQuick
 )
 find_package(sqlcipher REQUIRED CONFIG)
 find_package(libsodium REQUIRED CONFIG)
@@ -142,7 +141,6 @@ target_sources(
             src/app/read_only_resource.cppm
             src/app/tbank_auth.cppm
             src/app/tbank_session.cppm
-            src/app/tbank_tls.cppm
     PRIVATE
         include/app/AppController.hpp
         include/app/FinanceModels.hpp
@@ -167,8 +165,6 @@ target_link_libraries(
         Qt6::Gui
         Qt6::Qml
         Qt6::Quick
-        Qt6::WebEngineCore
-        Qt6::WebEngineQuick
         core
         storage
         platform
@@ -219,7 +215,6 @@ target_link_libraries(
     wealthtracker
     PRIVATE
         app
-        Qt6::WebEngineQuick
         Qt6::QuickControls2
         Qt6::Concurrent
 )

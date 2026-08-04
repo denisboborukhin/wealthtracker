@@ -10,7 +10,6 @@
 #include <QUrl>
 #include <QVariantList>
 #include <QVariantMap>
-#include <QWebEngineCertificateError>
 
 #include <expected>
 #include <memory>
@@ -64,9 +63,7 @@ class AppController final : public QObject {
     Q_PROPERTY(QString zenPluginNextSync READ zenPluginNextSync NOTIFY zenPluginChanged)
     Q_PROPERTY(bool tbankConnected READ tbankConnected NOTIFY tbankConnectionChanged)
     Q_PROPERTY(bool tbankLoginActive READ tbankLoginActive NOTIFY tbankConnectionChanged)
-    Q_PROPERTY(bool tbankSessionAvailable READ tbankSessionAvailable NOTIFY tbankConnectionChanged)
     Q_PROPERTY(QString tbankLoginStatus READ tbankLoginStatus NOTIFY tbankConnectionChanged)
-    Q_PROPERTY(QUrl tbankLoginUrl READ tbankLoginUrl CONSTANT)
 
 public:
     explicit AppController(QObject* parent = nullptr);
@@ -104,9 +101,7 @@ public:
     [[nodiscard]] QString zenPluginNextSync() const;
     [[nodiscard]] bool tbankConnected() const noexcept;
     [[nodiscard]] bool tbankLoginActive() const noexcept;
-    [[nodiscard]] bool tbankSessionAvailable() const noexcept;
     [[nodiscard]] QString tbankLoginStatus() const;
-    [[nodiscard]] QUrl tbankLoginUrl() const;
 
     Q_INVOKABLE void loadDemoData();
     Q_INVOKABLE void clearDemoData();
@@ -128,16 +123,10 @@ public:
     Q_INVOKABLE bool answerZenPluginPrompt(const QString& value);
     Q_INVOKABLE void cancelZenPlugin();
     Q_INVOKABLE void removeZenPlugin();
-    Q_INVOKABLE void attachTBankWebProfile(QObject* profile);
-    Q_INVOKABLE [[nodiscard]] bool isAllowedTBankLoginUrl(const QUrl& url) const;
-    [[nodiscard]] bool isBlockedTBankLoginSubresource(const QUrl& url) const;
-    Q_INVOKABLE [[nodiscard]] bool canTrustTBankCertificate(
-        const QWebEngineCertificateError& error);
-    Q_INVOKABLE [[nodiscard]] QString reportTBankCertificateError(
-        const QUrl& url, int errorType, bool mainFrame);
     Q_INVOKABLE bool prepareTBankConnection();
     Q_INVOKABLE void beginTBankLogin();
-    Q_INVOKABLE void confirmTBankLogin();
+    Q_INVOKABLE void openTBankLoginPage();
+    Q_INVOKABLE void checkTBankLogin();
     Q_INVOKABLE void cancelTBankLogin();
     Q_INVOKABLE void disconnectTBank();
 
@@ -185,7 +174,8 @@ private:
     void refreshBankConnections();
     void refreshZenPluginAutoUpdateSchedule();
     void scheduleZenPluginAutoUpdateAfter(const QDateTime& from);
-    void observeTBankSession(QByteArray session, bool apiRequest);
+    void pollTBankAuthorization();
+    void failTBankLogin(QString message);
     void acceptTBankSession(QByteArray session);
     void rebuildBankModels();
 };

@@ -9,6 +9,7 @@ module;
 #include <QUrlQuery>
 
 #include <expected>
+#include <optional>
 #include <string_view>
 
 export module wt.tbank_auth;
@@ -64,6 +65,15 @@ constexpr qsizetype maximumTBankAuthResponseSize = 64 * 1024;
     return url;
 }
 
+[[nodiscard]] std::optional<QString> singleDecodedQueryValue(
+    const QUrlQuery& query, const QString& name) {
+    const auto values = query.allQueryItemValues(name, QUrl::FullyDecoded);
+    if (values.size() != 1) {
+        return std::nullopt;
+    }
+    return values.front();
+}
+
 }  // namespace detail
 
 [[nodiscard]] QUrl tbank_session_start_url() {
@@ -80,14 +90,14 @@ parse_tbank_session_start(const QByteArray& response) {
         return std::unexpected(object.error());
     }
     const auto session = object->value(QStringLiteral("payload")).toString();
-    const auto bytes = session.toLatin1();
+    const auto bytes = session.toUtf8();
     if (auto checked = detail::checkedSessionId(bytes); !checked) {
         return std::unexpected(checked.error());
     }
     return bytes;
 }
 
-[[nodiscard]] std::expected<QUrl, QString> tbank_authorization_url(
+[[nodiscard]] std::expected<QUrl, QString> tbank_authorization_start_url(
     const QByteArray& sessionId) {
     const auto checked = detail::checkedSessionId(sessionId);
     if (!checked) {
@@ -103,6 +113,42 @@ parse_tbank_session_start(const QByteArray& response) {
     query.addQueryItem(QStringLiteral("complete_uri"),
                        QStringLiteral("https://www.tbank.ru/auth/"));
     return detail::apiUrl(QStringLiteral("session/authorize/"), query);
+}
+
+[[nodiscard]] std::expected<QUrl, QString>
+validate_tbank_authorization_redirect(const QUrl& redirect) {
+    if (!redirect.isValid() || redirect.scheme() != QStringLiteral("https")
+        || redirect.host() != QStringLiteral("id.tbank.ru")
+        || redirect.port(-1) != -1 || !redirect.userInfo().isEmpty()
+        || redirect.path() != QStringLiteral("/auth/authorize")
+        || redirect.hasFragment()) {
+        return std::unexpected(
+            QStringLiteral("Т-Банк вернул небезопасный адрес входа"));
+    }
+    const QUrlQuery query(redirect);
+    const auto state = detail::singleDecodedQueryValue(
+        query, QStringLiteral("state"));
+    const auto challenge = detail::singleDecodedQueryValue(
+        query, QStringLiteral("code_challenge"));
+    const auto clientId = detail::singleDecodedQueryValue(
+        query, QStringLiteral("client_id"));
+    const auto responseType = detail::singleDecodedQueryValue(
+        query, QStringLiteral("response_type"));
+    const auto callback = detail::singleDecodedQueryValue(
+        query, QStringLiteral("redirect_uri"));
+    const auto challengeMethod = detail::singleDecodedQueryValue(
+        query, QStringLiteral("code_challenge_method"));
+    if (!state || !challenge || !clientId || !responseType || !callback
+        || !challengeMethod || *clientId != QStringLiteral("portal-api")
+        || *responseType != QStringLiteral("code")
+        || *callback != QStringLiteral("https://www.tbank.ru/auth/")
+        || *challengeMethod != QStringLiteral("S256")
+        || state->size() < 64 || state->size() > 4096
+        || challenge->size() < 32 || challenge->size() > 128) {
+        return std::unexpected(
+            QStringLiteral("Т-Банк вернул некорректный адрес входа"));
+    }
+    return redirect;
 }
 
 [[nodiscard]] std::expected<QUrl, QString> tbank_ping_url(

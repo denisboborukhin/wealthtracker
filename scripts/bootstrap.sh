@@ -28,7 +28,6 @@ esac
 
 "${tool_dir}/bin/aqt" install-qt \
   "${qt_host}" desktop 6.11.1 "${qt_arch}" \
-  -m qtpositioning qtwebchannel qtwebengine \
   -O "${project_dir}/build/qt"
 
 echo "Tools installed under ${tool_dir}"

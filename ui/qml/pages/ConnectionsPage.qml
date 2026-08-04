@@ -2,7 +2,6 @@ import QtQuick
 import QtQuick.Controls
 import QtQuick.Dialogs as PlatformDialogs
 import QtQuick.Layouts
-import QtWebEngine
 import "../components"
 
 Item {
@@ -22,16 +21,6 @@ Item {
             App.prepareTBankConnection()
     }
 
-    WebEngineProfilePrototype {
-        id: tbankProfile
-        storageName: ""
-        httpCacheType: WebEngineProfile.MemoryHttpCache
-        persistentCookiesPolicy: WebEngineProfile.NoPersistentCookies
-        persistentPermissionsPolicy: WebEngineProfile.StoreInMemory
-    }
-
-    Component.onCompleted: App.attachTBankWebProfile(tbankProfile.instance())
-
     PlatformDialogs.FileDialog {
         id: pluginBundleDialog
         title: qsTr("Выберите собранный ZenPlugins bundle")
@@ -44,8 +33,7 @@ Item {
         parent: Overlay.overlay
         modal: true
         focus: true
-        width: builtinTBank && App.tbankLoginActive
-               ? Math.min(parent.width - 64, 760) : 520
+        width: 520
         x: Math.round((parent.width - width) / 2)
         y: Math.round((parent.height - height) / 2)
         padding: 0
@@ -56,9 +44,6 @@ Item {
         property string status: ""
         property bool connected: false
         property bool available: false
-        property string tbankPageError: ""
-        property bool tbankPageLoading: false
-        property bool tbankConsoleWarningReported: false
         readonly property bool builtinTBank:
             connectorId === "tbank-retail"
         readonly property bool localPlugin:
@@ -81,14 +66,6 @@ Item {
                 if (field.sensitive)
                     field.clearValue()
             }
-        }
-
-        function retryTBankPage() {
-            tbankPageError = ""
-            tbankPageLoading = true
-            tbankConsoleWarningReported = false
-            tbankReadyTimer.restart()
-            tbankLoginView.reload()
         }
 
         background: Rectangle {
@@ -212,158 +189,49 @@ Item {
 
                     Rectangle {
                         Layout.fillWidth: true
-                        Layout.preferredHeight: Math.max(
-                            280, Math.min(450, connectionDialog.parent.height - 300))
+                        Layout.preferredHeight: browserStatusContent.implicitHeight + 32
                         visible: App.tbankLoginActive
                         color: Theme.surfaceRaised
                         radius: 8
                         border.color: Theme.border
-                        clip: true
 
-                        WebEngineView {
-                            id: tbankLoginView
+                        RowLayout {
+                            id: browserStatusContent
                             anchors.fill: parent
-                            anchors.margins: 1
-                            profile: tbankProfile.instance()
-                            url: App.tbankLoginActive
-                                 ? App.tbankLoginUrl : "about:blank"
+                            anchors.margins: 16
+                            spacing: 12
 
-                            onNavigationRequested: function(request) {
-                                if (!request.isMainFrame)
-                                    return
-                                if (!App.isAllowedTBankLoginUrl(request.url)) {
-                                    request.reject()
-                                    connectionDialog.tbankPageLoading = false
-                                    connectionDialog.tbankPageError = qsTr(
-                                        "Т-Банк перенаправил вход на неожиданный адрес. Переход заблокирован.")
-                                    tbankReadyTimer.stop()
-                                }
+                            BusyIndicator {
+                                Layout.preferredWidth: 24
+                                Layout.preferredHeight: 24
+                                running: App.tbankLoginActive
                             }
-
-                            onLoadingChanged: function(request) {
-                                if (request.status === WebEngineView.LoadStartedStatus) {
-                                    connectionDialog.tbankPageLoading = true
-                                    if (!tbankReadyTimer.running)
-                                        tbankReadyTimer.start()
-                                    return
-                                }
-                                if (request.status === WebEngineView.LoadFailedStatus) {
-                                    connectionDialog.tbankPageLoading = false
-                                    connectionDialog.tbankPageError = qsTr(
-                                        "Не удалось загрузить страницу входа Т-Банка: ")
-                                        + request.errorString
-                                    tbankReadyTimer.stop()
-                                    return
-                                }
-                                if (request.status === WebEngineView.LoadSucceededStatus) {
-                                    let loadedUrl = request.url.toString().toLowerCase()
-                                    let loginReady = loadedUrl.indexOf(
-                                        "https://id.tbank.ru/auth/step") === 0
-                                        || (loadedUrl.indexOf(
-                                                "https://www.tbank.ru/auth/") === 0
-                                            && loadedUrl.indexOf(
-                                                "https://www.tbank.ru/auth/login") !== 0)
-                                    if (loginReady) {
-                                        connectionDialog.tbankPageLoading = false
-                                        connectionDialog.tbankPageError = ""
-                                        tbankReadyTimer.stop()
-                                    }
-                                }
-                            }
-
-                            onCertificateError: function(error) {
-                                if (App.canTrustTBankCertificate(error)) {
-                                    error.acceptCertificate()
-                                    return
-                                }
-                                let message = App.reportTBankCertificateError(
-                                    error.url, error.type, error.isMainFrame)
-                                error.rejectCertificate()
-                                if (!error.isMainFrame)
-                                    return
-                                connectionDialog.tbankPageLoading = false
-                                connectionDialog.tbankPageError = message
-                                tbankReadyTimer.stop()
-                            }
-
-                            onJavaScriptConsoleMessage: function(level, message) {
-                                const knownNoise =
-                                    message.indexOf(
-                                        "t-static.ruimagessolid/favicon.png") >= 0
-                                    || message.indexOf(
-                                        "GeolocationCollector:") === 0
-                                    || message.indexOf(
-                                        "Failed to create WebGPU Context Provider") >= 0
-                                if (knownNoise)
-                                    return
-
-                                if (level === WebEngineView.ErrorMessageLevel
-                                        && !connectionDialog
-                                            .tbankConsoleWarningReported) {
-                                    connectionDialog.tbankConsoleWarningReported = true
-                                    console.warn(
-                                        "T-Bank login page reported an unexpected JavaScript error")
-                                }
-                            }
-                        }
-
-                        Rectangle {
-                            anchors.left: parent.left
-                            anchors.top: parent.top
-                            height: 3
-                            width: parent.width
-                                   * tbankLoginView.loadProgress / 100
-                            visible: connectionDialog.tbankPageLoading
-                            color: Theme.primary
-                        }
-
-                        Rectangle {
-                            anchors.fill: parent
-                            anchors.margins: 1
-                            visible: connectionDialog.tbankPageError.length > 0
-                            color: Theme.surface
 
                             ColumnLayout {
-                                anchors.centerIn: parent
-                                width: Math.min(parent.width - 48, 440)
-                                spacing: 14
-
+                                Layout.fillWidth: true
+                                spacing: 3
                                 Text {
                                     Layout.fillWidth: true
-                                    text: connectionDialog.tbankPageError
+                                    text: qsTr("Вход выполняется в системном браузере")
                                     color: Theme.text
-                                    font.pixelSize: 13
-                                    horizontalAlignment: Text.AlignHCenter
+                                    font.pixelSize: 12
+                                    font.weight: Font.Medium
                                     wrapMode: Text.WordWrap
                                 }
-                                ActionButton {
-                                    Layout.alignment: Qt.AlignHCenter
-                                    text: qsTr("Повторить")
-                                    primary: true
-                                    onClicked: connectionDialog.retryTBankPage()
+                                Text {
+                                    Layout.fillWidth: true
+                                    text: qsTr("Вернитесь сюда после подтверждения. Проверка выполняется автоматически.")
+                                    color: Theme.textMuted
+                                    font.pixelSize: 10
+                                    wrapMode: Text.WordWrap
                                 }
-                            }
-                        }
-
-                        Timer {
-                            id: tbankReadyTimer
-                            interval: 25000
-                            repeat: false
-                            onTriggered: {
-                                if (!App.tbankLoginActive)
-                                    return
-                                tbankLoginView.stop()
-                                connectionDialog.tbankPageLoading = false
-                                connectionDialog.tbankPageError = qsTr(
-                                    "Страница входа Т-Банка не ответила за 25 секунд. Проверьте сеть и повторите.")
                             }
                         }
                     }
 
                     Text {
                         Layout.fillWidth: true
-                        visible: App.tbankLoginActive
-                        text: qsTr("Поля принадлежат официальной странице tbank.ru. WealthTracker не читает телефон, пароль или код; после подтверждения сохранится только банковская сессия.")
+                        text: qsTr("Телефон, пароль, код и cookies остаются в браузере. WealthTracker хранит только отдельную API-сессию после проверки доступа к счетам.")
                         color: Theme.textMuted
                         font.pixelSize: 10
                         wrapMode: Text.WordWrap
@@ -640,28 +508,24 @@ Item {
                         visible: connectionDialog.builtinTBank
                                  && !connectionDialog.effectiveConnected
                                  && !App.tbankLoginActive
-                        text: qsTr("Войти на tbank.ru")
+                        text: qsTr("Открыть T‑Bank в браузере")
                         primary: true
-                        onClicked: {
-                            connectionDialog.tbankPageError = ""
-                            connectionDialog.tbankConsoleWarningReported = false
-                            App.beginTBankLogin()
-                            connectionDialog.tbankPageLoading = App.tbankLoginActive
-                            if (App.tbankLoginActive)
-                                tbankReadyTimer.restart()
-                            else
-                                tbankReadyTimer.stop()
-                        }
+                        onClicked: App.beginTBankLogin()
                     }
                     ActionButton {
                         visible: connectionDialog.builtinTBank
                                  && App.tbankLoginActive
                                  && !App.zenPluginRunning
-                        text: App.tbankSessionAvailable
-                              ? qsTr("Подключить")
-                              : qsTr("Проверить сессию")
+                        text: qsTr("Открыть браузер снова")
+                        onClicked: App.openTBankLoginPage()
+                    }
+                    ActionButton {
+                        visible: connectionDialog.builtinTBank
+                                 && App.tbankLoginActive
+                                 && !App.zenPluginRunning
+                        text: qsTr("Проверить сейчас")
                         primary: true
-                        onClicked: App.confirmTBankLogin()
+                        onClicked: App.checkTBankLogin()
                     }
                     ActionButton {
                         visible: connectionDialog.builtinTBank
@@ -743,10 +607,6 @@ Item {
         }
 
         onClosed: {
-            tbankReadyTimer.stop()
-            tbankPageError = ""
-            tbankPageLoading = false
-            tbankConsoleWarningReported = false
             if (connectionDialog.builtinTBank && App.tbankLoginActive) {
                 if (App.zenPluginRunning)
                     App.cancelZenPlugin()
