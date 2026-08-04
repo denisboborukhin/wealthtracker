@@ -180,7 +180,7 @@ TEST_CASE("T-Bank is bundled while other retail banks remain adapter slots") {
                           QStringLiteral("tbank-retail"),
                           wealthtracker::app::ConnectionModel::MethodRole)
               .toString()
-              .contains(QStringLiteral("Изолированный Chrome")));
+              .contains(QStringLiteral("Вход внутри приложения")));
     CHECK(connectionValue(controller.bankConnections(),
                           QStringLiteral("tbank-retail"),
                           wealthtracker::app::ConnectionModel::StatusRole)
@@ -190,7 +190,7 @@ TEST_CASE("T-Bank is bundled while other retail banks remain adapter slots") {
     CHECK(controller.connectionMessage().contains(
         QStringLiteral("идентификатор сессии")));
     CHECK(controller.connectionMessage().contains(
-        QStringLiteral("cookies и содержимое страницы остаются")));
+        QStringLiteral("непостоянном режиме")));
 
     for (const auto& connectorId :
          {QStringLiteral("alfa-retail"), QStringLiteral("sber-retail"),
@@ -215,38 +215,26 @@ TEST_CASE("T-Bank runtime bundle is embedded in the application") {
         ":/org/wealthtracker/runtime/bundles/tbank-retail/tbank-retail.cjs"));
     QFile preferences(QStringLiteral(
         ":/org/wealthtracker/runtime/bundles/tbank-retail/preferences.xml"));
-    QFile browserHost(QStringLiteral(
-        ":/org/wealthtracker/runtime/scripts/tbank_browser_host.mjs"));
     REQUIRE(bundle.open(QIODevice::ReadOnly));
     REQUIRE(preferences.open(QIODevice::ReadOnly));
-    REQUIRE(browserHost.open(QIODevice::ReadOnly));
     const auto source = bundle.readAll();
     CHECK(source.contains(QByteArrayLiteral("accounts_light_ib")));
     CHECK(source.contains(QByteArrayLiteral("apiGet('operations'")));
     CHECK(preferences.readAll().contains(QByteArrayLiteral("startDate")));
-    const auto browserSource = browserHost.readAll();
-    CHECK(browserSource.contains(QByteArrayLiteral(
-        "performance.getEntriesByType('resource')")));
-    CHECK(browserSource.contains(QByteArrayLiteral(
-        "--remote-debugging-address=127.0.0.1")));
-    CHECK_FALSE(browserSource.contains(QByteArrayLiteral(
-        "Network.getAllCookies")));
-    CHECK_FALSE(browserSource.contains(QByteArrayLiteral(
-        "Network.getRequestPostData")));
-    CHECK_FALSE(browserSource.contains(QByteArrayLiteral(
-        "Network.enable")));
 }
 
-TEST_CASE("T-Bank login UI uses an isolated managed browser") {
+TEST_CASE("T-Bank login UI embeds a controller-owned native WebView") {
     QFile page(QStringLiteral(
         WEALTHTRACKER_SOURCE_DIR "/ui/qml/pages/ConnectionsPage.qml"));
     REQUIRE(page.open(QIODevice::ReadOnly));
     const auto source = page.readAll();
     CHECK(source.contains(QByteArrayLiteral("App.beginTBankLogin()")));
-    CHECK(source.contains(QByteArrayLiteral("отдельном окне Chrome")));
-    CHECK(source.contains(QByteArrayLiteral("временном профиле браузера")));
-    CHECK_FALSE(source.contains(QByteArrayLiteral("openTBankLoginPage")));
-    CHECK_FALSE(source.contains(QByteArrayLiteral("checkTBankLogin")));
+    CHECK(source.contains(QByteArrayLiteral("WindowContainer {")));
+    CHECK(source.contains(QByteArrayLiteral(
+        "window: App.tbankWebView")));
+    CHECK_FALSE(source.contains(QByteArrayLiteral("sessionid")));
+    CHECK_FALSE(source.contains(QByteArrayLiteral("runJavaScript(")));
+    CHECK_FALSE(source.contains(QByteArrayLiteral("отдельном Chrome")));
     CHECK_FALSE(source.contains(QByteArrayLiteral("QtWebEngine")));
     CHECK_FALSE(source.contains(QByteArrayLiteral("WebEngineView")));
     CHECK_FALSE(source.contains(QByteArrayLiteral("WebEngineProfile")));
@@ -262,9 +250,12 @@ TEST_CASE("T-Bank login UI uses an isolated managed browser") {
     CHECK(controller.contains(QByteArrayLiteral(
         "QNetworkRequest::Manual")));
     CHECK(controller.contains(QByteArrayLiteral(
+        "parse_tbank_session_projection")));
+    CHECK(controller.contains(QByteArrayLiteral("runJavaScript(")));
+    CHECK(controller.contains(QByteArrayLiteral("LocalStorageEnabled")));
+    CHECK(controller.contains(QByteArrayLiteral("deleteAllCookies()")));
+    CHECK_FALSE(controller.contains(QByteArrayLiteral(
         "TBankBrowserRunner")));
-    CHECK(controller.contains(QByteArrayLiteral(
-        "parse_tbank_browser_event")));
     CHECK_FALSE(controller.contains(QByteArrayLiteral(
         "QDesktopServices::openUrl")));
     CHECK_FALSE(controller.contains(QByteArrayLiteral(
@@ -282,29 +273,34 @@ TEST_CASE("T-Bank API session identifiers reject unsafe values") {
     CHECK_FALSE(is_valid_tbank_session_id("too-short"));
 }
 
-TEST_CASE("T-Bank managed browser events are bounded before API validation") {
+TEST_CASE("T-Bank WebView projection is bounded before API validation") {
     using wealthtracker::app::TBankAccessLevel;
-    using wealthtracker::app::TBankBrowserEventKind;
     using wealthtracker::app::parse_tbank_access_level;
-    using wealthtracker::app::parse_tbank_browser_event;
+    using wealthtracker::app::parse_tbank_session_projection;
+    using wealthtracker::app::tbank_session_probe_script;
     using wealthtracker::app::tbank_ping_url;
 
     const QByteArray sessionId{
         "0123456789abcdef0123456789abcdef.auth-session-host"};
-    const auto ready = parse_tbank_browser_event(
-        QByteArrayLiteral("{\"type\":\"ready\"}"));
-    REQUIRE(ready);
-    CHECK(ready->kind == TBankBrowserEventKind::ready);
-    const auto session = parse_tbank_browser_event(
-        QByteArrayLiteral("{\"type\":\"session\",\"sessionId\":\"")
-        + sessionId + QByteArrayLiteral("\"}"));
-    REQUIRE(session);
-    CHECK(session->kind == TBankBrowserEventKind::session);
-    CHECK(session->sessionId == sessionId);
-    const auto browserError = parse_tbank_browser_event(QByteArrayLiteral(
-        "{\"type\":\"error\",\"message\":\"Chrome не найден\"}"));
-    REQUIRE(browserError);
-    CHECK(browserError->kind == TBankBrowserEventKind::error);
+    const auto sessions = parse_tbank_session_projection(
+        QStringLiteral("[\"%1\"]").arg(QString::fromLatin1(sessionId)));
+    REQUIRE(sessions);
+    REQUIRE(sessions->size() == 1);
+    CHECK(sessions->front() == sessionId);
+
+    const auto empty = parse_tbank_session_projection(QStringLiteral("[]"));
+    REQUIRE(empty);
+    CHECK(empty->isEmpty());
+
+    const auto probe = tbank_session_probe_script();
+    CHECK(probe.contains(QStringLiteral(
+        "performance.getEntriesByType('resource')")));
+    CHECK(probe.contains(QStringLiteral("www.tbank.ru")));
+    CHECK(probe.contains(QStringLiteral("/api/common/v1/")));
+    CHECK_FALSE(probe.contains(QStringLiteral("document.")));
+    CHECK_FALSE(probe.contains(QStringLiteral("cookie"),
+                               Qt::CaseInsensitive));
+    CHECK_FALSE(probe.contains(QStringLiteral("localStorage")));
 
     const auto pingUrl = tbank_ping_url(sessionId);
     REQUIRE(pingUrl);
@@ -321,12 +317,10 @@ TEST_CASE("T-Bank managed browser events are bounded before API validation") {
     REQUIRE(client);
     CHECK(*client == TBankAccessLevel::client);
 
-    CHECK_FALSE(parse_tbank_browser_event(QByteArrayLiteral(
-        "{\"type\":\"session\",\"sessionId\":\"bad;session\"}")));
-    CHECK_FALSE(parse_tbank_browser_event(QByteArrayLiteral(
-        "{\"type\":\"error\",\"message\":\"bad\\nmessage\"}")));
-    CHECK_FALSE(parse_tbank_browser_event(QByteArrayLiteral(
-        "{\"type\":\"unknown\"}")));
+    CHECK_FALSE(parse_tbank_session_projection(QStringLiteral(
+        "[\"bad;session\"]")));
+    CHECK_FALSE(parse_tbank_session_projection(QStringLiteral("{}")));
+    CHECK_FALSE(parse_tbank_session_projection(QStringLiteral("[1]")));
     CHECK_FALSE(parse_tbank_access_level(QByteArrayLiteral(
         "{\"resultCode\":\"OK\",\"payload\":{\"accessLevel\":\"ADMIN\"}}")));
     CHECK_FALSE(parse_tbank_access_level(QByteArrayLiteral(

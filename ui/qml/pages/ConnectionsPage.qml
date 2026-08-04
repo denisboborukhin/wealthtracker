@@ -33,7 +33,10 @@ Item {
         parent: Overlay.overlay
         modal: true
         focus: true
-        width: 520
+        width: App.tbankLoginActive
+               ? Math.min(parent.width - 32, 760) : 520
+        height: App.tbankLoginActive
+                ? Math.min(parent.height - 32, 760) : implicitHeight
         x: Math.round((parent.width - width) / 2)
         y: Math.round((parent.height - height) / 2)
         padding: 0
@@ -105,6 +108,8 @@ Item {
 
             ColumnLayout {
                 Layout.fillWidth: true
+                Layout.fillHeight: connectionDialog.builtinTBank
+                                   && App.tbankLoginActive
                 Layout.leftMargin: 24
                 Layout.rightMargin: 24
                 Layout.topMargin: 20
@@ -113,6 +118,7 @@ Item {
 
                 Text {
                     Layout.fillWidth: true
+                    visible: !App.tbankLoginActive
                     text: App.connectionMessage
                     color: Theme.textMuted
                     font.pixelSize: 13
@@ -173,6 +179,7 @@ Item {
 
                 ColumnLayout {
                     Layout.fillWidth: true
+                    Layout.fillHeight: App.tbankLoginActive
                     visible: connectionDialog.builtinTBank
                              && !connectionDialog.effectiveConnected
                     spacing: 10
@@ -181,7 +188,7 @@ Item {
                         Layout.fillWidth: true
                         text: App.tbankLoginStatus.length > 0
                               ? App.tbankLoginStatus
-                              : qsTr("Нажмите «Войти». WealthTracker откроет отдельный временный профиль Chrome с официальной страницей Т-Банка.")
+                              : qsTr("Нажмите «Войти», чтобы открыть официальную страницу Т-Банка внутри приложения.")
                         color: Theme.text
                         font.pixelSize: 12
                         wrapMode: Text.WordWrap
@@ -189,49 +196,26 @@ Item {
 
                     Rectangle {
                         Layout.fillWidth: true
-                        Layout.preferredHeight: browserStatusContent.implicitHeight + 32
+                        Layout.fillHeight: true
+                        Layout.minimumHeight: 340
                         visible: App.tbankLoginActive
-                        color: Theme.surfaceRaised
+                        color: Theme.surface
                         radius: 8
                         border.color: Theme.border
+                        clip: true
 
-                        RowLayout {
-                            id: browserStatusContent
+                        WindowContainer {
                             anchors.fill: parent
-                            anchors.margins: 16
-                            spacing: 12
-
-                            BusyIndicator {
-                                Layout.preferredWidth: 24
-                                Layout.preferredHeight: 24
-                                running: App.tbankLoginActive
-                            }
-
-                            ColumnLayout {
-                                Layout.fillWidth: true
-                                spacing: 3
-                                Text {
-                                    Layout.fillWidth: true
-                                    text: qsTr("Вход выполняется в отдельном окне Chrome")
-                                    color: Theme.text
-                                    font.pixelSize: 12
-                                    font.weight: Font.Medium
-                                    wrapMode: Text.WordWrap
-                                }
-                                Text {
-                                    Layout.fillWidth: true
-                                    text: qsTr("Не закрывайте это окно до завершения подключения. Проверка выполняется автоматически.")
-                                    color: Theme.textMuted
-                                    font.pixelSize: 10
-                                    wrapMode: Text.WordWrap
-                                }
-                            }
+                            anchors.margins: 1
+                            visible: App.tbankLoginActive
+                            window: App.tbankWebView
                         }
                     }
 
                     Text {
                         Layout.fillWidth: true
-                        text: qsTr("Телефон, пароль, код, cookies и содержимое страницы остаются во временном профиле браузера. WealthTracker получает только идентификатор API-сессии из запроса к точному адресу www.tbank.ru и удаляет профиль после входа.")
+                        visible: App.tbankLoginActive
+                        text: qsTr("Телефон и код обрабатывает официальная страница банка. Веб-хранилище непостоянно; WealthTracker получает только идентификатор API-сессии и удаляет cookies после завершения.")
                         color: Theme.textMuted
                         font.pixelSize: 10
                         wrapMode: Text.WordWrap
@@ -508,9 +492,15 @@ Item {
                         visible: connectionDialog.builtinTBank
                                  && !connectionDialog.effectiveConnected
                                  && !App.tbankLoginActive
-                        text: qsTr("Войти в отдельном Chrome")
+                        text: qsTr("Войти")
                         primary: true
                         onClicked: App.beginTBankLogin()
+                    }
+                    ActionButton {
+                        visible: connectionDialog.builtinTBank
+                                 && App.tbankLoginActive
+                        text: qsTr("Повторить")
+                        onClicked: App.reloadTBankLoginPage()
                     }
                     ActionButton {
                         visible: connectionDialog.builtinTBank
@@ -601,6 +591,7 @@ Item {
             pluginPromptField.clear()
             clearSensitivePluginFields()
         }
+
     }
 
     ColumnLayout {

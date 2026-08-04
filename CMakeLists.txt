@@ -156,7 +156,6 @@ qt_add_resources(
         "/org/wealthtracker/runtime"
     FILES
         scripts/zen_plugin_host.mjs
-        scripts/tbank_browser_host.mjs
         bundles/tbank-retail/preferences.xml
         bundles/tbank-retail/tbank-retail.cjs
 )
@@ -167,6 +166,7 @@ target_link_libraries(
         Qt6::Gui
         Qt6::Qml
         Qt6::Quick
+        Qt6::WebView
         core
         storage
         platform
@@ -219,7 +219,6 @@ target_link_libraries(
         app
         Qt6::QuickControls2
         Qt6::Concurrent
-        Qt6::WebView
 )
 enable_strict_warnings(wealthtracker)
 enable_sanitizers(wealthtracker)
@@ -297,12 +296,6 @@ if(BUILD_TESTING)
             COMMAND
                 "${NODE_EXECUTABLE}"
                 "${CMAKE_CURRENT_SOURCE_DIR}/tests/scripts/tbank_bundle_test.cjs"
-        )
-        add_test(
-            NAME tbank_browser_host_test
-            COMMAND
-                "${NODE_EXECUTABLE}"
-                "${CMAKE_CURRENT_SOURCE_DIR}/tests/scripts/tbank_browser_host_test.mjs"
         )
     endif()
 

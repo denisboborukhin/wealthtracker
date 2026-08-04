@@ -10,6 +10,7 @@
 #include <QUrl>
 #include <QVariantList>
 #include <QVariantMap>
+#include <QWindow>
 
 #include <expected>
 #include <memory>
@@ -64,6 +65,8 @@ class AppController final : public QObject {
     Q_PROPERTY(bool tbankConnected READ tbankConnected NOTIFY tbankConnectionChanged)
     Q_PROPERTY(bool tbankLoginActive READ tbankLoginActive NOTIFY tbankConnectionChanged)
     Q_PROPERTY(QString tbankLoginStatus READ tbankLoginStatus NOTIFY tbankConnectionChanged)
+    Q_PROPERTY(QUrl tbankLoginUrl READ tbankLoginUrl CONSTANT)
+    Q_PROPERTY(QWindow* tbankWebView READ tbankWebView CONSTANT)
 
 public:
     explicit AppController(QObject* parent = nullptr);
@@ -102,6 +105,8 @@ public:
     [[nodiscard]] bool tbankConnected() const noexcept;
     [[nodiscard]] bool tbankLoginActive() const noexcept;
     [[nodiscard]] QString tbankLoginStatus() const;
+    [[nodiscard]] QUrl tbankLoginUrl() const;
+    [[nodiscard]] QWindow* tbankWebView();
 
     Q_INVOKABLE void loadDemoData();
     Q_INVOKABLE void clearDemoData();
@@ -125,6 +130,7 @@ public:
     Q_INVOKABLE void removeZenPlugin();
     Q_INVOKABLE bool prepareTBankConnection();
     Q_INVOKABLE void beginTBankLogin();
+    Q_INVOKABLE void reloadTBankLoginPage();
     Q_INVOKABLE void cancelTBankLogin();
     Q_INVOKABLE void disconnectTBank();
 
@@ -173,6 +179,8 @@ private:
     void refreshZenPluginAutoUpdateSchedule();
     void scheduleZenPluginAutoUpdateAfter(const QDateTime& from);
     void pollTBankAuthorization();
+    void observeTBankLoginTraffic(const QString& projection);
+    void clearTBankWebView();
     void failTBankLogin(QString message);
     void acceptTBankSession(QByteArray session);
     void rebuildBankModels();
