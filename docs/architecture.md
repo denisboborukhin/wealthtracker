@@ -15,9 +15,9 @@ limited to Qt `moc`, operating-system ABI, and third-party C API boundaries.
 - `ui`: QML pages, components, and translations.
 
 QML does not receive database handles, encryption keys, or tokens. Controllers
-expose narrow asynchronous operations and immutable models. The only embedded
-browser is an off-the-record T-Bank login view with top-level navigation
-restricted to `tbank.ru` and its subdomains.
+expose narrow asynchronous operations and immutable models. Bank authentication
+is delegated to the operating system's browser; the application does not embed
+a browser engine or expose browser storage to a connector.
 
 ## Data flow
 
@@ -53,21 +53,23 @@ trading, payment, and transfer endpoints are outside that contract.
 Retail T-Bank uses the same normalized plugin result boundary with a bundled
 MIT adapter, but authentication stays in the official bank page:
 
-1. Qt WebEngine opens `tbank.ru/login` in an off-the-record profile.
-2. The user enters credentials and MFA into the bank-owned document.
-3. C++ observes only a bounded `sessionid` value on exact HTTPS requests from
-   the bank page to its common read API. A secure `psid` cookie for a
-   `tbank.ru` domain remains a compatibility fallback.
-4. After explicit confirmation, only that opaque session identifier is placed
-   in the operating-system credential store. The cookie jar, local storage,
-   browser cache, phone, password, and OTP are not persisted.
+1. C++ creates a bounded anonymous session through T-Bank's common API with
+   cookie loading, cookie saving, and automatic redirects disabled.
+2. C++ asks that API for a signed T-ID authorization URL and accepts only the
+   exact HTTPS identity host, path, client, callback, and PKCE method.
+3. The operating system opens the validated URL in the user's normal browser.
+   The user enters credentials and MFA into the bank-owned page; WealthTracker
+   has no access to that browser's cookies or storage.
+4. C++ polls the original opaque session through the common API. Only a
+   `CLIENT` access level is accepted, and only that session identifier is
+   placed in the operating-system credential store.
 5. The local Node host exposes `fetch` only for the exact
    `https://www.tbank.ru` origin, permits only `GET`/`HEAD`, and blocks
    redirects.
 6. The adapter validates the session, reads accounts and operations, and emits
    ordinary normalized plugin records.
 7. C++ validates those records before updating application models. Only a
-   successful import marks the connection active and closes the login view.
+   successful import marks the connection active.
 
 The retail endpoints are undocumented and are deliberately isolated from the
 official API clients. A bank-side change becomes a connector failure rather

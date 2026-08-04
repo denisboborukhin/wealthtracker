@@ -29,14 +29,16 @@ issued to a registered integration; WealthTracker does not yet run Alfa's
 Authorization Code flow itself.
 
 Retail T-Bank is a separate, explicitly unofficial integration. WealthTracker
-embeds the official T-Bank login page, where the user enters their phone,
-password, and one-time code directly into `tbank.ru`. The application reads
-only the resulting `psid` session cookie, stores it in the operating-system
-credential store, and passes it to the bundled MIT-licensed read-only adapter.
-The adapter can contact only `https://www.tbank.ru` and never calls payment,
-transfer, card-management, or trading endpoints. Because T-Bank does not
-publish this retail web API, the connection can break when the bank changes
-its site and may require signing in again.
+creates a separate anonymous API session, asks T-Bank for its signed T-ID
+authorization URL, and opens that URL in the normal system browser. The browser
+owns the phone, password, one-time code, and its own cookies; WealthTracker
+cannot read them. Its separate, cookie-disabled network client polls only the
+opaque API session until T-Bank marks it `CLIENT`, then stores that session in
+the operating-system credential store. The bundled MIT-licensed adapter can
+contact only `https://www.tbank.ru` and never calls payment, transfer,
+card-management, or trading endpoints. Because T-Bank does not publish this
+retail web API, the connection can break when the bank changes its site and may
+require signing in again.
 
 Retail Alfa-Bank, Sber, and VTB adapters are not yet bundled. The Connections
 page shows them as explicit local-adapter slots instead of presenting a
@@ -93,10 +95,11 @@ After a Debug build:
 
 On Windows, run `build/windows-debug/WealthTracker.exe`.
 
-To connect retail T-Bank, open **Connections → Т-Банк**, choose **Войти на
-tbank.ru**, complete the bank's login page, and then choose **Подключить**.
-After the first successful import, auto-update can refresh the same session
-while the application is running.
+To connect retail T-Bank, open **Connections → Т-Банк**, choose **Открыть
+T-Bank в браузере**, and complete the official T-ID page. Return to
+WealthTracker; it checks the API session automatically, or you can choose
+**Проверить сейчас**. After the first successful import, auto-update can
+refresh the same session while the application is running.
 
 ## Use an external ZenPlugins bundle
 

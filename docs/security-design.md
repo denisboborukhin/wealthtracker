@@ -19,22 +19,22 @@ available.
 Logs redact credentials, authorization headers, account identifiers, and
 imported descriptions. No telemetry or remote crash reporter is present.
 
-The retail T-Bank browser uses an off-the-record profile. Optional device and
-analytics collectors are blocked by exact hostname. The one Russian-CA endpoint
-required by login, `api-common.tinkoff.ru`, is accepted only for Chromium's
-unknown-authority error when the verified chain ends at the pinned official
-Russian Trusted Root CA. This does not alter the operating-system trust store;
-all host-name, date, revocation, interception, and other certificate errors
-remain fatal.
+Retail T-Bank authentication is delegated to the normal system browser.
+WealthTracker neither embeds Chromium nor receives the browser's cookie jar,
+local storage, phone, password, or one-time code. The browser remains subject to
+the operating system's ordinary TLS and certificate policy; the application
+does not override bank certificate failures.
 
-The request interceptor may retain one bounded opaque `sessionid` only from an
-exact HTTPS common-API request to `api-common.tinkoff.ru` or `www.tbank.ru`.
-Duplicate parameters, credentials in the URL authority, unexpected ports,
-lookalike hosts, unrelated paths, and control characters are rejected. A
-secure same-bank `psid` cookie is only a fallback. The candidate is validated
-through read-only account requests immediately after it is placed in the
-credential store and is removed again if validation fails. The browser profile
-and its other storage are discarded.
+A separate Qt network client creates and polls one bounded opaque `sessionid`
+through exact HTTPS common-API endpoints. Cookie loading, cookie saving, and
+automatic redirects are disabled on every authentication request. Before
+opening the system browser, the returned authorization redirect is restricted
+to exact `id.tbank.ru` HTTPS navigation with the expected T-Bank client,
+callback, and PKCE parameters; duplicate security parameters and lookalike
+hosts are rejected. Only a `CLIENT` access level is accepted. The candidate is
+then validated through read-only account requests and is removed from the
+credential store if validation fails. The identifier and signed authorization
+URL are never logged or exposed to QML.
 
 ## Backups
 
