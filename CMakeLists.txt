@@ -140,6 +140,7 @@ target_sources(
         TYPE CXX_MODULES
         FILES
             src/app/read_only_resource.cppm
+            src/app/tbank_auth.cppm
             src/app/tbank_session.cppm
             src/app/tbank_tls.cppm
     PRIVATE

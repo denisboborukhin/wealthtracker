@@ -23,6 +23,7 @@
 #include <vector>
 
 import wt.read_only_resource;
+import wt.tbank_auth;
 import wt.tbank_session;
 import wt.tbank_tls;
 
@@ -342,6 +343,65 @@ TEST_CASE("T-Bank API session observation requires an exact read API request") {
         "https", "api-common.tinkoff.ru", "/api/common/v1/ping", -1,
         false, 1, malformedId}));
     CHECK_FALSE(is_valid_tbank_session_id("too-short"));
+}
+
+TEST_CASE("T-Bank external authorization uses an explicit cookie-free API session") {
+    using wealthtracker::app::TBankAccessLevel;
+    using wealthtracker::app::parse_tbank_access_level;
+    using wealthtracker::app::parse_tbank_session_start;
+    using wealthtracker::app::tbank_authorization_url;
+    using wealthtracker::app::tbank_ping_url;
+    using wealthtracker::app::tbank_session_start_url;
+
+    const QByteArray sessionId{
+        "0123456789abcdef0123456789abcdef.auth-session-host"};
+    const auto parsedSession = parse_tbank_session_start(
+        QByteArrayLiteral("{\"resultCode\":\"OK\",\"payload\":\"")
+        + sessionId + QByteArrayLiteral("\"}"));
+    REQUIRE(parsedSession);
+    CHECK(*parsedSession == sessionId);
+
+    const auto startUrl = tbank_session_start_url();
+    CHECK(startUrl.scheme() == QStringLiteral("https"));
+    CHECK(startUrl.host() == QStringLiteral("www.tbank.ru"));
+    CHECK(startUrl.path() == QStringLiteral("/api/common/v1/session"));
+    CHECK(QUrlQuery(startUrl).queryItemValue(QStringLiteral("origin"))
+          == QStringLiteral("web,ib5,platform"));
+
+    const auto authorizationUrl = tbank_authorization_url(sessionId);
+    REQUIRE(authorizationUrl);
+    CHECK(authorizationUrl->host() == QStringLiteral("www.tbank.ru"));
+    CHECK(authorizationUrl->path()
+          == QStringLiteral("/api/common/v1/session/authorize/"));
+    const QUrlQuery authorizationQuery(*authorizationUrl);
+    CHECK(authorizationQuery.queryItemValue(QStringLiteral("sessionid"))
+          == QString::fromLatin1(sessionId));
+    CHECK(authorizationQuery.queryItemValue(QStringLiteral("complete_uri"))
+          == QStringLiteral("https://www.tbank.ru/auth/"));
+    CHECK_FALSE(authorizationQuery.hasQueryItem(QStringLiteral("cookie")));
+
+    const auto pingUrl = tbank_ping_url(sessionId);
+    REQUIRE(pingUrl);
+    CHECK(pingUrl->path() == QStringLiteral("/api/common/v1/ping"));
+    CHECK(QUrlQuery(*pingUrl).queryItemValue(QStringLiteral("sessionid"))
+          == QString::fromLatin1(sessionId));
+
+    const auto anonymous = parse_tbank_access_level(QByteArrayLiteral(
+        "{\"resultCode\":\"OK\",\"payload\":{\"accessLevel\":\"ANONYMOUS\"}}"));
+    REQUIRE(anonymous);
+    CHECK(*anonymous == TBankAccessLevel::anonymous);
+    const auto client = parse_tbank_access_level(QByteArrayLiteral(
+        "{\"resultCode\":\"OK\",\"payload\":{\"accessLevel\":\"CLIENT\"}}"));
+    REQUIRE(client);
+    CHECK(*client == TBankAccessLevel::client);
+
+    CHECK_FALSE(parse_tbank_session_start(QByteArrayLiteral(
+        "{\"resultCode\":\"OK\",\"payload\":\"too-short\"}")));
+    CHECK_FALSE(tbank_authorization_url(QByteArrayLiteral("bad;session")));
+    CHECK_FALSE(parse_tbank_access_level(QByteArrayLiteral(
+        "{\"resultCode\":\"OK\",\"payload\":{\"accessLevel\":\"ADMIN\"}}")));
+    CHECK_FALSE(parse_tbank_access_level(QByteArrayLiteral(
+        "{\"resultCode\":\"ERROR\"}")));
 }
 
 TEST_CASE("T-Bank login filters known renderer diagnostic noise") {
