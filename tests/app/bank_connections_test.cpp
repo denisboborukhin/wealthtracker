@@ -7,9 +7,11 @@
 #include <QElapsedTimer>
 #include <QEventLoop>
 #include <QFile>
+#include <QFileInfo>
 #include <QHash>
 #include <QSettings>
 #include <QStandardPaths>
+#include <QTemporaryDir>
 #include <QThread>
 #include <QUrl>
 
@@ -20,6 +22,7 @@
 #include <string>
 #include <vector>
 
+import wt.read_only_resource;
 import wt.tbank_session;
 import wt.tbank_tls;
 
@@ -123,6 +126,41 @@ TEST_CASE("new installations start with empty data and optional demo mode") {
     controller.clearDemoData();
     CHECK_FALSE(controller.demoMode());
     CHECK(controller.accounts()->rowCount() == 0);
+}
+
+TEST_CASE("T-Bank runtime bundle upgrades an existing read-only resource") {
+    using wealthtracker::app::install_read_only_resource;
+    QTemporaryDir directory;
+    REQUIRE(directory.isValid());
+    const auto destination = directory.filePath(
+        QStringLiteral("tbank-retail.cjs"));
+    const QByteArray firstContents{"first embedded bundle"};
+    const QByteArray updatedContents{"updated embedded bundle"};
+
+    const auto firstInstall =
+        install_read_only_resource(destination, firstContents);
+    REQUIRE(firstInstall);
+    CHECK(*firstInstall);
+    CHECK_FALSE(QFileInfo(destination).permissions()
+                & QFileDevice::WriteOwner);
+
+    const auto unchangedInstall =
+        install_read_only_resource(destination, firstContents);
+    REQUIRE(unchangedInstall);
+    CHECK_FALSE(*unchangedInstall);
+
+    const auto updatedInstall =
+        install_read_only_resource(destination, updatedContents);
+    REQUIRE(updatedInstall);
+    CHECK(*updatedInstall);
+    QFile installed(destination);
+    REQUIRE(installed.open(QIODevice::ReadOnly));
+    CHECK(installed.readAll() == updatedContents);
+    installed.close();
+    CHECK_FALSE(QFileInfo(destination).permissions()
+                & QFileDevice::WriteOwner);
+    (void)QFile::setPermissions(
+        destination, QFileDevice::ReadOwner | QFileDevice::WriteOwner);
 }
 
 TEST_CASE("T-Bank is bundled while other retail banks remain adapter slots") {

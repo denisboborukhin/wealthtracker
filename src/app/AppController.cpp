@@ -17,7 +17,6 @@
 #include <QPointer>
 #include <QProcess>
 #include <QSettings>
-#include <QSaveFile>
 #include <QSet>
 #include <QStandardPaths>
 #include <QTemporaryFile>
@@ -44,6 +43,7 @@
 
 import wt.connectors;
 import wt.platform;
+import wt.read_only_resource;
 import wt.tbank_session;
 import wt.tbank_tls;
 
@@ -204,21 +204,11 @@ std::expected<void, QString> copyResourceFile(const QString& resourcePath,
             QStringLiteral("Не найден встроенный ресурс Т-Банка"));
     }
     const auto contents = source.readAll();
-    QFile existing(destination);
-    if (existing.open(QIODevice::ReadOnly)
-        && existing.readAll() == contents) {
-        QFile::setPermissions(destination, QFileDevice::ReadOwner);
-        return {};
-    }
-
-    QSaveFile output(destination);
-    if (!output.open(QIODevice::WriteOnly)
-        || output.write(contents) != contents.size()
-        || !output.commit()) {
+    if (auto installed = install_read_only_resource(destination, contents);
+        !installed) {
         return std::unexpected(
             QStringLiteral("Не удалось подготовить встроенный bundle Т-Банка"));
     }
-    QFile::setPermissions(destination, QFileDevice::ReadOwner);
     return {};
 }
 
