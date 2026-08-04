@@ -31,20 +31,23 @@ converted.
 
 The built-in retail connection uses two isolated parts:
 
-1. A dedicated Qt network client creates an anonymous `sessionid` and polls
-   that same session. Cookie loading, cookie saving, and automatic redirects
-   are disabled for these application requests.
-2. The exact `https://www.tbank.ru/api/common/v1/session/authorize/` bootstrap
-   for that session opens in the normal system browser. The browser receives
-   T-Bank's HttpOnly transaction cookies and follows the bank's T-ID redirect.
-   Phone, password, one-time-code fields, and browser cookies remain inside
-   that browser; WealthTracker cannot inspect or copy them.
+1. A local helper starts an installed Chrome, Chromium, Edge, or Brave browser
+   with a fresh temporary profile and opens the official T-Bank login. Phone,
+   password, OTP, cookies, headers, request bodies, and page content stay in
+   the browser.
+2. The helper uses a random DevTools endpoint bound only to `127.0.0.1`. It
+   evaluates one fixed expression that filters the page's resource-timing
+   names to exact `https://www.tbank.ru/api/common/v1/` URLs and returns only
+   bounded `sessionid` values. DevTools Network events and cookie APIs are not
+   enabled.
 
-The app accepts the session only after T-Bank changes its access level from
-`ANONYMOUS` to `CLIENT`. It then validates the session by reading accounts and
-operations. Only the opaque session identifier is kept in macOS Keychain or
-Windows Credential Manager; the signed login URL, phone, password, OTP, and
-browser state are not persisted or written to logs or QML settings.
+C++ rejects malformed helper events and accepts the candidate only after
+T-Bank reports access level `CLIENT`. It then validates the session by reading
+accounts and operations. Only the opaque session identifier is kept in macOS
+Keychain or Windows Credential Manager; the phone, password, OTP, and browser
+state are not persisted or written to logs or QML settings. The helper closes
+the isolated browser and deletes its profile after success, cancellation, or
+failure.
 
 The bundled adapter makes `GET` requests only to these paths at the exact
 origin `https://www.tbank.ru`:
@@ -53,11 +56,9 @@ origin `https://www.tbank.ru`:
 - `/api/common/v1/accounts_light_ib`
 - `/api/common/v1/operations`
 
-The local host blocks other origins and all redirects for this bundle. The
-separate authorization client calls only session and ping itself. It locally
-constructs the exact same-origin authorization-bootstrap URL; the system
-browser must load that URL so it can receive the bank's transaction cookies
-before following T-ID.
+The local plugin host blocks other origins and all redirects for this bundle.
+The separate authorization client calls only `ping` for the candidate that the
+isolated browser explicitly handed to C++.
 
 This is an undocumented retail web API, not T-Bank's supported OpenAPI. It may
 change without notice. An expired or rejected session is removed from the
@@ -73,35 +74,29 @@ An independent T-Bank web-API client likewise reports that the direct SMS
 confirmation flow has been broken since June 2024 and recommends browser-based
 authentication ([package documentation](https://pkg.go.dev/github.com/jfk9w-go/tbank-api#AuthFlow)).
 WealthTracker therefore does not revive that obsolete password/SMS protocol.
-It links a new API session to the current T-ID browser authorization and
+It observes the API session used by the current official browser page and
 retains no reusable PIN, device credential, or browser cookie.
 
 Connection steps:
 
-1. Install Node.js 18 or newer.
-2. Open **Connections → Т-Банк** and choose **Открыть T-Bank в браузере**.
-3. Complete the official T-ID page in the browser.
-4. Return to WealthTracker. It checks automatically every two seconds; choose
-   **Проверить сейчас** if you want an immediate check. The attempt expires
-   after ten minutes.
-5. WealthTracker validates accounts and operations before marking the
+1. Install Node.js 22.4 or newer and one supported Chromium browser.
+2. Open **Connections → Т-Банк** and choose **Войти в отдельном Chrome**.
+3. Complete the official T-ID page in the separate browser window. Keep the
+   WealthTracker dialog and browser window open; validation is automatic and
+   the attempt expires after ten minutes.
+4. WealthTracker validates accounts and operations before marking the
    connection active. If the undocumented API rejects the session, start a new
    login.
 
 ### T-Bank login troubleshooting
 
-The previous embedded Chromium implementation has been removed. Its WebGPU,
-STUN, CSP, and `net_error -202` messages are no longer part of WealthTracker's
-login path. If the button does not open a page, verify that macOS or Windows has
-a default HTTPS browser and use **Открыть браузер снова**. If the page completes
-but the app keeps waiting, choose **Проверить сейчас**; a bank-side protocol
-change will appear as a connection error rather than falling back to cookies.
-
-If T-ID displays **Ошибка авторизации / Internal error**, ensure the browser
-was opened by the current WealthTracker build. Older builds skipped T-Bank's
-same-origin authorization bootstrap, so the browser never received the two
-HttpOnly transaction cookies required by the callback. Cancel the attempt and
-start a new login; reusing the old T-ID tab cannot repair its missing binding.
+The previous embedded Chromium and system-browser implementations have been
+removed. Their WebGPU, STUN, CSP, `net_error -202`, internal-authorization,
+and unrelated-session polling failures are no longer part of this login path.
+If no separate window opens, check the visible error for a missing Node.js or
+supported browser installation. If the official page completes but the app
+keeps waiting, cancel and start a fresh isolated login; a bank-side resource or
+API change appears as a connection error rather than falling back to cookies.
 
 The browser and WealthTracker each use the operating system's normal TLS trust
 policy. Do not bypass a certificate warning shown by either one; inspect VPN,
@@ -191,7 +186,7 @@ persists access and refresh tokens, while
 persists an API `sessionid`. Other adapters use browser-style cookies, and some
 place access and refresh tokens into that cookie jar. The built-in T-Bank
 adapter does not use the ZenPlugins cookie jar; its only input is the API
-session that the C++ authorization flow created and verified.
+session that the isolated browser handed to C++ and the read-only API verified.
 
 This is an explicit trust boundary. The bundle is third-party JavaScript
 running as a local child process without an operating-system sandbox. Its

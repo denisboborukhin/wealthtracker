@@ -19,22 +19,27 @@ available.
 Logs redact credentials, authorization headers, account identifiers, and
 imported descriptions. No telemetry or remote crash reporter is present.
 
-Retail T-Bank authentication is delegated to the normal system browser.
-WealthTracker neither embeds Chromium nor receives the browser's cookie jar,
-local storage, phone, password, or one-time code. The browser remains subject to
-the operating system's ordinary TLS and certificate policy; the application
-does not override bank certificate failures.
+Retail T-Bank authentication runs in a fresh temporary Chrome/Chromium profile,
+not embedded Qt WebEngine and not the user's normal browser profile. The
+browser remains subject to the operating system's ordinary TLS and certificate
+policy; the application does not override bank certificate failures.
 
-A separate Qt network client creates and polls one bounded opaque `sessionid`
-through exact HTTPS common-API endpoints. Cookie loading, cookie saving, and
-automatic redirects are disabled on every application request. The system
-browser is given only an exact, locally constructed HTTPS
-`www.tbank.ru/api/common/v1/session/authorize/` URL for that session. The
-browser—not WealthTracker—receives the bank's HttpOnly transaction cookies and
-follows its T-ID redirect. Only a `CLIENT` access level is accepted. The
-candidate is then validated through read-only account requests and is removed
-from the credential store if validation fails. The identifier and
-authorization URL are never logged or exposed to QML.
+The helper's DevTools endpoint uses a random port bound only to `127.0.0.1` and
+exists only during login. The helper attaches before navigation and performs
+only target attachment, page navigation, and a fixed runtime expression. It
+does not enable DevTools Network events or request cookies, headers, bodies,
+DOM content, local storage, phone, password, or OTP. The expression filters
+resource-timing entries inside the page and returns only bounded session IDs
+from exact HTTPS `www.tbank.ru/api/common/v1/` URLs. A malicious local process
+that discovers the temporary port could still attach while login is active;
+the isolated profile prevents exposure of the user's existing browser data.
+
+C++ validates the bounded helper event, then a separate cookie-disabled Qt
+client polls the exact candidate session. Only `CLIENT` access is accepted and
+validated through read-only account requests. On success, cancellation, or
+failure, Chrome is stopped and the temporary profile is deleted. The session
+identifier is never logged or exposed to QML and is removed from the credential
+store if account validation fails.
 
 ## Backups
 

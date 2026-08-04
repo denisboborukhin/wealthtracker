@@ -29,17 +29,18 @@ issued to a registered integration; WealthTracker does not yet run Alfa's
 Authorization Code flow itself.
 
 Retail T-Bank is a separate, explicitly unofficial integration. WealthTracker
-creates a separate anonymous API session and opens its exact T-Bank
-authorization-bootstrap URL in the normal system browser. The browser receives
-T-Bank's HttpOnly transaction cookies, follows the bank's T-ID redirect, and
-owns the phone, password, and one-time code; WealthTracker cannot read any of
-that browser state. Its separate, cookie-disabled network client polls only
-the opaque API session until T-Bank marks it `CLIENT`, then stores that session
-in the operating-system credential store. The bundled MIT-licensed adapter can
-contact only `https://www.tbank.ru` and never calls payment, transfer,
-card-management, or trading endpoints. Because T-Bank does not publish this
-retail web API, the connection can break when the bank changes its site and may
-require signing in again.
+opens the official login page in a fresh temporary Chrome/Chromium profile.
+Phone, password, OTP, cookies, headers, request bodies, and page content stay
+in that profile. A small local helper uses a random loopback-only DevTools
+endpoint to evaluate one fixed expression: it returns only bounded `sessionid`
+values already present in T-Bank common-API resource URLs. C++ validates the
+event and accepts the session only after the read-only API reports `CLIENT`;
+the profile is then deleted and the session is stored in the operating-system
+credential store. The bundled MIT-licensed adapter can contact only
+`https://www.tbank.ru` and never calls payment, transfer, card-management, or
+trading endpoints. Because T-Bank does not publish this retail web API, the
+connection can break when the bank changes its site and may require signing in
+again.
 
 Retail Alfa-Bank, Sber, and VTB adapters are not yet bundled. The Connections
 page shows them as explicit local-adapter slots instead of presenting a
@@ -64,7 +65,7 @@ T-Bank, Sber, or VTB.
 - CMake and Conan 2
 - SQLCipher and libsodium
 - Catch2
-- Node.js 18+ for retail T-Bank and external ZenPlugins bundles
+- Node.js 22.4+ for retail T-Bank; Node.js 18+ for external ZenPlugins bundles
 
 ## Build
 
@@ -96,11 +97,11 @@ After a Debug build:
 
 On Windows, run `build/windows-debug/WealthTracker.exe`.
 
-To connect retail T-Bank, open **Connections → Т-Банк**, choose **Открыть
-T-Bank в браузере**, and complete the official T-ID page. Return to
-WealthTracker; it checks the API session automatically, or you can choose
-**Проверить сейчас**. After the first successful import, auto-update can
-refresh the same session while the application is running.
+To connect retail T-Bank, install Node.js 22.4 or newer, open **Connections →
+Т-Банк**, choose **Войти в отдельном Chrome**, and complete the official T-ID
+page. Keep both windows open until WealthTracker validates the API session and
+starts the first import. After that successful import, auto-update can refresh
+the same session while the application is running.
 
 ## Use an external ZenPlugins bundle
 

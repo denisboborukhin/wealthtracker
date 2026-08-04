@@ -53,18 +53,19 @@ trading, payment, and transfer endpoints are outside that contract.
 Retail T-Bank uses the same normalized plugin result boundary with a bundled
 MIT adapter, but authentication stays in the official bank page:
 
-1. C++ creates a bounded anonymous session through T-Bank's common API with
-   cookie loading, cookie saving, and automatic redirects disabled.
-2. The operating system opens the exact, locally constructed HTTPS
-   `www.tbank.ru` authorization-bootstrap URL. The browser receives T-Bank's
-   HttpOnly transaction cookies and follows the bank-owned T-ID redirect.
-3. The user enters credentials and MFA into the bank-owned page; WealthTracker
-   has no access to that browser's cookies or storage and does not follow the
-   authorization redirect itself.
-4. C++ polls the original opaque session through the common API. Only a
-   `CLIENT` access level is accepted, and only that session identifier is
-   placed in the operating-system credential store.
-5. The local Node host exposes `fetch` only for the exact
+1. A local Node helper starts Chrome/Chromium with a fresh temporary profile
+   and a random DevTools port bound only to `127.0.0.1`.
+2. The helper navigates that isolated page to the official T-Bank login. The
+   user enters credentials and MFA there; the helper never requests cookies,
+   headers, bodies, DOM content, or storage through DevTools.
+3. A fixed `Runtime.evaluate` expression reads only the page's resource-timing
+   names, filters exact `https://www.tbank.ru/api/common/v1/` URLs inside the
+   page, and returns only syntactically bounded `sessionid` values.
+4. C++ validates each bounded JSON-lines event and polls that exact candidate
+   with cookies and redirects disabled. Only a `CLIENT` access level is
+   accepted and placed in the operating-system credential store. The helper
+   closes Chrome and deletes the temporary profile on success or cancellation.
+5. The local plugin host exposes `fetch` only for the exact
    `https://www.tbank.ru` origin, permits only `GET`/`HEAD`, and blocks
    redirects.
 6. The adapter validates the session, reads accounts and operations, and emits
