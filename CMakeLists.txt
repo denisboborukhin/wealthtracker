@@ -140,6 +140,7 @@ target_sources(
         FILES
             src/app/read_only_resource.cppm
             src/app/tbank_auth.cppm
+            src/app/tbank_browser.cppm
             src/app/tbank_session.cppm
     PRIVATE
         include/app/AppController.hpp
@@ -155,6 +156,7 @@ qt_add_resources(
         "/org/wealthtracker/runtime"
     FILES
         scripts/zen_plugin_host.mjs
+        scripts/tbank_browser_host.mjs
         bundles/tbank-retail/preferences.xml
         bundles/tbank-retail/tbank-retail.cjs
 )
@@ -294,6 +296,12 @@ if(BUILD_TESTING)
             COMMAND
                 "${NODE_EXECUTABLE}"
                 "${CMAKE_CURRENT_SOURCE_DIR}/tests/scripts/tbank_bundle_test.cjs"
+        )
+        add_test(
+            NAME tbank_browser_host_test
+            COMMAND
+                "${NODE_EXECUTABLE}"
+                "${CMAKE_CURRENT_SOURCE_DIR}/tests/scripts/tbank_browser_host_test.mjs"
         )
     endif()
 
