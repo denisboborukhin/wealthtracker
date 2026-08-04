@@ -31,12 +31,14 @@ converted.
 
 The built-in retail connection uses two isolated parts:
 
-1. A dedicated Qt network client creates an anonymous `sessionid`, obtains a
-   signed T-ID authorization URL, and polls that same session. Cookie loading,
-   cookie saving, and automatic redirects are disabled for these requests.
-2. The validated `https://id.tbank.ru/auth/authorize` URL opens in the normal
-   system browser. Phone, password, one-time-code fields, and browser cookies
-   remain inside that browser; WealthTracker cannot inspect or copy them.
+1. A dedicated Qt network client creates an anonymous `sessionid` and polls
+   that same session. Cookie loading, cookie saving, and automatic redirects
+   are disabled for these application requests.
+2. The exact `https://www.tbank.ru/api/common/v1/session/authorize/` bootstrap
+   for that session opens in the normal system browser. The browser receives
+   T-Bank's HttpOnly transaction cookies and follows the bank's T-ID redirect.
+   Phone, password, one-time-code fields, and browser cookies remain inside
+   that browser; WealthTracker cannot inspect or copy them.
 
 The app accepts the session only after T-Bank changes its access level from
 `ANONYMOUS` to `CLIENT`. It then validates the session by reading accounts and
@@ -52,10 +54,10 @@ origin `https://www.tbank.ru`:
 - `/api/common/v1/operations`
 
 The local host blocks other origins and all redirects for this bundle. The
-separate authorization client permits only the session, authorize, and ping
-requests described above. Its one manual redirect must match the exact T-ID
-host, path, client ID, callback, and S256 PKCE method before the operating
-system is allowed to open it.
+separate authorization client calls only session and ping itself. It locally
+constructs the exact same-origin authorization-bootstrap URL; the system
+browser must load that URL so it can receive the bank's transaction cookies
+before following T-ID.
 
 This is an undocumented retail web API, not T-Bank's supported OpenAPI. It may
 change without notice. An expired or rejected session is removed from the
@@ -94,6 +96,12 @@ login path. If the button does not open a page, verify that macOS or Windows has
 a default HTTPS browser and use **Открыть браузер снова**. If the page completes
 but the app keeps waiting, choose **Проверить сейчас**; a bank-side protocol
 change will appear as a connection error rather than falling back to cookies.
+
+If T-ID displays **Ошибка авторизации / Internal error**, ensure the browser
+was opened by the current WealthTracker build. Older builds skipped T-Bank's
+same-origin authorization bootstrap, so the browser never received the two
+HttpOnly transaction cookies required by the callback. Cancel the attempt and
+start a new login; reusing the old T-ID tab cannot repair its missing binding.
 
 The browser and WealthTracker each use the operating system's normal TLS trust
 policy. Do not bypass a certificate warning shown by either one; inspect VPN,

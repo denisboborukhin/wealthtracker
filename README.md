@@ -29,12 +29,13 @@ issued to a registered integration; WealthTracker does not yet run Alfa's
 Authorization Code flow itself.
 
 Retail T-Bank is a separate, explicitly unofficial integration. WealthTracker
-creates a separate anonymous API session, asks T-Bank for its signed T-ID
-authorization URL, and opens that URL in the normal system browser. The browser
-owns the phone, password, one-time code, and its own cookies; WealthTracker
-cannot read them. Its separate, cookie-disabled network client polls only the
-opaque API session until T-Bank marks it `CLIENT`, then stores that session in
-the operating-system credential store. The bundled MIT-licensed adapter can
+creates a separate anonymous API session and opens its exact T-Bank
+authorization-bootstrap URL in the normal system browser. The browser receives
+T-Bank's HttpOnly transaction cookies, follows the bank's T-ID redirect, and
+owns the phone, password, and one-time code; WealthTracker cannot read any of
+that browser state. Its separate, cookie-disabled network client polls only
+the opaque API session until T-Bank marks it `CLIENT`, then stores that session
+in the operating-system credential store. The bundled MIT-licensed adapter can
 contact only `https://www.tbank.ru` and never calls payment, transfer,
 card-management, or trading endpoints. Because T-Bank does not publish this
 retail web API, the connection can break when the bank changes its site and may

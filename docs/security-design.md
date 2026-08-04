@@ -27,14 +27,14 @@ does not override bank certificate failures.
 
 A separate Qt network client creates and polls one bounded opaque `sessionid`
 through exact HTTPS common-API endpoints. Cookie loading, cookie saving, and
-automatic redirects are disabled on every authentication request. Before
-opening the system browser, the returned authorization redirect is restricted
-to exact `id.tbank.ru` HTTPS navigation with the expected T-Bank client,
-callback, and PKCE parameters; duplicate security parameters and lookalike
-hosts are rejected. Only a `CLIENT` access level is accepted. The candidate is
-then validated through read-only account requests and is removed from the
-credential store if validation fails. The identifier and signed authorization
-URL are never logged or exposed to QML.
+automatic redirects are disabled on every application request. The system
+browser is given only an exact, locally constructed HTTPS
+`www.tbank.ru/api/common/v1/session/authorize/` URL for that session. The
+browser—not WealthTracker—receives the bank's HttpOnly transaction cookies and
+follows its T-ID redirect. Only a `CLIENT` access level is accepted. The
+candidate is then validated through read-only account requests and is removed
+from the credential store if validation fails. The identifier and
+authorization URL are never logged or exposed to QML.
 
 ## Backups
 

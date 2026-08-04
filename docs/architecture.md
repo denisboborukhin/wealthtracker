@@ -55,11 +55,12 @@ MIT adapter, but authentication stays in the official bank page:
 
 1. C++ creates a bounded anonymous session through T-Bank's common API with
    cookie loading, cookie saving, and automatic redirects disabled.
-2. C++ asks that API for a signed T-ID authorization URL and accepts only the
-   exact HTTPS identity host, path, client, callback, and PKCE method.
-3. The operating system opens the validated URL in the user's normal browser.
-   The user enters credentials and MFA into the bank-owned page; WealthTracker
-   has no access to that browser's cookies or storage.
+2. The operating system opens the exact, locally constructed HTTPS
+   `www.tbank.ru` authorization-bootstrap URL. The browser receives T-Bank's
+   HttpOnly transaction cookies and follows the bank-owned T-ID redirect.
+3. The user enters credentials and MFA into the bank-owned page; WealthTracker
+   has no access to that browser's cookies or storage and does not follow the
+   authorization redirect itself.
 4. C++ polls the original opaque session through the common API. Only a
    `CLIENT` access level is accepted, and only that session identifier is
    placed in the operating-system credential store.
