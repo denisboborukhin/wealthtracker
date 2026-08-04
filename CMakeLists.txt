@@ -23,7 +23,7 @@ set(CMAKE_INCLUDE_CURRENT_DIR ON)
 find_package(Boost REQUIRED)
 find_package(
     Qt6 6.11 REQUIRED
-    COMPONENTS Core Gui Qml Quick QuickControls2 Network Concurrent
+    COMPONENTS Core Gui Qml Quick QuickControls2 Network Concurrent WebView
 )
 find_package(sqlcipher REQUIRED CONFIG)
 find_package(libsodium REQUIRED CONFIG)
@@ -219,6 +219,7 @@ target_link_libraries(
         app
         Qt6::QuickControls2
         Qt6::Concurrent
+        Qt6::WebView
 )
 enable_strict_warnings(wealthtracker)
 enable_sanitizers(wealthtracker)

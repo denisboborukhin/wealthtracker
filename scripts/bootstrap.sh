@@ -28,6 +28,7 @@ esac
 
 "${tool_dir}/bin/aqt" install-qt \
   "${qt_host}" desktop 6.11.1 "${qt_arch}" \
+  --modules qtwebview \
   -O "${project_dir}/build/qt"
 
 echo "Tools installed under ${tool_dir}"

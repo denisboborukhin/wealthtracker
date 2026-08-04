@@ -47,6 +47,7 @@ jobs:
           desktop
           6.11.1
           ${{ matrix.qt_arch }}
+          --modules qtwebview
           -O build/qt
 
       - name: Cache Conan packages

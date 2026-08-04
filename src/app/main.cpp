@@ -7,8 +7,10 @@
 #include <QQuickWindow>
 #include <QQuickStyle>
 #include <QTimer>
+#include <QtWebView/QtWebView>
 
 int main(int argc, char* argv[]) {
+    QtWebView::initialize();
     QGuiApplication application(argc, argv);
     QGuiApplication::setApplicationName(QStringLiteral("WealthTracker"));
     QGuiApplication::setOrganizationName(QStringLiteral("WealthTracker"));
