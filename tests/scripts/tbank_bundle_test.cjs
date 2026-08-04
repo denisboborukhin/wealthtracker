@@ -112,7 +112,7 @@ async function rejectsExpiredSessions () {
     headers: { 'Content-Type': 'application/json' }
   })
   global.ZenMoney = {
-    getData: (key, fallback) => key === 'psid'
+    getData: (key, fallback) => key === 'sessionId'
       ? 'expired-session-123456'
       : fallback,
     addAccount: () => assert.fail('Expired session imported an account'),

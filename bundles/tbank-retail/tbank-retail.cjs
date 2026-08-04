@@ -219,9 +219,7 @@ async function fetchData (sessionId, fromDate, toDate) {
 }
 
 async function main ({ fromDate, toDate }) {
-  const sessionId = ZenMoney.getData(
-    'sessionId', ZenMoney.getData('psid', null)
-  )
+  const sessionId = ZenMoney.getData('sessionId', null)
   if (typeof sessionId !== 'string' || sessionId.length < 16 || sessionId.length > 4096) {
     throw new Error('Сначала войдите в Т-Банк через страницу банка')
   }
