@@ -248,6 +248,10 @@ TEST_CASE("T-Bank login UI delegates authentication to the system browser") {
         "QNetworkRequest::Manual")));
     CHECK(controller.contains(QByteArrayLiteral(
         "QDesktopServices::openUrl")));
+    CHECK(controller.contains(QByteArrayLiteral(
+        "tbank_authorization_url = *browserAuthorizationUrl")));
+    CHECK_FALSE(controller.contains(QByteArrayLiteral(
+        "RedirectionTargetAttribute")));
     CHECK_FALSE(controller.contains(QByteArrayLiteral("cookieStore()")));
 }
 
@@ -261,14 +265,13 @@ TEST_CASE("T-Bank API session identifiers reject unsafe values") {
     CHECK_FALSE(is_valid_tbank_session_id("too-short"));
 }
 
-TEST_CASE("T-Bank external authorization uses an explicit cookie-free API session") {
+TEST_CASE("T-Bank authorization bootstraps in the browser with a separate API session") {
     using wealthtracker::app::TBankAccessLevel;
     using wealthtracker::app::parse_tbank_access_level;
     using wealthtracker::app::parse_tbank_session_start;
-    using wealthtracker::app::tbank_authorization_start_url;
+    using wealthtracker::app::tbank_browser_authorization_url;
     using wealthtracker::app::tbank_ping_url;
     using wealthtracker::app::tbank_session_start_url;
-    using wealthtracker::app::validate_tbank_authorization_redirect;
 
     const QByteArray sessionId{
         "0123456789abcdef0123456789abcdef.auth-session-host"};
@@ -285,9 +288,12 @@ TEST_CASE("T-Bank external authorization uses an explicit cookie-free API sessio
     CHECK(QUrlQuery(startUrl).queryItemValue(QStringLiteral("origin"))
           == QStringLiteral("web,ib5,platform"));
 
-    const auto authorizationUrl = tbank_authorization_start_url(sessionId);
+    const auto authorizationUrl = tbank_browser_authorization_url(sessionId);
     REQUIRE(authorizationUrl);
+    CHECK(authorizationUrl->scheme() == QStringLiteral("https"));
     CHECK(authorizationUrl->host() == QStringLiteral("www.tbank.ru"));
+    CHECK(authorizationUrl->port(-1) == -1);
+    CHECK(authorizationUrl->userInfo().isEmpty());
     CHECK(authorizationUrl->path()
           == QStringLiteral("/api/common/v1/session/authorize/"));
     const QUrlQuery authorizationQuery(*authorizationUrl);
@@ -296,50 +302,6 @@ TEST_CASE("T-Bank external authorization uses an explicit cookie-free API sessio
     CHECK(authorizationQuery.queryItemValue(QStringLiteral("complete_uri"))
           == QStringLiteral("https://www.tbank.ru/auth/"));
     CHECK_FALSE(authorizationQuery.hasQueryItem(QStringLiteral("cookie")));
-
-    QUrl identityUrl(QStringLiteral("https://id.tbank.ru/auth/authorize"));
-    QUrlQuery identityQuery;
-    identityQuery.addQueryItem(QStringLiteral("state"),
-                               QString(96, QLatin1Char('s')));
-    identityQuery.addQueryItem(QStringLiteral("client_id"),
-                               QStringLiteral("portal-api"));
-    identityQuery.addQueryItem(QStringLiteral("response_type"),
-                               QStringLiteral("code"));
-    identityQuery.addQueryItem(QStringLiteral("redirect_uri"),
-                               QStringLiteral("https://www.tbank.ru/auth/"));
-    identityQuery.addQueryItem(QStringLiteral("code_challenge"),
-                               QString(43, QLatin1Char('c')));
-    identityQuery.addQueryItem(QStringLiteral("code_challenge_method"),
-                               QStringLiteral("S256"));
-    identityUrl.setQuery(identityQuery);
-    REQUIRE(validate_tbank_authorization_redirect(identityUrl));
-    const auto encodedIdentityUrl = QUrl::fromEncoded(
-        QByteArrayLiteral("https://id.tbank.ru/auth/authorize?state=")
-        + QByteArray(96, 's')
-        + QByteArrayLiteral(
-            "&redirect_uri=https%3A%2F%2Fwww.tbank.ru%2Fauth%2F"
-            "&client_id=portal-api&code_challenge=")
-        + QByteArray(43, 'c')
-        + QByteArrayLiteral(
-            "&response_type=code&code_challenge_method=S256"));
-    REQUIRE(validate_tbank_authorization_redirect(encodedIdentityUrl));
-    auto lookalikeIdentityUrl = identityUrl;
-    lookalikeIdentityUrl.setHost(QStringLiteral("id.tbank.ru.evil.example"));
-    CHECK_FALSE(validate_tbank_authorization_redirect(lookalikeIdentityUrl));
-    auto wrongCallbackUrl = identityUrl;
-    QUrlQuery wrongCallbackQuery(wrongCallbackUrl);
-    wrongCallbackQuery.removeAllQueryItems(QStringLiteral("redirect_uri"));
-    wrongCallbackQuery.addQueryItem(QStringLiteral("redirect_uri"),
-                                    QStringLiteral("https://evil.example/"));
-    wrongCallbackUrl.setQuery(wrongCallbackQuery);
-    CHECK_FALSE(validate_tbank_authorization_redirect(wrongCallbackUrl));
-    auto duplicateCallbackUrl = identityUrl;
-    QUrlQuery duplicateCallbackQuery(duplicateCallbackUrl);
-    duplicateCallbackQuery.addQueryItem(
-        QStringLiteral("redirect_uri"),
-        QStringLiteral("https://www.tbank.ru/auth/"));
-    duplicateCallbackUrl.setQuery(duplicateCallbackQuery);
-    CHECK_FALSE(validate_tbank_authorization_redirect(duplicateCallbackUrl));
 
     const auto pingUrl = tbank_ping_url(sessionId);
     REQUIRE(pingUrl);
@@ -358,7 +320,7 @@ TEST_CASE("T-Bank external authorization uses an explicit cookie-free API sessio
 
     CHECK_FALSE(parse_tbank_session_start(QByteArrayLiteral(
         "{\"resultCode\":\"OK\",\"payload\":\"too-short\"}")));
-    CHECK_FALSE(tbank_authorization_start_url(
+    CHECK_FALSE(tbank_browser_authorization_url(
         QByteArrayLiteral("bad;session")));
     CHECK_FALSE(parse_tbank_session_start(QByteArray::fromHex(
         "7b22726573756c74436f6465223a224f4b222c227061796c6f6164223a22"

@@ -2456,64 +2456,28 @@ void AppController::beginTBankLogin() {
             failTBankLogin(session.error());
             return;
         }
-        auto authorizationStartUrl =
-            tbank_authorization_start_url(*session);
-        if (!authorizationStartUrl) {
+        auto browserAuthorizationUrl =
+            tbank_browser_authorization_url(*session);
+        if (!browserAuthorizationUrl) {
             session->fill('\0');
-            failTBankLogin(authorizationStartUrl.error());
+            failTBankLogin(browserAuthorizationUrl.error());
             return;
         }
         private_->tbank_candidate_session = std::move(*session);
+        private_->tbank_authorization_url = *browserAuthorizationUrl;
+        private_->tbank_auth_elapsed.start();
+        if (!QDesktopServices::openUrl(
+                private_->tbank_authorization_url)) {
+            failTBankLogin(QStringLiteral(
+                "Не удалось открыть системный браузер. Проверьте "
+                "приложение по умолчанию для HTTPS."));
+            return;
+        }
         tbank_login_status_ = QStringLiteral(
-            "Получаем официальный адрес входа Т-Банка…");
+            "Браузер открыт. Войдите в Т-Банк по телефону и коду; "
+            "WealthTracker автоматически проверит API-доступ.");
+        private_->tbank_auth_poll_timer.start(2'000);
         emit tbankConnectionChanged();
-
-        auto* authorizationReply = private_->tbank_auth_network.get(
-            tbankAuthRequest(*authorizationStartUrl));
-        private_->tbank_auth_reply = authorizationReply;
-        connect(authorizationReply, &QNetworkReply::finished, this,
-                [this, authorizationReply, generation] {
-            if (generation != private_->tbank_auth_generation
-                || private_->tbank_auth_reply != authorizationReply) {
-                authorizationReply->deleteLater();
-                return;
-            }
-            private_->tbank_auth_reply.clear();
-            const auto status = authorizationReply->attribute(
-                QNetworkRequest::HttpStatusCodeAttribute).toInt();
-            const auto redirect = authorizationReply->url().resolved(
-                authorizationReply->attribute(
-                    QNetworkRequest::RedirectionTargetAttribute).toUrl());
-            const auto networkError = authorizationReply->error();
-            authorizationReply->deleteLater();
-            if (networkError != QNetworkReply::NoError || status != 303) {
-                failTBankLogin(QStringLiteral(
-                    "Т-Банк не выдал адрес входа (сеть %1, HTTP %2)")
-                    .arg(static_cast<int>(networkError))
-                    .arg(status));
-                return;
-            }
-            const auto validated =
-                validate_tbank_authorization_redirect(redirect);
-            if (!validated) {
-                failTBankLogin(validated.error());
-                return;
-            }
-            private_->tbank_authorization_url = *validated;
-            private_->tbank_auth_elapsed.start();
-            if (!QDesktopServices::openUrl(
-                    private_->tbank_authorization_url)) {
-                failTBankLogin(QStringLiteral(
-                    "Не удалось открыть системный браузер. Проверьте "
-                    "приложение по умолчанию для HTTPS."));
-                return;
-            }
-            tbank_login_status_ = QStringLiteral(
-                "Браузер открыт. Войдите в Т-Банк по телефону и коду; "
-                "WealthTracker автоматически проверит API-доступ.");
-            private_->tbank_auth_poll_timer.start(2'000);
-            emit tbankConnectionChanged();
-        });
     });
 }
 
