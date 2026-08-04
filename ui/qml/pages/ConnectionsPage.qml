@@ -181,7 +181,7 @@ Item {
                         Layout.fillWidth: true
                         text: App.tbankLoginStatus.length > 0
                               ? App.tbankLoginStatus
-                              : qsTr("Нажмите «Войти», затем завершите вход на официальной странице Т-Банка.")
+                              : qsTr("Нажмите «Войти». WealthTracker откроет отдельный временный профиль Chrome с официальной страницей Т-Банка.")
                         color: Theme.text
                         font.pixelSize: 12
                         wrapMode: Text.WordWrap
@@ -212,7 +212,7 @@ Item {
                                 spacing: 3
                                 Text {
                                     Layout.fillWidth: true
-                                    text: qsTr("Вход выполняется в системном браузере")
+                                    text: qsTr("Вход выполняется в отдельном окне Chrome")
                                     color: Theme.text
                                     font.pixelSize: 12
                                     font.weight: Font.Medium
@@ -220,7 +220,7 @@ Item {
                                 }
                                 Text {
                                     Layout.fillWidth: true
-                                    text: qsTr("Вернитесь сюда после подтверждения. Проверка выполняется автоматически.")
+                                    text: qsTr("Не закрывайте это окно до завершения подключения. Проверка выполняется автоматически.")
                                     color: Theme.textMuted
                                     font.pixelSize: 10
                                     wrapMode: Text.WordWrap
@@ -231,7 +231,7 @@ Item {
 
                     Text {
                         Layout.fillWidth: true
-                        text: qsTr("Телефон, пароль, код и cookies остаются в браузере. WealthTracker хранит только отдельную API-сессию после проверки доступа к счетам.")
+                        text: qsTr("Телефон, пароль, код, cookies и содержимое страницы остаются во временном профиле браузера. WealthTracker получает только идентификатор API-сессии из запроса к точному адресу www.tbank.ru и удаляет профиль после входа.")
                         color: Theme.textMuted
                         font.pixelSize: 10
                         wrapMode: Text.WordWrap
@@ -508,24 +508,9 @@ Item {
                         visible: connectionDialog.builtinTBank
                                  && !connectionDialog.effectiveConnected
                                  && !App.tbankLoginActive
-                        text: qsTr("Открыть T‑Bank в браузере")
+                        text: qsTr("Войти в отдельном Chrome")
                         primary: true
                         onClicked: App.beginTBankLogin()
-                    }
-                    ActionButton {
-                        visible: connectionDialog.builtinTBank
-                                 && App.tbankLoginActive
-                                 && !App.zenPluginRunning
-                        text: qsTr("Открыть браузер снова")
-                        onClicked: App.openTBankLoginPage()
-                    }
-                    ActionButton {
-                        visible: connectionDialog.builtinTBank
-                                 && App.tbankLoginActive
-                                 && !App.zenPluginRunning
-                        text: qsTr("Проверить сейчас")
-                        primary: true
-                        onClicked: App.checkTBankLogin()
                     }
                     ActionButton {
                         visible: connectionDialog.builtinTBank

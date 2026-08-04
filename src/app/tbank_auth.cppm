@@ -66,45 +66,6 @@ constexpr qsizetype maximumTBankAuthResponseSize = 64 * 1024;
 
 }  // namespace detail
 
-[[nodiscard]] QUrl tbank_session_start_url() {
-    QUrlQuery query;
-    query.addQueryItem(QStringLiteral("origin"),
-                       QStringLiteral("web,ib5,platform"));
-    return detail::apiUrl(QStringLiteral("session"), query);
-}
-
-[[nodiscard]] std::expected<QByteArray, QString>
-parse_tbank_session_start(const QByteArray& response) {
-    const auto object = detail::parseSuccessfulResponse(response);
-    if (!object) {
-        return std::unexpected(object.error());
-    }
-    const auto session = object->value(QStringLiteral("payload")).toString();
-    const auto bytes = session.toUtf8();
-    if (auto checked = detail::checkedSessionId(bytes); !checked) {
-        return std::unexpected(checked.error());
-    }
-    return bytes;
-}
-
-[[nodiscard]] std::expected<QUrl, QString> tbank_browser_authorization_url(
-    const QByteArray& sessionId) {
-    const auto checked = detail::checkedSessionId(sessionId);
-    if (!checked) {
-        return std::unexpected(checked.error());
-    }
-
-    QUrlQuery query;
-    query.addQueryItem(QStringLiteral("sessionid"), *checked);
-    query.addQueryItem(QStringLiteral("origin"),
-                       QStringLiteral("web,ib5,platform"));
-    query.addQueryItem(QStringLiteral("theme"), QStringLiteral("default"));
-    query.addQueryItem(QStringLiteral("display"), QStringLiteral("page"));
-    query.addQueryItem(QStringLiteral("complete_uri"),
-                       QStringLiteral("https://www.tbank.ru/auth/"));
-    return detail::apiUrl(QStringLiteral("session/authorize/"), query);
-}
-
 [[nodiscard]] std::expected<QUrl, QString> tbank_ping_url(
     const QByteArray& sessionId) {
     const auto checked = detail::checkedSessionId(sessionId);

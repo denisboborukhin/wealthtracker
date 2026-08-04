@@ -125,8 +125,6 @@ public:
     Q_INVOKABLE void removeZenPlugin();
     Q_INVOKABLE bool prepareTBankConnection();
     Q_INVOKABLE void beginTBankLogin();
-    Q_INVOKABLE void openTBankLoginPage();
-    Q_INVOKABLE void checkTBankLogin();
     Q_INVOKABLE void cancelTBankLogin();
     Q_INVOKABLE void disconnectTBank();
 
