@@ -555,6 +555,13 @@ private:
     HostAllowlist allowlist_;
 };
 
+class AlfaRetailClient final : public IConnector {
+public:
+    [[nodiscard]] ConnectorManifest manifest() const override;
+    [[nodiscard]] static ConnectorResult<NormalizedBatch>
+    parseProjection(const QByteArray &json, const QDateTime &observedAt);
+};
+
 struct FxRate {
     QDate effectiveDate;
     QString currency;
