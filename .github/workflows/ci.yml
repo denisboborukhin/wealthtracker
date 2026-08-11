@@ -71,8 +71,11 @@ jobs:
       - name: Build
         run: cmake --build --preset ${{ matrix.preset }}
 
+      - name: Lint QML
+        run: cmake --build --preset ${{ matrix.preset }} --target wealthtracker_qmllint
+
       - name: Test
-        run: ctest --preset ${{ matrix.preset }}
+        run: ctest --preset ${{ matrix.preset }} --output-on-failure
 
   checks:
     runs-on: ubuntu-24.04
