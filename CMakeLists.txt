@@ -296,6 +296,7 @@ if(BUILD_TESTING)
         tests/app/test_main.cpp
         tests/app/finance_models_test.cpp
         tests/app/bank_connections_test.cpp
+        tests/app/ui_contract_test.cpp
     )
     target_link_libraries(app_tests PRIVATE app Catch2::Catch2)
     set_property(TARGET app_tests PROPERTY CXX_SCAN_FOR_MODULES ON)

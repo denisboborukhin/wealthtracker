@@ -35,6 +35,27 @@ int main(int argc, char* argv[]) {
 
     const auto screenshotPath = qEnvironmentVariable("WEALTHTRACKER_SCREENSHOT");
     if (window && !screenshotPath.isEmpty()) {
+        bool demoOk = false;
+        const int demo = qEnvironmentVariableIntValue(
+            "WEALTHTRACKER_SCREENSHOT_DEMO", &demoOk);
+        if (demoOk && demo == 1) {
+            controller.loadDemoData();
+        }
+
+        bool widthOk = false;
+        const int width = qEnvironmentVariableIntValue(
+            "WEALTHTRACKER_SCREENSHOT_WIDTH", &widthOk);
+        if (widthOk && width >= window->minimumWidth() && width <= 4096) {
+            window->setWidth(width);
+        }
+
+        bool heightOk = false;
+        const int height = qEnvironmentVariableIntValue(
+            "WEALTHTRACKER_SCREENSHOT_HEIGHT", &heightOk);
+        if (heightOk && height >= window->minimumHeight() && height <= 4096) {
+            window->setHeight(height);
+        }
+
         QTimer::singleShot(750, &application,
                            [window, screenshotPath, &application] {
             const QImage image = window->grabWindow();
