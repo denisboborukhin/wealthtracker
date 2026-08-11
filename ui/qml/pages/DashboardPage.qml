@@ -1,6 +1,7 @@
 pragma ComponentBehavior: Bound
 
 import QtQuick
+import QtQuick.Controls
 import QtQuick.Layouts
 import "../components"
 
@@ -8,8 +9,15 @@ Flickable {
     id: page
     required property var app
 
-    contentHeight: content.implicitHeight + Theme.pageMargin * 2
+    contentWidth: width
+    contentHeight: Math.max(height, content.implicitHeight + Theme.pageMargin * 2)
+    flickableDirection: Flickable.VerticalFlick
+    boundsBehavior: Flickable.StopAtBounds
     clip: true
+    ScrollBar.vertical: ScrollBar {
+        policy: page.contentHeight > page.height
+                ? ScrollBar.AlwaysOn : ScrollBar.AsNeeded
+    }
 
     ColumnLayout {
         id: content
@@ -21,14 +29,19 @@ Flickable {
         RowLayout {
             Layout.fillWidth: true
             ColumnLayout {
+                Layout.fillWidth: true
+                Layout.minimumWidth: 0
                 spacing: 4
                 Text {
+                    Layout.fillWidth: true
                     text: qsTr("Обзор")
                     color: Theme.text
                     font.pixelSize: 26
                     font.weight: Font.DemiBold
+                    elide: Text.ElideRight
                 }
                 Text {
+                    Layout.fillWidth: true
                     text: page.app.demoMode
                           ? qsTr("Пример данных · июль 2026")
                           : page.app.hasFinancialData
@@ -36,9 +49,9 @@ Flickable {
                             : qsTr("Подключите банк или импортируйте выписку")
                     color: Theme.textMuted
                     font.pixelSize: 12
+                    elide: Text.ElideRight
                 }
             }
-            Item { Layout.fillWidth: true }
             StatusBadge {
                 visible: page.app.demoMode
                 text: qsTr("Демо-данные")
@@ -93,7 +106,8 @@ Flickable {
 
             SectionCard {
                 Layout.fillWidth: true
-                Layout.preferredHeight: 286
+                Layout.minimumWidth: 0
+                Layout.preferredHeight: 270
 
                 ColumnLayout {
                     anchors.fill: parent
@@ -134,7 +148,8 @@ Flickable {
 
             SectionCard {
                 Layout.fillWidth: true
-                Layout.preferredHeight: 286
+                Layout.minimumWidth: 0
+                Layout.preferredHeight: 270
 
                 ColumnLayout {
                     anchors.fill: parent
@@ -148,56 +163,87 @@ Flickable {
                         font.weight: Font.DemiBold
                     }
 
-                    Repeater {
-                        id: categoryRepeater
-                        model: page.app.categories
-                        delegate: ColumnLayout {
-                            id: categorySummary
-                            required property string name
-                            required property string amount
-                            required property real share
-                            required property string color
+                    Item {
+                        Layout.fillWidth: true
+                        Layout.fillHeight: true
 
-                            Layout.fillWidth: true
-                            spacing: 4
+                        Text {
+                            anchors.centerIn: parent
+                            visible: categoryList.count === 0
+                            text: qsTr("Категории появятся после загрузки операций")
+                            color: Theme.textMuted
+                            font.pixelSize: 12
+                            horizontalAlignment: Text.AlignHCenter
+                            verticalAlignment: Text.AlignVCenter
+                            wrapMode: Text.WordWrap
+                        }
 
-                            RowLayout {
-                                Layout.fillWidth: true
-                                Text {
-                                    Layout.fillWidth: true
-                                    text: categorySummary.name
-                                    color: Theme.text
-                                    font.pixelSize: 12
-                                }
-                                Text {
-                                    text: categorySummary.amount
-                                    color: Theme.textMuted
-                                    font.pixelSize: 12
-                                }
+                        ListView {
+                            id: categoryList
+                            anchors.fill: parent
+                            visible: count > 0
+                            model: page.app.categories
+                            clip: true
+                            spacing: 7
+                            boundsBehavior: Flickable.StopAtBounds
+                            reuseItems: true
+                            ScrollBar.vertical: ScrollBar {
+                                policy: categoryList.contentHeight > categoryList.height
+                                        ? ScrollBar.AlwaysOn : ScrollBar.AsNeeded
                             }
-                            Rectangle {
-                                Layout.fillWidth: true
-                                Layout.preferredHeight: 4
-                                radius: 2
-                                color: Theme.surfaceRaised
-                                Rectangle {
-                                    width: parent.width * categorySummary.share
-                                    height: parent.height
-                                    radius: 2
-                                    color: categorySummary.color
+
+                            delegate: Item {
+                                id: categoryRow
+                                required property string name
+                                required property string amount
+                                required property real share
+                                required property string color
+
+                                width: ListView.view.width
+                                height: 35
+
+                                ColumnLayout {
+                                    anchors.fill: parent
+                                    spacing: 4
+
+                                    RowLayout {
+                                        Layout.fillWidth: true
+                                        spacing: 10
+                                        Text {
+                                            Layout.fillWidth: true
+                                            Layout.minimumWidth: 0
+                                            text: categoryRow.name
+                                            color: Theme.text
+                                            font.pixelSize: 12
+                                            elide: Text.ElideRight
+                                        }
+                                        Text {
+                                            Layout.minimumWidth: 72
+                                            Layout.preferredWidth: 112
+                                            Layout.maximumWidth: 132
+                                            horizontalAlignment: Text.AlignRight
+                                            text: categoryRow.amount
+                                            color: Theme.textMuted
+                                            font.pixelSize: 12
+                                            elide: Text.ElideLeft
+                                        }
+                                    }
+                                    Rectangle {
+                                        Layout.fillWidth: true
+                                        Layout.preferredHeight: 4
+                                        radius: 2
+                                        color: Theme.surfaceRaised
+                                        clip: true
+                                        Rectangle {
+                                            width: parent.width * Math.max(0, Math.min(1, categoryRow.share))
+                                            height: parent.height
+                                            radius: 2
+                                            color: categoryRow.color
+                                        }
+                                    }
                                 }
                             }
                         }
-                    }
-                    Text {
-                        Layout.fillWidth: true
-                        Layout.fillHeight: true
-                        visible: categoryRepeater.count === 0
-                        text: qsTr("Категории появятся после загрузки операций")
-                        color: Theme.textMuted
-                        font.pixelSize: 12
-                        horizontalAlignment: Text.AlignHCenter
-                        verticalAlignment: Text.AlignVCenter
                     }
                 }
             }
@@ -205,7 +251,8 @@ Flickable {
 
         SectionCard {
             Layout.fillWidth: true
-            Layout.preferredHeight: 320
+            Layout.minimumWidth: 0
+            Layout.preferredHeight: 270
 
             ColumnLayout {
                 anchors.fill: parent
@@ -253,6 +300,12 @@ Flickable {
                         anchors.fill: parent
                         model: page.app.transactions
                         clip: true
+                        boundsBehavior: Flickable.StopAtBounds
+                        reuseItems: true
+                        ScrollBar.vertical: ScrollBar {
+                            policy: transactionList.contentHeight > transactionList.height
+                                    ? ScrollBar.AlwaysOn : ScrollBar.AsNeeded
+                        }
 
                         delegate: Item {
                             id: recentTransaction
@@ -272,12 +325,15 @@ Flickable {
                                 anchors.rightMargin: 18
                                 Text {
                                     Layout.preferredWidth: 88
+                                    Layout.minimumWidth: 72
                                     text: recentTransaction.date
                                     color: Theme.textMuted
                                     font.pixelSize: 11
+                                    elide: Text.ElideRight
                                 }
                                 Text {
                                     Layout.fillWidth: true
+                                    Layout.minimumWidth: 0
                                     text: recentTransaction.title
                                     color: Theme.text
                                     font.pixelSize: 12
@@ -285,6 +341,8 @@ Flickable {
                                 }
                                 Text {
                                     Layout.preferredWidth: 160
+                                    Layout.minimumWidth: 92
+                                    Layout.maximumWidth: 160
                                     text: recentTransaction.category
                                     color: Theme.textMuted
                                     font.pixelSize: 11
@@ -292,6 +350,8 @@ Flickable {
                                 }
                                 Text {
                                     Layout.preferredWidth: 105
+                                    Layout.minimumWidth: 84
+                                    Layout.maximumWidth: 105
                                     horizontalAlignment: Text.AlignRight
                                     text: recentTransaction.amount
                                     color: recentTransaction.transfer

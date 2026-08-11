@@ -24,22 +24,31 @@ Rectangle {
         spacing: 5
 
         Text {
+            Layout.fillWidth: true
+            Layout.minimumWidth: 0
             text: root.title
             color: Theme.textMuted
             font.pixelSize: 12
             font.weight: Font.Medium
+            elide: Text.ElideRight
         }
         Text {
+            Layout.fillWidth: true
+            Layout.minimumWidth: 0
             text: root.value
             color: Theme.text
             font.pixelSize: 22
             font.weight: Font.DemiBold
+            elide: Text.ElideRight
         }
         Text {
+            Layout.fillWidth: true
+            Layout.minimumWidth: 0
             visible: root.hint.length > 0
             text: root.hint
             color: root.accent
             font.pixelSize: 11
+            elide: Text.ElideRight
         }
     }
 }
