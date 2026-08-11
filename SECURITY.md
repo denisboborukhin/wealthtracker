@@ -2,70 +2,49 @@
 
 ## Supported versions
 
-Security updates are provided for the latest released version.
+Security fixes target the latest release. The current `0.1` line is a technical
+preview and should not be treated as an audited financial application.
 
-## Reporting
+## Reporting a vulnerability
 
-Do not open a public issue containing secrets, bank statements, tokens, or
-other personal financial information. Contact a maintainer privately before
-sharing reproduction material.
+Do not attach credentials, session identifiers, bank statements, database
+files, or other personal financial data to a public issue. Contact a maintainer
+privately and start with a redacted description. Share sensitive reproduction
+material only after agreeing on a secure channel and retention period.
 
-## Security model
+## Implemented security boundary
 
-- WealthTracker is a local, single-user application.
-- The database is encrypted with SQLCipher.
-- API tokens are stored in the operating-system credential store.
-- Live connectors allow only their documented HTTPS host and read-only
-  account/statement methods. Redirects are not followed automatically.
-- Token byte arrays are wiped after each request is constructed and are never
-  included in application status messages or logs.
-- Optional PIN protection wraps the database key using Argon2id-derived key
-  material and authenticated encryption.
-- The retail T-Bank login runs in an off-the-record profile on T-Bank's
-  `tbank.ru` pages. Top-level navigation also permits exactly
-  `id.tinkoff.ru`, the bank's legacy identity host used by its current migration
-  redirect. WealthTracker does not read phone, password, or one-time-code
-  fields. It retains only the latest secure `psid` session cookie for
-  `tbank.ru` in wiped process memory during login. The value is never logged
-  and is persisted to the operating-system credential store only after
-  explicit user confirmation and successful read-access validation. Invalid
-  certificate errors are shown to the user and are never bypassed.
-- T-Bank TLS diagnostics contain only the ASCII hostname, numeric certificate
-  category, and main-frame/subresource scope. URL paths, query strings,
-  cookies, and credentials are not included in status text or runtime logs.
-- The isolated login profile blocks only `mddc.tbank.ru` and
-  `mddc.tinkoff.ru`, whose optional device-collector subresources use the
-  Russian Trusted CA. WealthTracker does not install that root, accept their
-  authority-invalid certificates, or weaken validation for any other host.
-- The built-in T-Bank importer is restricted to the exact HTTPS origin
-  `https://www.tbank.ru`, blocks redirects, and implements only account,
-  balance, and operation reads. The underlying retail web API is undocumented
-  and may stop working without notice.
-- Optional external ZenPlugins may request login fields and one-time codes in
-  the local connection dialog. Passwords and prompt responses are
-  session-only. Non-secret stable preferences such as phone, login, or start
-  date can be saved in local settings for refresh. Returned plugin data and
-  cookies are stored in the operating system credential store.
+- Built-in connectors use exact HTTPS origins, read-only methods, manual
+  redirects, response limits, and validated normalized output.
+- Official tokens and the retail T-Bank session are stored in macOS Keychain or
+  Windows Credential Manager. Temporary byte arrays are cleared after use.
+- T-Bank credentials and MFA stay inside the operating-system WebView. QML
+  receives only its native window, never the extracted session projection.
+- T-Bank browser storage is restricted, cookies are deleted around each login,
+  and the accepted session is validated before the connection becomes active.
+- Hiding financial data cancels active bank login, synchronization, and plugin
+  processes. It is a privacy screen, not an encrypted-memory lock.
 - Telemetry and remote crash reporting are not included.
 
-The T-Bank `psid` grants access to financial data and must be treated like an
-API token. Disconnecting T-Bank deletes its credential entry and browser
-storage. If a device is lost or compromised, terminate active sessions through
-the bank and change the bank password according to T-Bank's guidance.
+Financial records are currently kept in process memory and are not persisted
+by the desktop controller. SQLCipher, migration, and key-wrapping components
+exist as tested libraries but are not yet wired into the running application.
 
-## External plugin boundary
+## External plugins
 
-An external ZenPlugins bundle is arbitrary third-party JavaScript and is not
-sandboxed by WealthTracker. It can access the network and the current user's
-files with the permissions of its Node.js child process. WealthTracker
-validates message sizes and result schemas, suppresses plugin stdout logs, and
-does not pass database keys or official API tokens to the process, but it
-cannot make an untrusted bundle safe.
+A user-selected ZenPlugins bundle is arbitrary JavaScript executed by Node.js
+with the current user's file and network permissions. The child environment and
+JSON-lines protocol are restricted, outputs are bounded and validated, and no
+official connector token is passed to the child. These controls do not sandbox
+an untrusted bundle.
 
-Build plugins in a separate checkout, pin and review the source commit, and do
-not run bundles received as opaque downloads. The GPL-3.0 plugin and bundle are
-not distributed as part of WealthTracker.
+Review the plugin source and pinned commit, build it separately, and never run
+an opaque download. ZenPlugins and generated GPL-3.0 bundles are not distributed
+with WealthTracker.
 
-The application cannot protect data from an administrator who controls the
-running operating system, malware executing as the same user, or screenshots
-captured while the vault is unlocked.
+## Out of scope
+
+The application cannot defend against an administrator, malware running as the
+same user, a compromised bank page, screenshots, or a modified local binary.
+If a device or T-Bank session may be compromised, revoke sessions through the
+bank and rotate affected credentials.

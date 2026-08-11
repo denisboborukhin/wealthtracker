@@ -1,99 +1,74 @@
 # Architecture
 
-WealthTracker is a native C++23 desktop application with a Qt Quick interface.
-Core subsystem boundaries are C++ named modules. Conventional headers are
-limited to Qt `moc`, operating-system ABI, and third-party C API boundaries.
+WealthTracker is a Qt Quick desktop application built with C++23 named modules.
+Headers are retained only where Qt `moc` or a platform ABI requires them.
 
-## Module boundaries
+## Boundaries
 
-- `core`: domain values, financial rules, categorization, and analytics.
-- `storage`: SQLCipher connection, migrations, repositories, and backups.
-- `platform`: credential storage, secure memory, and OS integration.
-- `connectors`: file imports, read-only API integrations, and validation plus
-  normalization for external local plugin messages.
-- `app`: composition, use cases, and QML-facing controllers.
-- `ui`: QML pages, components, and translations.
+- `core`: exact money values, categorization, transfers, and analytics.
+- `storage`: SQLCipher connections, migrations, import transactions, and
+  repositories.
+- `platform`: secure buffers, key wrapping, and operating-system credentials.
+- `connectors`: file parsing, network policy, bank clients, normalization, and
+  deduplication.
+- `app`: synchronization coordinators, the external-plugin runner, T-Bank
+  login lifecycle, models, and QML commands.
+- `ui`: QML pages and reusable visual components.
 
-QML does not receive database handles, encryption keys, or tokens. Controllers
-expose narrow asynchronous operations and immutable models. Bank authentication
-is delegated to the operating system's browser; the application does not embed
-a browser engine or expose browser storage to a connector.
+The QML root receives one explicit `app` property. It has no database handle,
+credential object, token, or T-Bank session value. List delegates declare their
+roles explicitly so runtime binding errors are caught by QML lint.
 
-## Data flow
+## Runtime data flow
 
-Statement imports follow a preview-first atomic pipeline:
+Built-in synchronization is:
 
-1. Probe the source and select a parser.
-2. Parse into a normalized batch without changing the database.
-3. Show warnings, mapping choices, and duplicate candidates.
-4. Reconcile accounts and balances.
-5. Commit the whole batch in one transaction or roll it back.
+1. Load one credential from the operating-system store.
+2. Construct a request through the connector's exact-host policy.
+3. Clear the temporary credential bytes.
+4. Parse a bounded response into `NormalizedBatch`.
+5. Follow bounded pagination with at most four requests in flight.
+6. Project validated records into in-memory Qt models.
 
-User edits are overlays on immutable source records so re-importing a statement
-does not discard categories, splits, tags, or notes.
+Each connector has at most one coordinator. Removing a connection or enabling
+the privacy screen aborts its replies and discards pending work. Retail T-Bank
+has separate login and synchronization coordinators so WebView callbacks,
+network replies, timers, cancellation, and session erasure have one owner.
 
-## Connectors
+The current desktop controller does not persist normalized financial batches.
+The `storage` module is tested independently and is intended for that later
+integration. Statement import likewise performs probing and parsing for a
+preview but does not commit the result.
 
-Connector API v1 separates file imports, token-based read-only synchronization,
-and interactive bank sessions. An interactive connector advances through
-typed challenges:
+## Retail T-Bank
 
-1. Collect a small set of named fields such as phone, login, password, or MFA.
-2. Optionally open a clean HTTPS bank authorization URL.
-3. Return normalized accounts, balances, and transactions only after the
-   session is authenticated.
+1. A coordinator creates a Qt WebView and disables persistent local storage
+   and file access.
+2. The official T-Bank login page handles phone, password, and MFA.
+3. A fixed expression examines resource-timing URLs only. It returns at most
+   eight bounded session candidates from exact
+   `https://www.tbank.ru/api/common/v1/` URLs.
+4. C++ validates the projection and checks the latest candidate with a
+   cookie-disabled, redirect-disabled request. Only `CLIENT` access succeeds.
+5. The opaque session is stored in the operating-system credential store.
+6. A native connector reads only `accounts_light_ib` and `operations` from the
+   exact T-Bank origin and validates the returned records.
 
-Password and one-time-code fields must declare `Never` retention. A connector
-may retain a revocable session or refresh token in the operating system's
-credential store, but it cannot expose secrets to QML.
+The retail API is undocumented. A schema or authentication change fails closed
+without expanding the permitted host or introducing write requests.
 
-Every built-in network connector declares an HTTPS host allowlist. Write,
-trading, payment, and transfer endpoints are outside that contract.
+## External JavaScript plugins
 
-Retail T-Bank uses the same normalized plugin result boundary with a bundled
-MIT adapter, but authentication stays in the official bank page:
+External bundles use a separate child-process boundary:
 
-1. A local Node helper starts Chrome/Chromium with a fresh temporary profile
-   and a random DevTools port bound only to `127.0.0.1`.
-2. The helper navigates that isolated page to the official T-Bank login. The
-   user enters credentials and MFA there; the helper never requests cookies,
-   headers, bodies, DOM content, or storage through DevTools.
-3. A fixed `Runtime.evaluate` expression reads only the page's resource-timing
-   names, filters exact `https://www.tbank.ru/api/common/v1/` URLs inside the
-   page, and returns only syntactically bounded `sessionid` values.
-4. C++ validates each bounded JSON-lines event and polls that exact candidate
-   with cookies and redirects disabled. Only a `CLIENT` access level is
-   accepted and placed in the operating-system credential store. The helper
-   closes Chrome and deletes the temporary profile on success or cancellation.
-5. The local plugin host exposes `fetch` only for the exact
-   `https://www.tbank.ru` origin, permits only `GET`/`HEAD`, and blocks
-   redirects.
-6. The adapter validates the session, reads accounts and operations, and emits
-   ordinary normalized plugin records.
-7. C++ validates those records before updating application models. Only a
-   successful import marks the connection active.
+1. C++ validates the selected path, identifier, preferences, and input size.
+2. A private temporary copy of the MIT compatibility host starts under Node.js
+   with a reduced environment.
+3. The host and application exchange bounded JSON-lines messages.
+4. C++ validates prompts, state, accounts, balances, and transactions before
+   updating models.
+5. Reusable plugin state is stored under a bundle-specific credential key;
+   sensitive prompt values are not persisted.
 
-The retail endpoints are undocumented and are deliberately isolated from the
-official API clients. A bank-side change becomes a connector failure rather
-than expanding network or write permissions.
-
-External ZenPlugins use a separate trust boundary:
-
-1. C++ validates a user-selected bundle and its `preferences.xml`.
-2. The app extracts its MIT host script to a private temporary file.
-3. Node.js executes the separately built bundle in a child process.
-4. The app and host exchange bounded JSON-lines messages over stdin/stdout.
-5. User prompts travel as typed events; passwords and OTPs are not retained.
-6. C++ validates and normalizes the result before it reaches application
-   models.
-7. Returned plugin state is stored in the operating-system credential store.
-8. Successful runs record a local timestamp and non-secret stable preferences,
-   letting a compatible session-based bundle refresh on a timer while the app
-   is running.
-
-The host does not sandbox user-selected external JavaScript. An empty allowlist
-preserves its existing network behavior; this is intentional and visible in
-the UI because installing an external bundle is an explicit arbitrary-code
-trust decision. Built-in bundles always receive a non-empty exact-origin
-allowlist. Neither GPL plugin source nor generated ZenPlugins bundles are part
-of the MIT distribution.
+This is process isolation, not a sandbox. External code retains the current
+user's operating-system permissions and unrestricted network behavior.

@@ -1,48 +1,72 @@
 # Security design
 
-## Vault
+## Assets and trust
 
-A new vault receives a random 256-bit SQLCipher key. By default it is stored in
-the operating-system credential store. When PIN protection is enabled, the
-database key is wrapped with a key derived using Argon2id and the direct
-credential-store entry is removed.
+The sensitive assets are bank tokens, the retail T-Bank session, external
+plugin state, and normalized financial records. The local operating system,
+the running application binary, and each bank's own login page are trusted.
+User-selected JavaScript plugins are trusted only when the user has reviewed
+them; WealthTracker cannot sandbox them.
 
-The application locks on suspend and after an idle timeout. Decrypted key
-material is cleared when the vault locks.
+## Credential handling
 
-## Connectors
+macOS uses Keychain items restricted to the unlocked device. Windows uses
+Credential Manager. Linux currently has no supported secure credential backend,
+so live connections fail closed there.
 
-T-Invest accepts only a user-generated read-only token. Other Russian banks are
-supported through statement files until legitimate consumer APIs are generally
-available.
+Credentials are loaded for request construction and temporary byte arrays are
+cleared immediately afterward. They are not exposed as QML properties or
+included in status text. Removing a connection deletes its credential entry.
 
-Logs redact credentials, authorization headers, account identifiers, and
-imported descriptions. No telemetry or remote crash reporter is present.
+The desktop controller currently retains normalized financial data only in
+memory. The SQLCipher and Argon2id components are independently tested building
+blocks, not an active application vault. Documentation and UI must not describe
+the privacy screen as database encryption or memory protection.
 
-Retail T-Bank authentication runs in a fresh temporary Chrome/Chromium profile,
-not embedded Qt WebEngine and not the user's normal browser profile. The
-browser remains subject to the operating system's ordinary TLS and certificate
-policy; the application does not override bank certificate failures.
+## Built-in network policy
 
-The helper's DevTools endpoint uses a random port bound only to `127.0.0.1` and
-exists only during login. The helper attaches before navigation and performs
-only target attachment, page navigation, and a fixed runtime expression. It
-does not enable DevTools Network events or request cookies, headers, bodies,
-DOM content, local storage, phone, password, or OTP. The expression filters
-resource-timing entries inside the page and returns only bounded session IDs
-from exact HTTPS `www.tbank.ru/api/common/v1/` URLs. A malicious local process
-that discovers the temporary port could still attach while login is active;
-the isolated profile prevents exposure of the user's existing browser data.
+- Exact HTTPS hosts are declared by each connector.
+- Redirects are manual or rejected.
+- Only documented read methods, or the isolated retail T-Bank read paths, are
+  represented in connector APIs.
+- Responses, record counts, pagination, cursors, and concurrent requests are
+  bounded.
+- Parsers reject malformed dates, currencies, amounts, duplicate identifiers,
+  and integer overflow.
+- Removing a connection or hiding data aborts owned replies and pending pages.
 
-C++ validates the bounded helper event, then a separate cookie-disabled Qt
-client polls the exact candidate session. Only `CLIENT` access is accepted and
-validated through read-only account requests. On success, cancellation, or
-failure, Chrome is stopped and the temporary profile is deleted. The session
-identifier is never logged or exposed to QML and is removed from the credential
-store if account validation fails.
+## Retail T-Bank login
 
-## Backups
+The operating-system WebView is embedded in the Connections dialog. Local
+storage and local-file access are disabled, cookies are cleared around each
+attempt, and normal operating-system TLS policy remains in force.
 
-Portable backups are encrypted with a distinct user passphrase and include an
-authenticated manifest containing schema and application versions. Plain CSV
-exports require a warning because they are not encrypted.
+A fixed expression reads resource-timing URL names and projects at most eight
+session candidates from exact T-Bank HTTPS API paths. C++ validates the bounded
+projection, checks a candidate without cookies or redirects, and accepts only
+`CLIENT` access. The login coordinator owns every WebView callback, timer,
+reply, cancellation path, and candidate buffer. QML sees only the native
+window and textual status.
+
+The synchronization connector separately permits only account and operation
+reads at `www.tbank.ru`. The API is undocumented, so parse or authentication
+changes fail closed.
+
+## External plugin process
+
+The compatibility host is copied to an owner-only temporary file. Node.js
+starts with a reduced environment and exchanges bounded JSON-lines messages
+over pipes. Standard error is drained but not surfaced, and preference values
+are redacted from returned errors. C++ validates all events and normalized
+records before they reach application models.
+
+This process still has the current user's file and network permissions. An
+external bundle can import Node.js modules, spawn processes, or exfiltrate data
+it can access. Only reviewed source should be executed.
+
+## Privacy screen
+
+Hiding data closes an active bank login and cancels plugin, investment, and
+bank synchronization work before covering the interface. Existing model data
+remains in process memory. This feature protects against casual screen viewing,
+not same-user malware, debugging, memory inspection, or screenshots.

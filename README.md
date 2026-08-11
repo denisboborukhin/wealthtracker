@@ -1,78 +1,39 @@
 # WealthTracker
 
-WealthTracker is a local-first, open-source desktop application for viewing
-personal finances across Russian banks and investment accounts.
+WealthTracker is an open-source C++23 desktop application for viewing accounts,
+balances, operations, spending categories, and cash-flow statistics locally.
+The interface starts empty; demonstration data is opt-in.
 
-The application keeps its database on your computer and encrypts it with
-SQLCipher. Official API tokens are stored in the operating-system credential
-store and copied into temporary memory only while a request is constructed.
+> **Status:** technical preview. Bank results currently live in memory and are
+> lost when the application exits. File import is a validated preview, and the
+> T-Invest flow currently checks account access without loading a portfolio.
+> The SQLCipher repository is implemented and tested but is not connected to
+> the desktop session yet.
 
-## Current capabilities
+## Connections
 
-- Local CSV, XLSX, OFX, QIF, 1C-style, and reviewed PDF statement imports.
-- Import presets for T-Bank, Alfa-Bank, Sber, and VTB.
-- Read-only Alfa-Bank B2C API synchronization for registered integrations.
-- Read-only T-Bank Business account and statement synchronization.
-- Read-only Modulbank synchronization, including its public sandbox.
-- Read-only synchronization with T-Invest using a user-created token.
-- Retail T-Bank login through the official `tbank.ru` page, followed by
-  read-only account, balance, and operation synchronization.
-- A local compatibility bridge for separately built, modular ZenPlugins
-  bundles, including dynamic login fields and one-time-code prompts.
-- Accounts, balances, transaction splits, categories, rules, and transfers.
-- Income, spending, savings, net-worth, and investment analytics.
-- Russian interface with localization support.
+| Connection | Current behavior |
+| --- | --- |
+| Retail T-Bank | Embedded official login; accounts, balances, and operations through a native read-only connector |
+| Alfa-Bank B2C API | Accounts and operations with an already-issued integration token |
+| T-Bank Business | Accounts and statements with a T-API token |
+| Modulbank | Accounts and operations, including the public sandbox |
+| T-Invest | Validates a user-created read-only token and lists accessible accounts |
+| External ZenPlugins bundle | Optional compatibility host for a separately reviewed and built bundle |
+| Retail Alfa-Bank, Sber, VTB | Visible adapter slots; no built-in connector |
 
-The official live connectors use documented bank APIs. T-Bank Business and
-Modulbank cover business accounts. Alfa-Bank B2C requires an access token
-issued to a registered integration; WealthTracker does not yet run Alfa's
-Authorization Code flow itself.
+Retail T-Bank uses undocumented web endpoints and may stop working after a
+bank-side change. The application accepts the session only after the bank
+reports `CLIENT` access, stores it in the operating-system credential store,
+and sends it only to exact `https://www.tbank.ru` read endpoints. It never
+implements payments, transfers, card management, or trading.
 
-Retail T-Bank is a separate, explicitly unofficial integration. WealthTracker
-opens the official login page in a fresh temporary Chrome/Chromium profile.
-Phone, password, OTP, cookies, headers, request bodies, and page content stay
-in that profile. A small local helper uses a random loopback-only DevTools
-endpoint to evaluate one fixed expression: it returns only bounded `sessionid`
-values already present in T-Bank common-API resource URLs. C++ validates the
-event and accepts the session only after the read-only API reports `CLIENT`;
-the profile is then deleted and the session is stored in the operating-system
-credential store. The bundled MIT-licensed adapter can contact only
-`https://www.tbank.ru` and never calls payment, transfer, card-management, or
-trading endpoints. Because T-Bank does not publish this retail web API, the
-connection can break when the bank changes its site and may require signing in
-again.
+External JavaScript plugins are not sandboxed. They run as the current user and
+can access local files and the network. WealthTracker does not distribute
+ZenPlugins source or bundles; only run a bundle whose source and pinned commit
+you reviewed.
 
-Retail Alfa-Bank, Sber, and VTB adapters are not yet bundled. The Connections
-page shows them as explicit local-adapter slots instead of presenting a
-non-functional bank login form.
-
-The connector design is informed by the local, normalized plugin flow used by
-ZenMoney. WealthTracker does not copy or embed ZenPlugins source: ZenPlugins is
-GPL-3.0 while this project is MIT-licensed. A user can select a bundle built in
-a separate ZenPlugins checkout. WealthTracker runs it as a child process and
-normalizes the result through a bounded JSON-lines protocol. The external
-bundle is not sandboxed, so only run code and commits you have reviewed.
-
-The often-confused `altabanka-rs` plugin is for Alta Banka in Serbia (`.rs`,
-RSD), not Alfa-Bank Russia. At the upstream revision inspected on
-2026-07-22, ZenPlugins does not include retail plugins for Alfa-Bank Russia,
-T-Bank, Sber, or VTB.
-
-## Technology
-
-- C++23
-- Qt 6 Quick/QML
-- CMake and Conan 2
-- SQLCipher and libsodium
-- Catch2
-- Node.js 22.4+ for retail T-Bank; Node.js 18+ for external ZenPlugins bundles
-
-## Build
-
-Run the bootstrap script to install pinned build tools and the official
-prebuilt Qt SDK under the ignored `build/` directory. Conan installs the
-remaining C++ dependencies and generates a toolchain under
-`build/<preset>/generators`.
+## Build and run on macOS
 
 ```sh
 ./scripts/bootstrap.sh
@@ -84,53 +45,36 @@ conan install . \
   -of build/macos-debug
 ./scripts/configure.sh macos-debug
 cmake --build --preset macos-debug
-ctest --preset macos-debug
-```
-
-## Run
-
-After a Debug build:
-
-```sh
+ctest --preset macos-debug --output-on-failure
 ./build/macos-debug/WealthTracker.app/Contents/MacOS/WealthTracker
 ```
 
-On Windows, run `build/windows-debug/WealthTracker.exe`.
+Keep `build/tooling` activated while Conan builds dependencies; its recipes
+invoke CMake and Ninja by name. Windows commands and release checks are in
+[Building](docs/building.md).
 
-To connect retail T-Bank, install Node.js 22.4 or newer, open **Connections →
-Т-Банк**, choose **Войти в отдельном Chrome**, and complete the official T-ID
-page. Keep both windows open until WealthTracker validates the API session and
-starts the first import. After that successful import, auto-update can refresh
-the same session while the application is running.
+Node.js is not required for T-Bank. Install Node.js 18 or newer only if you
+choose to run an external JavaScript plugin.
 
-## Use an external ZenPlugins bundle
+## Project boundaries
 
-Clone and build ZenPlugins outside this repository so its GPL-3.0 source and
-bundle remain separate:
-
-```sh
-git clone https://github.com/zenmoney/ZenPlugins.git
-cd ZenPlugins
-corepack enable
-yarn
-yarn build <plugin-id>
-```
-
-In WealthTracker, open **Connections → Local ZenPlugins**, choose
-`ZenPlugins/build/<plugin-id>.js`, review the detected fields, and run it.
-Keep the bundle in that `build/` directory: the app reads the corresponding
-`src/plugins/<plugin-id>/preferences.xml` to construct the local form.
-Passwords and one-time codes remain session-only. Non-secret stable fields
-such as phone, login, or start date can be saved locally so a compatible
-session-based bundle can auto-refresh while the app is running. Plugin data
-and cookies returned for reuse are stored in the operating-system credential
-store.
+- C++23 named modules separate finance, storage, platform, connector, and
+  application code.
+- Qt Quick/QML receives models and commands, not credentials or bank-session
+  projections.
+- Official tokens and the T-Bank session use macOS Keychain or Windows
+  Credential Manager.
+- Built-in network connectors use exact HTTPS origins, bounded responses, and
+  read-only methods.
+- Active login and synchronization work is cancelled when data is hidden or a
+  connection is removed.
+- No telemetry or remote crash reporter is included.
 
 See [Bank connections](docs/bank-connections.md),
-[Building](docs/building.md), [Architecture](docs/architecture.md), and
-[Security](SECURITY.md) for details.
+[Architecture](docs/architecture.md), [Security design](docs/security-design.md),
+and [Security policy](SECURITY.md).
 
 ## License
 
-Application source is licensed under the [MIT License](LICENSE). Dynamically
-linked Qt libraries and other dependencies retain their respective licenses.
+WealthTracker is licensed under the [MIT License](LICENSE). Dependencies retain
+their own licenses; see [Third-party notices](THIRD_PARTY_NOTICES.md).
