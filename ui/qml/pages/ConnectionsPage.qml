@@ -487,6 +487,15 @@ Item {
                         font.pixelSize: 10
                         wrapMode: Text.WordWrap
                     }
+                    Text {
+                        Layout.fillWidth: true
+                        text: page.app.syncStatus
+                        color: page.app.syncStatus.toLowerCase().indexOf("не удалось") >= 0
+                               || page.app.syncStatus.toLowerCase().indexOf("ошиб") >= 0
+                               ? Theme.negative : Theme.textMuted
+                        font.pixelSize: 11
+                        wrapMode: Text.WordWrap
+                    }
                 }
 
                 RowLayout {

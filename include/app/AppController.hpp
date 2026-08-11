@@ -16,6 +16,8 @@
 #include <memory>
 #include <optional>
 
+class QNetworkAccessManager;
+
 namespace wealthtracker::app {
 
 class AppControllerPrivate;
@@ -76,6 +78,8 @@ public:
     explicit AppController(QObject* parent = nullptr);
     explicit AppController(std::unique_ptr<CredentialBackend> credentials,
                            QObject* parent);
+    AppController(std::unique_ptr<CredentialBackend> credentials,
+                  std::unique_ptr<QNetworkAccessManager> network, QObject* parent);
     ~AppController() override;
 
     [[nodiscard]] QAbstractItemModel* accounts() noexcept;

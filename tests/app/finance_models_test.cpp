@@ -46,6 +46,7 @@ TEST_CASE("transaction model keeps income state distinct from amount text") {
 
     const auto index = model.index(0, 0);
     CHECK(model.data(index, TransactionModel::IncomeRole).toBool());
+    CHECK_FALSE(model.data(index, TransactionModel::TransferRole).toBool());
     CHECK(model.data(index, TransactionModel::AmountRole).toString() ==
           QStringLiteral("+100 000 ₽"));
 }

@@ -97,6 +97,7 @@ Item {
                         required property string category
                         required property string amount
                         required property bool income
+                        required property bool transfer
 
                         width: ListView.view.width
                         height: 58
@@ -149,7 +150,10 @@ Item {
                                 Layout.maximumWidth: 115
                                 horizontalAlignment: Text.AlignRight
                                 text: transactionRow.amount
-                                color: transactionRow.income ? Theme.positive : Theme.text
+                                color: transactionRow.transfer
+                                       ? Theme.textMuted
+                                       : transactionRow.income
+                                         ? Theme.positive : Theme.text
                                 font.pixelSize: 12
                                 font.weight: Font.Medium
                             }

@@ -60,6 +60,7 @@ QVariant TransactionModel::data(const QModelIndex& index, int role) const {
         case AmountRole: return row.amount;
         case DateRole: return row.date;
         case IncomeRole: return row.income;
+        case TransferRole: return row.transfer;
         default: return {};
     }
 }
@@ -70,7 +71,8 @@ QHash<int, QByteArray> TransactionModel::roleNames() const {
             {CategoryRole, "category"},
             {AmountRole, "amount"},
             {DateRole, "date"},
-            {IncomeRole, "income"}};
+            {IncomeRole, "income"},
+            {TransferRole, "transfer"}};
 }
 
 void TransactionModel::replace(QVector<TransactionRow> rows) {

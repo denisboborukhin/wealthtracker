@@ -312,6 +312,8 @@ TEST_CASE("T-Bank retail connector permits only exact read requests")
     CHECK(network.request.attribute(
               QNetworkRequest::CookieSaveControlAttribute).toInt()
           == QNetworkRequest::Manual);
+    CHECK_FALSE(network.request.attribute(QNetworkRequest::Http2AllowedAttribute).toBool());
+    CHECK(network.request.transferTimeout() == 45'000);
 
     const auto requests = client.synchronize(
         LiveSyncRequest{
@@ -351,17 +353,26 @@ TEST_CASE("T-Bank retail responses normalize balances and operations")
           == Money{-4'500'000, QStringLiteral("RUB")});
 
     const auto operations = TBankRetailClient::parseOperationsResponse(
-        QByteArrayLiteral(R"({"resultCode":"OK","payload":[{"id":"operation-1","status":"OK","type":"Debit","accountAmount":{"value":-427.5,"currency":{"name":"RUB"}},"operationTime":{"milliseconds":1785489300000},"debitingTime":{"milliseconds":1785489400000},"merchant":{"name":"Кофейня"},"spendingCategory":{"name":"Кафе"},"mcc":5814}]})"),
+        QByteArrayLiteral(
+            R"({"resultCode":"OK","payload":[{"id":"operation-1","status":"OK","type":"Debit","isInner":true,"accountAmount":{"value":-427.5,"currency":{"name":"RUB"}},"operationTime":{"milliseconds":1785489300000},"debitingTime":{"milliseconds":1785489400000},"merchant":{"name":"Кофейня"},"spendingCategory":{"name":"Кафе"},"mcc":5814},{"id":"malformed-operation","status":"OK","type":"Debit","accountAmount":{"value":0,"currency":{"name":"RUB"}}}]})"),
         QStringLiteral("account-1"));
     REQUIRE(operations);
     REQUIRE(operations->transactions.size() == 1);
+    REQUIRE(operations->warnings.size() == 1);
     const auto& operation = operations->transactions.front();
     CHECK(operation.externalId == QStringLiteral("operation-1"));
     CHECK(operation.amount == Money{-42'750, QStringLiteral("RUB")});
     CHECK(operation.merchant == QStringLiteral("Кофейня"));
     CHECK(operation.bankCategory == QStringLiteral("Кафе"));
     CHECK(operation.mcc == QStringLiteral("5814"));
+    CHECK(operation.kind == NormalizedTransactionKind::InternalTransfer);
     CHECK_FALSE(operation.sourceFields.contains(QStringLiteral("hold")));
+
+    const auto noData = TBankRetailClient::parseOperationsResponse(
+        QByteArrayLiteral(R"({"resultCode":"NO_DATA_FOUND","errorMessage":"No operations"})"),
+        QStringLiteral("account-1"));
+    REQUIRE(noData);
+    CHECK(noData->transactions.isEmpty());
 
     const auto expired = TBankRetailClient::parseAccountsResponse(
         QByteArrayLiteral(

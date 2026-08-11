@@ -386,16 +386,19 @@ QString zenPreferenceKindName(
 class AppControllerPrivate final {
 public:
     explicit AppControllerPrivate(
-        std::unique_ptr<CredentialBackend> credentialBackend)
+        std::unique_ptr<CredentialBackend> credentialBackend,
+        std::unique_ptr<QNetworkAccessManager> networkManager)
         : credentials(std::move(credentialBackend)),
-          investment(network),
-          alfa(network),
-          tbank_business(network),
-          modulbank(network),
-          tbank_retail(network) {}
+          network(networkManager ? std::move(networkManager)
+                                 : std::make_unique<QNetworkAccessManager>()),
+          investment(*network),
+          alfa(*network),
+          tbank_business(*network),
+          modulbank(*network),
+          tbank_retail(*network) {}
 
     std::unique_ptr<CredentialBackend> credentials;
-    QNetworkAccessManager network;
+    std::unique_ptr<QNetworkAccessManager> network;
     wealthtracker::connectors::TInvestClient investment;
     wealthtracker::connectors::AlfaBankClient alfa;
     wealthtracker::connectors::TBankBusinessClient tbank_business;
@@ -420,18 +423,24 @@ public:
 };
 
 AppController::AppController(QObject* parent)
-    : AppController(std::make_unique<SystemCredentialBackend>(), parent) {}
+    : AppController(std::make_unique<SystemCredentialBackend>(),
+                    std::make_unique<QNetworkAccessManager>(), parent) {}
 
 AppController::AppController(std::unique_ptr<CredentialBackend> credentials,
                              QObject* parent)
+    : AppController(std::move(credentials),
+                    std::make_unique<QNetworkAccessManager>(), parent) {}
+
+AppController::AppController(std::unique_ptr<CredentialBackend> credentials,
+                             std::unique_ptr<QNetworkAccessManager> network, QObject* parent)
     : QObject(parent),
       accounts_(this),
       transactions_(this),
       categories_(this),
       holdings_(this),
       bank_connections_(this),
-      private_(
-          std::make_unique<AppControllerPrivate>(std::move(credentials))) {
+      private_(std::make_unique<AppControllerPrivate>(std::move(credentials),
+                                                      std::move(network))) {
     private_->tbank_login = std::make_unique<TBankLoginCoordinator>(
         [this](QString status) {
             tbank_login_status_ = std::move(status);
@@ -882,7 +891,8 @@ void AppController::loadDemoData() {
         {QStringLiteral("Яндекс Go"), QStringLiteral("Поездка"),
          QStringLiteral("Транспорт"), QStringLiteral("−1 170 ₽"), QStringLiteral("29 июля"), false},
         {QStringLiteral("Пополнение брокерского счёта"), QStringLiteral("Внутренний перевод"),
-         QStringLiteral("Перевод"), QStringLiteral("−50 000 ₽"), QStringLiteral("28 июля"), false},
+         QStringLiteral("Перевод"), QStringLiteral("−50 000 ₽"), QStringLiteral("28 июля"), false,
+         true},
         {QStringLiteral("Купон ОФЗ"), QStringLiteral("Т-Инвестиции"),
          QStringLiteral("Инвестиционный доход"), QStringLiteral("+3 480 ₽"), QStringLiteral("27 июля"), true},
         {QStringLiteral("ЖКХ"), QStringLiteral("Единый платёжный документ"),
@@ -1367,9 +1377,11 @@ void AppController::rebuildBankModels() {
     for (auto bank = private_->bank_batches.cbegin();
          bank != private_->bank_batches.cend(); ++bank) {
         const auto configuration = bankConfiguration(bank.key());
-        const auto institution =
-            configuration ? configuration->institution
-                          : private_->bank_institutions.value(bank.key());
+        auto institution =
+            configuration ? configuration->institution : retailBankInstitution(bank.key());
+        if (institution.isEmpty()) {
+            institution = private_->bank_institutions.value(bank.key());
+        }
         if (institution.isEmpty()) {
             continue;
         }
@@ -1405,9 +1417,13 @@ void AppController::rebuildBankModels() {
             if (subtitle.isEmpty() || subtitle == title) {
                 subtitle = institution;
             }
-            const auto category = transaction.bankCategory.trimmed().isEmpty()
-                ? QStringLiteral("Без категории")
-                : transaction.bankCategory.trimmed();
+            const bool internalTransfer =
+                transaction.kind ==
+                wealthtracker::connectors::NormalizedTransactionKind::InternalTransfer;
+            const auto category = internalTransfer ? QStringLiteral("Внутренний перевод")
+                                  : transaction.bankCategory.trimmed().isEmpty()
+                                      ? QStringLiteral("Без категории")
+                                      : transaction.bankCategory.trimmed();
             const auto sortTime = transaction.occurredAt.value_or(
                 QDateTime(transaction.postingDate, QTime(0, 0),
                           QTimeZone::UTC));
@@ -1417,14 +1433,14 @@ void AppController::rebuildBankModels() {
                       .toString(transaction.postingDate,
                                 QStringLiteral("d MMMM"));
             transactionRows.push_back({
-                {title, subtitle, category, signedMoney(transaction.amount),
-                 dateText, transaction.amount.minorUnits >= 0},
+                {title, subtitle, category, signedMoney(transaction.amount), dateText,
+                 transaction.amount.minorUnits >= 0, internalTransfer},
                 sortTime,
             });
 
             if (transaction.amount.currency != QStringLiteral("RUB") ||
                 transaction.postingDate.year() != today.year() ||
-                transaction.postingDate.month() != today.month()) {
+                transaction.postingDate.month() != today.month() || internalTransfer) {
                 continue;
             }
             if (transaction.amount.minorUnits >= 0) {
@@ -2139,6 +2155,7 @@ bool AppController::synchronizeTBank() {
             return TBankRetailClient::parseOperationsResponse(body, accountId);
         },
     };
+    runtime.maximumConcurrentRequests = 1;
     auto* coordinator = new BankSyncCoordinator(
         std::move(runtime),
         [this]() -> std::expected<QByteArray, QString> {
@@ -2159,6 +2176,7 @@ bool AppController::synchronizeTBank() {
             tbank_connected_ = true;
             const auto accountCount = batch.accounts.size();
             const auto transactionCount = batch.transactions.size();
+            const auto warningCount = batch.warnings.size();
             private_->bank_batches.insert(QStringLiteral("tbank-retail"),
                                           std::move(batch));
             rebuildBankModels();
@@ -2171,6 +2189,9 @@ bool AppController::synchronizeTBank() {
             sync_status_ = QStringLiteral("Т-Банк: счетов %1 · операций %2")
                 .arg(accountCount)
                 .arg(transactionCount);
+            if (warningCount > 0) {
+                sync_status_ += QStringLiteral(" · пропущено записей %1").arg(warningCount);
+            }
             scheduleTBankAutoUpdateAfter(completedAt);
             refreshBankConnections();
             emit dashboardChanged();

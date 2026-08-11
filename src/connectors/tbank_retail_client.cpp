@@ -19,6 +19,7 @@ module;
 #include <QUrlQuery>
 
 #include <algorithm>
+#include <chrono>
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
@@ -42,7 +43,8 @@ ConnectorError invalidResponse(QString message, QString detail = {}) {
     return {ErrorCode::ParseFailed, std::move(message), std::move(detail), false};
 }
 
-ConnectorResult<QJsonValue> payloadFromResponse(const QByteArray& json, const QString& operation) {
+ConnectorResult<QJsonValue> payloadFromResponse(const QByteArray& json, const QString& operation,
+                                                const bool allowNoData = false) {
     if (json.isEmpty() || json.size() > maximumResponseBytes) {
         return std::unexpected(
             ConnectorError{ErrorCode::SecurityViolation,
@@ -58,6 +60,9 @@ ConnectorResult<QJsonValue> payloadFromResponse(const QByteArray& json, const QS
     }
     const auto object = document.object();
     const auto resultCode = object.value(QStringLiteral("resultCode")).toString();
+    if (allowNoData && resultCode == QStringLiteral("NO_DATA_FOUND")) {
+        return QJsonArray{};
+    }
     if (resultCode == QStringLiteral("INSUFFICIENT_PRIVILEGES") ||
         resultCode == QStringLiteral("AUTHENTICATION_FAILED")) {
         return std::unexpected(
@@ -334,10 +339,13 @@ ConnectorResult<QNetworkReply*> TBankRetailClient::get(const QUrl& url,
         return std::unexpected(checked.error());
     }
     checked->setRawHeader(QByteArrayLiteral("Accept"), QByteArrayLiteral("application/json"));
+    checked->setRawHeader(QByteArrayLiteral("Content-Type"), QByteArrayLiteral("application/json"));
     checked->setAttribute(QNetworkRequest::CookieLoadControlAttribute, QNetworkRequest::Manual);
     checked->setAttribute(QNetworkRequest::CookieSaveControlAttribute, QNetworkRequest::Manual);
+    checked->setAttribute(QNetworkRequest::Http2AllowedAttribute, false);
     checked->setAttribute(QNetworkRequest::MaximumDownloadBufferSizeAttribute,
                           maximumResponseBytes);
+    checked->setTransferTimeout(std::chrono::seconds(45));
     return network_.get(*checked);
 }
 
@@ -454,7 +462,7 @@ TBankRetailClient::parseOperationsResponse(const QByteArray& json,
         return std::unexpected(ConnectorError{
             ErrorCode::InvalidInput, QStringLiteral("Некорректный счёт Т-Банка"), {}, false});
     }
-    const auto payload = payloadFromResponse(json, QStringLiteral("операций"));
+    const auto payload = payloadFromResponse(json, QStringLiteral("операций"), true);
     if (!payload) {
         return std::unexpected(payload.error());
     }
@@ -465,10 +473,14 @@ TBankRetailClient::parseOperationsResponse(const QByteArray& json,
 
     NormalizedBatch batch;
     QHash<QString, int> duplicateIds;
-    for (const auto& value : payload->toArray()) {
+    const auto operations = payload->toArray();
+    for (qsizetype sourceRow = 0; sourceRow < operations.size(); ++sourceRow) {
+        const auto& value = operations.at(sourceRow);
         if (!value.isObject()) {
-            return std::unexpected(
-                invalidResponse(QStringLiteral("Т-Банк вернул некорректную запись операции")));
+            batch.warnings.push_back(
+                {WarningSeverity::RejectedRow, QStringLiteral("tbank-operation-shape"),
+                 QStringLiteral("Пропущена некорректная операция Т-Банка"), sourceRow});
+            continue;
         }
         const auto operation = value.toObject();
         if (operation.value(QStringLiteral("status")).toString() == QStringLiteral("FAILED")) {
@@ -481,8 +493,11 @@ TBankRetailClient::parseOperationsResponse(const QByteArray& json,
         const auto currency = firstCurrency(operation);
         if (!date || !amount || *amount == 0 || currency.isEmpty() ||
             *amount == std::numeric_limits<std::int64_t>::min()) {
-            return std::unexpected(invalidResponse(
-                QStringLiteral("Т-Банк вернул некорректную сумму или дату операции")));
+            batch.warnings.push_back(
+                {WarningSeverity::RejectedRow, QStringLiteral("tbank-operation-fields"),
+                 QStringLiteral("Пропущена операция Т-Банка с некорректной суммой или датой"),
+                 sourceRow});
+            continue;
         }
         auto id = operationId(operation, accountExternalId);
         const auto duplicate = duplicateIds.value(id);
@@ -513,10 +528,14 @@ TBankRetailClient::parseOperationsResponse(const QByteArray& json,
             operation.value(QStringLiteral("debitingTime")).isNull()) {
             fields.insert(QStringLiteral("hold"), QStringLiteral("true"));
         }
+        const auto kind = operation.value(QStringLiteral("isInner")).toBool()
+                              ? NormalizedTransactionKind::InternalTransfer
+                              : NormalizedTransactionKind::Regular;
         batch.transactions.push_back({id, accountExternalId, date->date(), *date,
                                       Money{credit ? absoluteAmount : -absoluteAmount, currency},
                                       description, description, category, mcc, std::move(fields),
-                                      Provenance{QStringLiteral("tbank-retail"), {}, id, -1}});
+                                      Provenance{QStringLiteral("tbank-retail"), {}, id, sourceRow},
+                                      kind});
     }
     return batch;
 }

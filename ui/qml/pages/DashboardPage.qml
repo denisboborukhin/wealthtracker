@@ -261,6 +261,7 @@ Flickable {
                             required property string category
                             required property string amount
                             required property bool income
+                            required property bool transfer
 
                             width: ListView.view.width
                             height: 44
@@ -293,7 +294,10 @@ Flickable {
                                     Layout.preferredWidth: 105
                                     horizontalAlignment: Text.AlignRight
                                     text: recentTransaction.amount
-                                    color: recentTransaction.income ? Theme.positive : Theme.text
+                                    color: recentTransaction.transfer
+                                           ? Theme.textMuted
+                                           : recentTransaction.income
+                                             ? Theme.positive : Theme.text
                                     font.pixelSize: 12
                                     font.weight: Font.Medium
                                 }

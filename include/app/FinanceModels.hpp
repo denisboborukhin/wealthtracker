@@ -48,6 +48,7 @@ struct TransactionRow {
     QString amount;
     QString date;
     bool income = false;
+    bool transfer = false;
 };
 
 class TransactionModel final : public QAbstractListModel {
@@ -61,6 +62,7 @@ public:
         AmountRole,
         DateRole,
         IncomeRole,
+        TransferRole,
     };
 
     explicit TransactionModel(QObject* parent = nullptr);

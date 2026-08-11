@@ -37,6 +37,7 @@ struct BankRuntime {
             const QByteArray&, const QString&, const QByteArray&, int)>
         parsePage;
     qsizetype maximumResponseBytes = 20 * 1024 * 1024;
+    int maximumConcurrentRequests = 4;
 };
 
 class BankSyncCoordinator final : public QObject {
@@ -54,7 +55,8 @@ class BankSyncCoordinator final : public QObject {
     void start(QNetworkReply* discoveryReply) {
         if (started_ || discoveryReply == nullptr || runtime_.connector == nullptr ||
             !runtime_.parseAccounts || !runtime_.parsePage || runtime_.pageSize <= 0 ||
-            runtime_.maximumResponseBytes <= 0) {
+            runtime_.maximumResponseBytes <= 0 || runtime_.maximumConcurrentRequests <= 0 ||
+            runtime_.maximumConcurrentRequests > maximumSupportedConcurrentRequests) {
             fail({wealthtracker::connectors::ErrorCode::InvalidInput,
                   QStringLiteral("Некорректная конфигурация синхронизации"),
                   {},
@@ -72,7 +74,8 @@ class BankSyncCoordinator final : public QObject {
                 return;
             }
             const auto networkError = reply->error();
-            const auto body = reply->readAll();
+            const auto body =
+                networkError == QNetworkReply::NoError ? reply->readAll() : QByteArray{};
             active_replies_.removeAll(reply);
             reply->deleteLater();
             if (networkError != QNetworkReply::NoError) {
@@ -140,7 +143,7 @@ class BankSyncCoordinator final : public QObject {
         QByteArray cursor;
     };
 
-    static constexpr int maximumConcurrentPages = 4;
+    static constexpr int maximumSupportedConcurrentRequests = 4;
     static constexpr qsizetype maximumAccountsPerRun = 256;
     static constexpr int maximumPagesPerAccount = 250;
     static constexpr int maximumPagesPerRun = 1'000;
@@ -150,6 +153,26 @@ class BankSyncCoordinator final : public QObject {
     static wealthtracker::connectors::ConnectorError
     networkFailure(QString message,
                    const QNetworkReply::NetworkError code = QNetworkReply::OperationCanceledError) {
+        switch (code) {
+        case QNetworkReply::TimeoutError:
+            message += QStringLiteral(": превышено время ожидания");
+            break;
+        case QNetworkReply::RemoteHostClosedError:
+            message += QStringLiteral(": банк закрыл соединение; повторите запрос");
+            break;
+        case QNetworkReply::SslHandshakeFailedError:
+            message += QStringLiteral(": не удалось проверить TLS-соединение");
+            break;
+        case QNetworkReply::HostNotFoundError:
+            message += QStringLiteral(": адрес банка не найден");
+            break;
+        case QNetworkReply::NetworkSessionFailedError:
+        case QNetworkReply::TemporaryNetworkFailureError:
+            message += QStringLiteral(": сеть временно недоступна");
+            break;
+        default:
+            break;
+        }
         return {wealthtracker::connectors::ErrorCode::NetworkFailure, std::move(message),
                 QStringLiteral("network error %1").arg(static_cast<int>(code)), true};
     }
@@ -221,7 +244,8 @@ class BankSyncCoordinator final : public QObject {
                     fail(networkFailure(QStringLiteral("Запрос истории был отменён")));
                 } else {
                     const auto networkError = reply->error();
-                    const auto body = reply->readAll();
+                    const auto body =
+                        networkError == QNetworkReply::NoError ? reply->readAll() : QByteArray{};
                     active_replies_.removeAll(reply);
                     reply->deleteLater();
                     if (networkError != QNetworkReply::NoError) {
@@ -259,7 +283,7 @@ class BankSyncCoordinator final : public QObject {
     }
 
     void pumpRequests() {
-        while (!first_error_ && pending_pages_ < maximumConcurrentPages &&
+        while (!first_error_ && pending_pages_ < runtime_.maximumConcurrentRequests &&
                !pending_requests_.isEmpty()) {
             auto request = pending_requests_.takeFirst();
             requestPage(request.accountId, request.cursor);

@@ -91,6 +91,8 @@ struct BalanceSnapshot {
     Provenance provenance;
 };
 
+enum class NormalizedTransactionKind { Regular, InternalTransfer };
+
 struct NormalizedTransaction {
     QString externalId;
     QString accountExternalId;
@@ -103,6 +105,7 @@ struct NormalizedTransaction {
     QString mcc;
     QMap<QString, QString> sourceFields;
     Provenance provenance;
+    NormalizedTransactionKind kind{NormalizedTransactionKind::Regular};
 };
 
 struct InvestmentEvent {

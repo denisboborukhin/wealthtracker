@@ -8,17 +8,23 @@
 #include <QEventLoop>
 #include <QFile>
 #include <QHash>
+#include <QNetworkAccessManager>
+#include <QNetworkReply>
+#include <QNetworkRequest>
 #include <QSettings>
 #include <QStandardPaths>
 #include <QThread>
+#include <QTimer>
 #include <QUrl>
 #include <QUrlQuery>
 
+#include <algorithm>
 #include <expected>
 #include <functional>
 #include <memory>
 #include <optional>
 #include <string>
+#include <utility>
 
 import wt.tbank_auth;
 import wt.tbank_browser;
@@ -52,6 +58,124 @@ public:
     }
 
     QHash<QString, QByteArray> values;
+};
+
+class BufferedNetworkReply final : public QNetworkReply {
+  public:
+    BufferedNetworkReply(const QNetworkRequest& request, QByteArray body,
+                         const int delayMilliseconds, const QNetworkReply::NetworkError error,
+                         int* readCounter, QObject* parent)
+        : QNetworkReply(parent), body_(std::move(body)), error_(error), read_counter_(readCounter) {
+        setRequest(request);
+        setUrl(request.url());
+        setOperation(QNetworkAccessManager::GetOperation);
+        setAttribute(QNetworkRequest::HttpStatusCodeAttribute, 200);
+        open(QIODevice::ReadOnly);
+        QTimer::singleShot(delayMilliseconds, this, [this] { finish(); });
+    }
+
+    void abort() override {
+        if (isFinished()) {
+            return;
+        }
+        setError(QNetworkReply::OperationCanceledError, QStringLiteral("Request cancelled"));
+        finish();
+    }
+
+    qint64 bytesAvailable() const override {
+        return body_.size() - offset_ + QIODevice::bytesAvailable();
+    }
+
+  protected:
+    qint64 readData(char* data, const qint64 maximumSize) override {
+        if (read_counter_ != nullptr) {
+            ++*read_counter_;
+        }
+        if (offset_ >= body_.size()) {
+            return -1;
+        }
+        const auto size = std::min(maximumSize, body_.size() - offset_);
+        std::copy_n(body_.constData() + offset_, size, data);
+        offset_ += size;
+        return size;
+    }
+
+  private:
+    void finish() {
+        if (isFinished()) {
+            return;
+        }
+        if (error_ != QNetworkReply::NoError) {
+            setError(error_, QStringLiteral("Scripted network failure"));
+        }
+        setFinished(true);
+        emit readyRead();
+        emit finished();
+    }
+
+    QByteArray body_;
+    QNetworkReply::NetworkError error_;
+    int* read_counter_ = nullptr;
+    qint64 offset_ = 0;
+};
+
+class TBankNetworkFixture final : public QNetworkAccessManager {
+  public:
+    int activeOperationRequests = 0;
+    int maximumActiveOperationRequests = 0;
+    int operationReadCalls = 0;
+    bool allRequestsDisableHttp2 = true;
+    bool failOperations = false;
+
+  protected:
+    QNetworkReply* createRequest(const Operation operation, const QNetworkRequest& request,
+                                 QIODevice*) override {
+        REQUIRE(operation == GetOperation);
+        allRequestsDisableHttp2 &=
+            !request.attribute(QNetworkRequest::Http2AllowedAttribute).toBool();
+
+        QByteArray body;
+        int delayMilliseconds = 0;
+        if (request.url().path() == QStringLiteral("/api/common/v1/accounts_light_ib")) {
+            body = QByteArrayLiteral(
+                R"({"resultCode":"OK","payload":[{"id":"account-a","name":"Black","accountType":"Debit","moneyAmount":{"value":"1500.00","currency":{"name":"RUB"}}},{"id":"account-b","name":"Savings","accountType":"Deposit","moneyAmount":{"value":"2500.00","currency":{"name":"RUB"}}}]})");
+        } else {
+            REQUIRE(request.url().path() == QStringLiteral("/api/common/v1/operations"));
+            ++activeOperationRequests;
+            maximumActiveOperationRequests =
+                std::max(maximumActiveOperationRequests, activeOperationRequests);
+            delayMilliseconds = 20;
+            const auto timestamp = QDateTime::currentDateTimeUtc().toMSecsSinceEpoch();
+            const auto account = QUrlQuery(request.url()).queryItemValue(QStringLiteral("account"));
+            if (account == QStringLiteral("account-a")) {
+                body =
+                    QStringLiteral(
+                        R"({"resultCode":"OK","payload":[{"id":"transfer-out","status":"OK","type":"Debit","isInner":true,"accountAmount":{"value":"-500.00","currency":{"name":"RUB"}},"operationTime":{"milliseconds":%1},"description":"Между своими счетами"},{"id":"expense","status":"OK","type":"Debit","accountAmount":{"value":"-200.00","currency":{"name":"RUB"}},"operationTime":{"milliseconds":%1},"description":"Кофе","spendingCategory":{"name":"Кафе"}},{"id":"bad","status":"OK","type":"Debit","accountAmount":{"value":0,"currency":{"name":"RUB"}}}]})")
+                        .arg(timestamp)
+                        .toUtf8();
+            } else {
+                REQUIRE(account == QStringLiteral("account-b"));
+                body =
+                    QStringLiteral(
+                        R"({"resultCode":"OK","payload":[{"id":"transfer-in","status":"OK","type":"Credit","isInner":true,"accountAmount":{"value":"500.00","currency":{"name":"RUB"}},"operationTime":{"milliseconds":%1},"description":"Между своими счетами"},{"id":"income","status":"OK","type":"Credit","accountAmount":{"value":"1000.00","currency":{"name":"RUB"}},"operationTime":{"milliseconds":%1},"description":"Доход"}]})")
+                        .arg(timestamp)
+                        .toUtf8();
+            }
+        }
+
+        const bool operationRequest =
+            request.url().path() == QStringLiteral("/api/common/v1/operations");
+        auto* reply = new BufferedNetworkReply(
+            request, failOperations && operationRequest ? QByteArray{} : std::move(body),
+            delayMilliseconds,
+            failOperations && operationRequest ? QNetworkReply::RemoteHostClosedError
+                                               : QNetworkReply::NoError,
+            operationRequest ? &operationReadCalls : nullptr, this);
+        if (operationRequest) {
+            connect(reply, &QNetworkReply::finished, this, [this] { --activeOperationRequests; });
+        }
+        return reply;
+    }
 };
 
 bool connectionState(QAbstractItemModel* model, const QString& connectorId) {
@@ -101,6 +225,12 @@ public:
     ~ZenSettingsCleanup() {
         QSettings{}.remove(QStringLiteral("zenPlugin"));
     }
+};
+
+class TBankSettingsCleanup final {
+  public:
+    TBankSettingsCleanup() { QSettings{}.remove(QStringLiteral("tbank")); }
+    ~TBankSettingsCleanup() { QSettings{}.remove(QStringLiteral("tbank")); }
 };
 
 }  // namespace
@@ -219,6 +349,68 @@ TEST_CASE("T-Bank API session identifiers reject unsafe values") {
     CHECK_FALSE(isValidTBankRetailSessionId("session&query-injected"));
     CHECK_FALSE(isValidTBankRetailSessionId("session\nheader-value"));
     CHECK_FALSE(isValidTBankRetailSessionId("too-short"));
+}
+
+TEST_CASE("T-Bank synchronization publishes balances and excludes internal transfers") {
+    const TBankSettingsCleanup cleanup;
+    auto credentials = std::make_unique<MemoryCredentialBackend>();
+    credentials->values.insert(QStringLiteral("tbank-retail-session"),
+                               QByteArrayLiteral("connected-session-123456789"));
+    auto network = std::make_unique<TBankNetworkFixture>();
+    auto* observedNetwork = network.get();
+    wealthtracker::app::AppController controller(std::move(credentials), std::move(network),
+                                                 nullptr);
+
+    REQUIRE(controller.tbankConnected());
+    REQUIRE(controller.synchronizeTBank());
+    REQUIRE(waitUntil([&controller] { return !controller.tbankSyncRunning(); }));
+
+    CHECK(observedNetwork->allRequestsDisableHttp2);
+    CHECK(observedNetwork->maximumActiveOperationRequests == 1);
+    CHECK(controller.accounts()->rowCount() == 2);
+    CHECK(controller.transactions()->rowCount() == 4);
+    CHECK(controller.monthlyIncome() == QStringLiteral("1 000 ₽"));
+    CHECK(controller.monthlySpending() == QStringLiteral("200 ₽"));
+    CHECK(controller.categories()->rowCount() == 1);
+    CHECK(controller.categories()
+              ->data(controller.categories()->index(0, 0),
+                     wealthtracker::app::CategoryModel::NameRole)
+              .toString() == QStringLiteral("Кафе"));
+
+    int transferRows = 0;
+    for (int row = 0; row < controller.transactions()->rowCount(); ++row) {
+        if (controller.transactions()
+                ->data(controller.transactions()->index(row, 0),
+                       wealthtracker::app::TransactionModel::CategoryRole)
+                .toString() == QStringLiteral("Внутренний перевод")) {
+            CHECK(controller.transactions()
+                      ->data(controller.transactions()->index(row, 0),
+                             wealthtracker::app::TransactionModel::TransferRole)
+                      .toBool());
+            ++transferRows;
+        }
+    }
+    CHECK(transferRows == 2);
+    CHECK(controller.syncStatus().contains(QStringLiteral("пропущено записей 1")));
+}
+
+TEST_CASE("T-Bank network failures do not read a closed TLS reply") {
+    const TBankSettingsCleanup cleanup;
+    auto credentials = std::make_unique<MemoryCredentialBackend>();
+    credentials->values.insert(QStringLiteral("tbank-retail-session"),
+                               QByteArrayLiteral("connected-session-123456789"));
+    auto network = std::make_unique<TBankNetworkFixture>();
+    network->failOperations = true;
+    auto* observedNetwork = network.get();
+    wealthtracker::app::AppController controller(std::move(credentials), std::move(network),
+                                                 nullptr);
+
+    REQUIRE(controller.synchronizeTBank());
+    REQUIRE(waitUntil([&controller] { return !controller.tbankSyncRunning(); }));
+
+    CHECK(observedNetwork->operationReadCalls == 0);
+    CHECK(controller.syncStatus().contains(QStringLiteral("банк закрыл соединение")));
+    CHECK(controller.accounts()->rowCount() == 0);
 }
 
 TEST_CASE("T-Bank WebView projection is bounded before API validation") {
