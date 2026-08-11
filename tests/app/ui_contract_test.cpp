@@ -24,6 +24,16 @@ TEST_CASE("dashboard keeps populated summaries inside responsive surfaces") {
     CHECK(source.contains(QByteArrayLiteral(
         "Math.max(0, Math.min(1, categoryRow.share))")));
     CHECK(source.contains(QByteArrayLiteral("Layout.minimumWidth: 0")));
+    CHECK(source.contains(QByteArrayLiteral(
+        "id: recentOperationsCard")));
+    CHECK(source.contains(QByteArrayLiteral(
+        "recentOperationsPreferredHeight: Math.max(")));
+    CHECK(source.contains(QByteArrayLiteral(
+        "height - Theme.pageMargin * 2 - dashboardHeader.implicitHeight")));
+    CHECK(source.contains(QByteArrayLiteral(
+        "Layout.minimumHeight: page.recentOperationsMinimumHeight")));
+    CHECK(source.contains(QByteArrayLiteral(
+        "Layout.preferredHeight: page.recentOperationsPreferredHeight")));
     CHECK_FALSE(source.contains(QByteArrayLiteral("id: categoryRepeater")));
 }
 

@@ -8,6 +8,12 @@ import "../components"
 Flickable {
     id: page
     required property var app
+    readonly property real recentOperationsMinimumHeight: 182
+    readonly property real recentOperationsPreferredHeight: Math.max(
+        recentOperationsMinimumHeight,
+        height - Theme.pageMargin * 2 - dashboardHeader.implicitHeight
+        - metricGrid.implicitHeight - summaryGrid.implicitHeight
+        - content.spacing * 3)
 
     contentWidth: width
     contentHeight: Math.max(height, content.implicitHeight + Theme.pageMargin * 2)
@@ -27,6 +33,7 @@ Flickable {
         spacing: 16
 
         RowLayout {
+            id: dashboardHeader
             Layout.fillWidth: true
             ColumnLayout {
                 Layout.fillWidth: true
@@ -59,6 +66,7 @@ Flickable {
         }
 
         GridLayout {
+            id: metricGrid
             Layout.fillWidth: true
             columns: width > 900 ? 4 : 2
             columnSpacing: 12
@@ -99,6 +107,7 @@ Flickable {
         }
 
         GridLayout {
+            id: summaryGrid
             Layout.fillWidth: true
             columns: width > 860 ? 2 : 1
             columnSpacing: 12
@@ -250,9 +259,11 @@ Flickable {
         }
 
         SectionCard {
+            id: recentOperationsCard
             Layout.fillWidth: true
             Layout.minimumWidth: 0
-            Layout.preferredHeight: 270
+            Layout.minimumHeight: page.recentOperationsMinimumHeight
+            Layout.preferredHeight: page.recentOperationsPreferredHeight
 
             ColumnLayout {
                 anchors.fill: parent
