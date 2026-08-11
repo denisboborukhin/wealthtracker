@@ -22,6 +22,8 @@ Item {
         connectionDialog.open()
         if (connectorId === "tbank-retail")
             page.app.prepareTBankConnection()
+        else if (connectorId === "alfa-retail")
+            page.app.prepareAlfaConnection()
     }
 
     PlatformDialogs.FileDialog {
@@ -39,9 +41,9 @@ Item {
         parent: Overlay.overlay
         modal: true
         focus: true
-        width: page.app.tbankLoginActive
+        width: connectionDialog.retailLoginActive
                ? Math.min(parent.width - 32, 760) : 520
-        height: page.app.tbankLoginActive
+        height: connectionDialog.retailLoginActive
                 ? Math.min(parent.height - 32, 760) : implicitHeight
         x: Math.round((parent.width - width) / 2)
         y: Math.round((parent.height - height) / 2)
@@ -57,10 +59,73 @@ Item {
         signal resetSensitivePluginFields()
         readonly property bool builtinTBank:
             connectorId === "tbank-retail"
+        readonly property bool builtinAlfa:
+            connectorId === "alfa-retail"
+        readonly property bool builtinRetail:
+            builtinTBank || builtinAlfa
         readonly property bool localPlugin:
             connectorId === "zenplugins-local"
         readonly property bool effectiveConnected:
-            builtinTBank ? page.app.tbankConnected : connected
+            builtinTBank ? page.app.tbankConnected
+                         : builtinAlfa ? page.app.alfaConnected : connected
+        readonly property bool retailLoginActive:
+            builtinTBank ? page.app.tbankLoginActive
+                         : builtinAlfa && page.app.alfaLoginActive
+        readonly property bool retailSyncRunning:
+            builtinTBank ? page.app.tbankSyncRunning
+                         : builtinAlfa && page.app.alfaSyncRunning
+        readonly property bool retailAutoUpdate:
+            builtinTBank ? page.app.tbankAutoUpdate : page.app.alfaAutoUpdate
+        readonly property string retailLastSync:
+            builtinTBank ? page.app.tbankLastSync : page.app.alfaLastSync
+        readonly property string retailNextSync:
+            builtinTBank ? page.app.tbankNextSync : page.app.alfaNextSync
+        readonly property string retailLoginStatus:
+            builtinTBank ? page.app.tbankLoginStatus : page.app.alfaLoginStatus
+        readonly property var retailWebView:
+            builtinTBank ? page.app.tbankWebView : page.app.alfaWebView
+
+        function beginRetailLogin() {
+            if (builtinTBank)
+                page.app.beginTBankLogin()
+            else
+                page.app.beginAlfaLogin()
+        }
+
+        function reloadRetailLogin() {
+            if (builtinTBank)
+                page.app.reloadTBankLoginPage()
+            else
+                page.app.reloadAlfaLoginPage()
+        }
+
+        function cancelRetailLogin() {
+            if (builtinTBank)
+                page.app.cancelTBankLogin()
+            else
+                page.app.cancelAlfaLogin()
+        }
+
+        function synchronizeRetail() {
+            if (builtinTBank)
+                page.app.synchronizeTBank()
+            else
+                page.app.synchronizeAlfa()
+        }
+
+        function setRetailAutoUpdate(enabled) {
+            if (builtinTBank)
+                page.app.setTBankAutoUpdate(enabled)
+            else
+                page.app.setAlfaAutoUpdate(enabled)
+        }
+
+        function disconnectRetail() {
+            if (builtinTBank)
+                page.app.disconnectTBank()
+            else
+                page.app.disconnectAlfa()
+        }
 
         function pluginPreferences() {
             return pluginValues
@@ -113,8 +178,8 @@ Item {
 
             ColumnLayout {
                 Layout.fillWidth: true
-                Layout.fillHeight: connectionDialog.builtinTBank
-                                   && page.app.tbankLoginActive
+                Layout.fillHeight: connectionDialog.builtinRetail
+                                   && connectionDialog.retailLoginActive
                 Layout.leftMargin: 24
                 Layout.rightMargin: 24
                 Layout.topMargin: 20
@@ -123,7 +188,7 @@ Item {
 
                 Text {
                     Layout.fillWidth: true
-                    visible: !page.app.tbankLoginActive
+                    visible: !connectionDialog.retailLoginActive
                     text: page.app.connectionMessage
                     color: Theme.textMuted
                     font.pixelSize: 13
@@ -135,7 +200,7 @@ Item {
                     Layout.fillWidth: true
                     visible: connectionDialog.available
                                && !connectionDialog.connected
-                               && !connectionDialog.builtinTBank
+                               && !connectionDialog.builtinRetail
                                && !connectionDialog.localPlugin
                     spacing: 7
 
@@ -178,7 +243,7 @@ Item {
                 StatusBadge {
                     visible: connectionDialog.available
                              && connectionDialog.effectiveConnected
-                             && !connectionDialog.builtinTBank
+                             && !connectionDialog.builtinRetail
                              && !connectionDialog.localPlugin
                     text: qsTr("Подключено")
                     tone: "positive"
@@ -186,16 +251,16 @@ Item {
 
                 ColumnLayout {
                     Layout.fillWidth: true
-                    Layout.fillHeight: page.app.tbankLoginActive
-                    visible: connectionDialog.builtinTBank
+                    Layout.fillHeight: connectionDialog.retailLoginActive
+                    visible: connectionDialog.builtinRetail
                              && !connectionDialog.effectiveConnected
                     spacing: 10
 
                     Text {
                         Layout.fillWidth: true
-                        text: page.app.tbankLoginStatus.length > 0
-                              ? page.app.tbankLoginStatus
-                              : qsTr("Нажмите «Войти», чтобы открыть официальную страницу Т-Банка внутри приложения.")
+                        text: connectionDialog.retailLoginStatus.length > 0
+                              ? connectionDialog.retailLoginStatus
+                              : qsTr("Нажмите «Войти», чтобы открыть официальную страницу банка внутри приложения.")
                         color: Theme.text
                         font.pixelSize: 12
                         wrapMode: Text.WordWrap
@@ -205,7 +270,7 @@ Item {
                         Layout.fillWidth: true
                         Layout.fillHeight: true
                         Layout.minimumHeight: 340
-                        visible: page.app.tbankLoginActive
+                        visible: connectionDialog.retailLoginActive
                         color: Theme.surface
                         radius: 8
                         border.color: Theme.border
@@ -214,15 +279,17 @@ Item {
                         WindowContainer {
                             anchors.fill: parent
                             anchors.margins: 1
-                            visible: page.app.tbankLoginActive
-                            window: page.app.tbankWebView
+                            visible: connectionDialog.retailLoginActive
+                            window: connectionDialog.retailWebView
                         }
                     }
 
                     Text {
                         Layout.fillWidth: true
-                        visible: page.app.tbankLoginActive
-                        text: qsTr("Телефон и код обрабатывает официальная страница банка. Веб-хранилище непостоянно; WealthTracker получает только идентификатор API-сессии и удаляет cookies после завершения.")
+                        visible: connectionDialog.retailLoginActive
+                        text: connectionDialog.builtinTBank
+                              ? qsTr("Телефон и код обрабатывает официальная страница банка. WealthTracker получает только идентификатор API-сессии и удаляет cookies после завершения.")
+                              : qsTr("Телефон и код обрабатывает официальная страница банка. WealthTracker не читает cookies или поля входа и получает только ограниченный снимок финансовых данных.")
                         color: Theme.textMuted
                         font.pixelSize: 10
                         wrapMode: Text.WordWrap
@@ -455,14 +522,14 @@ Item {
 
                 ColumnLayout {
                     Layout.fillWidth: true
-                    visible: connectionDialog.builtinTBank
+                    visible: connectionDialog.builtinRetail
                              && connectionDialog.effectiveConnected
                     spacing: 10
 
                     StatusBadge {
-                        text: page.app.tbankSyncRunning
+                        text: connectionDialog.retailSyncRunning
                               ? qsTr("Синхронизация") : qsTr("Подключено")
-                        tone: page.app.tbankSyncRunning ? "neutral" : "positive"
+                        tone: connectionDialog.retailSyncRunning ? "neutral" : "positive"
                     }
                     RowLayout {
                         Layout.fillWidth: true
@@ -474,15 +541,15 @@ Item {
                             font.weight: Font.Medium
                         }
                         MinimalSwitch {
-                            checked: page.app.tbankAutoUpdate
-                            enabled: !page.app.tbankSyncRunning
-                            onToggled: page.app.setTBankAutoUpdate(checked)
+                            checked: connectionDialog.retailAutoUpdate
+                            enabled: !connectionDialog.retailSyncRunning
+                            onToggled: connectionDialog.setRetailAutoUpdate(checked)
                         }
                     }
                     Text {
                         Layout.fillWidth: true
-                        text: qsTr("Последнее: ") + page.app.tbankLastSync
-                              + qsTr(" · Следующее: ") + page.app.tbankNextSync
+                        text: qsTr("Последнее: ") + connectionDialog.retailLastSync
+                              + qsTr(" · Следующее: ") + connectionDialog.retailNextSync
                         color: Theme.textMuted
                         font.pixelSize: 10
                         wrapMode: Text.WordWrap
@@ -514,7 +581,7 @@ Item {
                     ActionButton {
                         visible: connectionDialog.available
                                  && !connectionDialog.effectiveConnected
-                                 && !connectionDialog.builtinTBank
+                                 && !connectionDialog.builtinRetail
                                  && !connectionDialog.localPlugin
                         text: qsTr("Сохранить токен")
                         primary: true
@@ -530,7 +597,7 @@ Item {
                     ActionButton {
                         visible: connectionDialog.available
                                  && connectionDialog.effectiveConnected
-                                 && !connectionDialog.builtinTBank
+                                 && !connectionDialog.builtinRetail
                                  && !connectionDialog.localPlugin
                         text: qsTr("Синхронизировать")
                         primary: true
@@ -542,7 +609,7 @@ Item {
                     ActionButton {
                         visible: connectionDialog.available
                                  && connectionDialog.effectiveConnected
-                                 && !connectionDialog.builtinTBank
+                                 && !connectionDialog.builtinRetail
                                  && !connectionDialog.localPlugin
                         text: qsTr("Отключить")
                         destructive: true
@@ -552,28 +619,26 @@ Item {
                         }
                     }
                     ActionButton {
-                        visible: connectionDialog.builtinTBank
+                        visible: connectionDialog.builtinRetail
                                  && !connectionDialog.effectiveConnected
-                                 && !page.app.tbankLoginActive
-                                 && !page.app.tbankSyncRunning
+                                 && !connectionDialog.retailLoginActive
+                                 && !connectionDialog.retailSyncRunning
                         text: qsTr("Войти")
                         primary: true
-                        onClicked: page.app.beginTBankLogin()
+                        onClicked: connectionDialog.beginRetailLogin()
                     }
                     ActionButton {
-                        visible: connectionDialog.builtinTBank
-                                 && page.app.tbankLoginActive
+                        visible: connectionDialog.builtinRetail
+                                 && connectionDialog.retailLoginActive
                         text: qsTr("Повторить")
-                        onClicked: page.app.reloadTBankLoginPage()
+                        onClicked: connectionDialog.reloadRetailLogin()
                     }
                     ActionButton {
-                        visible: connectionDialog.builtinTBank
-                                 && page.app.tbankLoginActive
+                        visible: connectionDialog.builtinRetail
+                                 && connectionDialog.retailLoginActive
                         text: qsTr("Отмена")
                         destructive: true
-                        onClicked: {
-                            page.app.cancelTBankLogin()
-                        }
+                        onClicked: connectionDialog.cancelRetailLogin()
                     }
                     ActionButton {
                         visible: connectionDialog.localPlugin
@@ -629,21 +694,21 @@ Item {
                         }
                     }
                     ActionButton {
-                        visible: connectionDialog.builtinTBank
+                        visible: connectionDialog.builtinRetail
                                  && connectionDialog.effectiveConnected
-                                 && !page.app.tbankSyncRunning
+                                 && !connectionDialog.retailSyncRunning
                         text: qsTr("Обновить")
                         primary: true
-                        onClicked: page.app.synchronizeTBank()
+                        onClicked: connectionDialog.synchronizeRetail()
                     }
                     ActionButton {
-                        visible: connectionDialog.builtinTBank
+                        visible: connectionDialog.builtinRetail
                                  && connectionDialog.effectiveConnected
-                                 && !page.app.tbankSyncRunning
+                                 && !connectionDialog.retailSyncRunning
                         text: qsTr("Отключить")
                         destructive: true
                         onClicked: {
-                            page.app.disconnectTBank()
+                            connectionDialog.disconnectRetail()
                             connectionDialog.close()
                         }
                     }
@@ -652,9 +717,9 @@ Item {
         }
 
         onClosed: {
-            if (connectionDialog.builtinTBank && page.app.tbankLoginActive) {
-                page.app.cancelTBankLogin()
-            }
+            if (connectionDialog.builtinRetail
+                    && connectionDialog.retailLoginActive)
+                connectionDialog.cancelRetailLogin()
             tokenField.clear()
             pluginPromptField.clear()
             clearSensitivePluginFields()
@@ -678,7 +743,7 @@ Item {
             }
             Text {
                 Layout.fillWidth: true
-                text: qsTr("Официальные API и отдельно собранные локальные плагины. Токены и состояние сессий остаются в системном хранилище ключей.")
+                text: qsTr("Встроенные подключения, официальные API и проверяемые локальные плагины. Токены хранятся в системном хранилище ключей; браузерные сессии — в системном WebView.")
                 color: Theme.textMuted
                 font.pixelSize: 13
                 wrapMode: Text.WordWrap
@@ -816,7 +881,7 @@ Item {
 
         Text {
             Layout.fillWidth: true
-            text: qsTr("Т-Банк использует встроенный C++ коннектор только для чтения. Для Альфа-Банка, Сбера и ВТБ нужен отдельный проверяемый локальный адаптер.")
+            text: qsTr("Т-Банк и Альфа-Банк используют встроенные локальные коннекторы. Для Сбера и ВТБ нужен отдельный проверяемый адаптер.")
             color: Theme.textMuted
             font.pixelSize: 11
             wrapMode: Text.WordWrap

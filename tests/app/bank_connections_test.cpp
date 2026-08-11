@@ -28,6 +28,7 @@
 
 import wt.tbank_auth;
 import wt.tbank_browser;
+import wt.alfa_browser;
 import wt.connectors;
 
 namespace {
@@ -256,7 +257,7 @@ TEST_CASE("new installations start with empty data and optional demo mode") {
     CHECK(controller.accounts()->rowCount() == 0);
 }
 
-TEST_CASE("T-Bank is built in while other retail banks remain adapter slots") {
+TEST_CASE("T-Bank and Alfa are built in while other retail banks remain adapter slots") {
     auto credentials = std::make_unique<MemoryCredentialBackend>();
     wealthtracker::app::AppController controller(std::move(credentials),
                                                   nullptr);
@@ -283,9 +284,21 @@ TEST_CASE("T-Bank is built in while other retail banks remain adapter slots") {
     CHECK(controller.connectionMessage().contains(
         QStringLiteral("C++-коннектор")));
 
+    CHECK(connectionValue(controller.bankConnections(),
+                          QStringLiteral("alfa-retail"),
+                          wealthtracker::app::ConnectionModel::AvailableRole)
+              .toBool());
+    CHECK(connectionValue(controller.bankConnections(),
+                          QStringLiteral("alfa-retail"),
+                          wealthtracker::app::ConnectionModel::MethodRole)
+              .toString()
+              .contains(QStringLiteral("встроенный коннектор")));
+    controller.describeBankConnection(QStringLiteral("alfa-retail"));
+    CHECK(controller.connectionMessage().contains(QStringLiteral("системный WebView")));
+    CHECK(controller.connectionMessage().contains(QStringLiteral("не читает её cookies")));
+
     for (const auto& connectorId :
-         {QStringLiteral("alfa-retail"), QStringLiteral("sber-retail"),
-          QStringLiteral("vtb-retail")}) {
+         {QStringLiteral("sber-retail"), QStringLiteral("vtb-retail")}) {
         CHECK_FALSE(connectionValue(controller.bankConnections(), connectorId,
                                     wealthtracker::app::ConnectionModel::
                                         AvailableRole)
@@ -309,7 +322,9 @@ TEST_CASE("T-Bank login UI embeds a coordinator-owned native WebView") {
     CHECK(source.contains(QByteArrayLiteral("page.app.beginTBankLogin()")));
     CHECK(source.contains(QByteArrayLiteral("WindowContainer {")));
     CHECK(source.contains(QByteArrayLiteral(
-        "window: page.app.tbankWebView")));
+        "page.app.tbankWebView")));
+    CHECK(source.contains(QByteArrayLiteral(
+        "window: connectionDialog.retailWebView")));
     CHECK_FALSE(source.contains(QByteArrayLiteral("sessionid")));
     CHECK_FALSE(source.contains(QByteArrayLiteral("runJavaScript(")));
     CHECK_FALSE(source.contains(QByteArrayLiteral("отдельном Chrome")));
@@ -339,6 +354,49 @@ TEST_CASE("T-Bank login UI embeds a coordinator-owned native WebView") {
     CHECK_FALSE(coordinator.contains(QByteArrayLiteral(
         "RedirectionTargetAttribute")));
     CHECK_FALSE(coordinator.contains(QByteArrayLiteral("cookieStore()")));
+}
+
+TEST_CASE("Alfa login UI projects bounded finance fields without reading cookies") {
+    using wealthtracker::app::alfa_financial_projection_script;
+    using wealthtracker::app::parse_alfa_financial_projection;
+
+    QFile page(QStringLiteral(
+        WEALTHTRACKER_SOURCE_DIR "/ui/qml/pages/ConnectionsPage.qml"));
+    REQUIRE(page.open(QIODevice::ReadOnly));
+    const auto source = page.readAll();
+    CHECK(source.contains(QByteArrayLiteral("page.app.beginAlfaLogin()")));
+    CHECK(source.contains(QByteArrayLiteral("page.app.alfaWebView")));
+    CHECK(source.contains(QByteArrayLiteral(
+        "Т-Банк и Альфа-Банк используют встроенные локальные коннекторы")));
+    CHECK_FALSE(source.contains(QByteArrayLiteral(
+        "Для Альфа-Банка, Сбера и ВТБ нужен")));
+
+    const auto script = alfa_financial_projection_script();
+    CHECK(script.contains(QStringLiteral("web.alfabank.ru")));
+    CHECK(script.contains(QStringLiteral("globalThis.initialState")));
+    CHECK(script.contains(QStringLiteral("balanceMinor")));
+    CHECK(script.contains(QStringLiteral("internalTransfer")));
+    CHECK_FALSE(script.contains(QStringLiteral("document.cookie"), Qt::CaseInsensitive));
+    CHECK_FALSE(script.contains(QStringLiteral("localStorage"), Qt::CaseInsensitive));
+    CHECK(script.contains(QStringLiteral("pageUrl.password !== ''")));
+    CHECK_FALSE(script.contains(QStringLiteral("password:"), Qt::CaseInsensitive));
+
+    const auto waiting = parse_alfa_financial_projection(
+        QStringLiteral(
+            R"({"version":1,"authenticated":false,"accounts":[],"transactions":[]})"),
+        QDateTime::currentDateTimeUtc());
+    REQUIRE(waiting);
+    CHECK_FALSE(waiting->authenticated);
+    CHECK_FALSE(waiting->batch.has_value());
+
+    const auto ready = parse_alfa_financial_projection(
+        QStringLiteral(
+            R"({"version":1,"authenticated":true,"accounts":[{"id":"account-1","name":"Альфа-Карта","kind":"checking","currency":"RUB","maskedNumber":"•••• 1234","balanceMinor":"10000"}],"transactions":[]})"),
+        QDateTime::currentDateTimeUtc());
+    REQUIRE(ready);
+    CHECK(ready->authenticated);
+    REQUIRE(ready->batch);
+    CHECK(ready->batch->accounts.size() == 1);
 }
 
 TEST_CASE("T-Bank API session identifiers reject unsafe values") {

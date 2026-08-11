@@ -145,6 +145,8 @@ target_sources(
             src/app/tbank_auth.cppm
             src/app/tbank_browser.cppm
             src/app/tbank_login.cppm
+            src/app/alfa_browser.cppm
+            src/app/alfa_login.cppm
     PRIVATE
         include/app/AppController.hpp
         include/app/FinanceModels.hpp

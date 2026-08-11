@@ -29,6 +29,7 @@
 #include <vector>
 
 import wt.connectors;
+import wt.alfa_login;
 import wt.bank_sync;
 import wt.platform;
 import wt.tbank_login;
@@ -420,6 +421,10 @@ public:
     QPointer<BankSyncCoordinator> tbank_sync_coordinator;
     bool tbank_sync_running = false;
     bool tbank_session_pending_validation = false;
+    std::unique_ptr<AlfaLoginCoordinator> alfa_login;
+    QTimer alfa_auto_update_timer;
+    QDateTime next_alfa_auto_update_at;
+    bool alfa_sync_running = false;
 };
 
 AppController::AppController(QObject* parent)
@@ -453,6 +458,69 @@ AppController::AppController(std::unique_ptr<CredentialBackend> credentials,
             failTBankLogin(std::move(error));
         },
         this);
+    private_->alfa_login = std::make_unique<AlfaLoginCoordinator>(
+        [this](QString status) {
+            alfa_login_status_ = std::move(status);
+            if (private_->alfa_sync_running) {
+                sync_status_ = alfa_login_status_;
+                emit syncStatusChanged();
+            }
+            emit alfaConnectionChanged();
+        },
+        [this](NormalizedBatch batch) {
+            const auto accountCount = batch.accounts.size();
+            const auto transactionCount = batch.transactions.size();
+            const auto warningCount = batch.warnings.size();
+            private_->alfa_sync_running = false;
+            alfa_login_active_ = false;
+            alfa_connected_ = true;
+            private_->bank_batches.insert(QStringLiteral("alfa-retail"), std::move(batch));
+            rebuildBankModels();
+            const auto completedAt = QDateTime::currentDateTimeUtc();
+            QSettings settings;
+            settings.setValue(QStringLiteral("alfa/connected"), true);
+            settings.setValue(QStringLiteral("alfa/autoUpdate"),
+                              settings.value(QStringLiteral("alfa/autoUpdate"), true));
+            settings.setValue(QStringLiteral("alfa/lastSyncAt"), completedAt.toString(Qt::ISODate));
+            alfa_login_status_ =
+                QStringLiteral("Подключено · счетов %1 · операций %2")
+                    .arg(accountCount)
+                    .arg(transactionCount);
+            sync_status_ = QStringLiteral("Альфа-Банк: счетов %1 · операций %2")
+                               .arg(accountCount)
+                               .arg(transactionCount);
+            if (warningCount > 0) {
+                sync_status_ +=
+                    QStringLiteral(" · пропущено записей %1").arg(warningCount);
+            }
+            scheduleAlfaAutoUpdateAfter(completedAt);
+            refreshBankConnections();
+            emit dashboardChanged();
+            emit syncStatusChanged();
+            emit alfaConnectionChanged();
+        },
+        [this](AlfaLoginFailure failure) {
+            private_->alfa_sync_running = false;
+            alfa_login_active_ = false;
+            if (failure.kind == AlfaLoginFailureKind::AuthenticationRequired) {
+                alfa_connected_ = false;
+                QSettings{}.setValue(QStringLiteral("alfa/connected"), false);
+                private_->bank_batches.remove(QStringLiteral("alfa-retail"));
+                if (!demo_mode_) {
+                    rebuildBankModels();
+                }
+            }
+            alfa_login_status_ = failure.message;
+            sync_status_ = QStringLiteral("Альфа-Банк: %1").arg(failure.message);
+            if (alfa_connected_) {
+                scheduleAlfaAutoUpdateAfter(QDateTime::currentDateTimeUtc());
+            }
+            refreshBankConnections();
+            emit dashboardChanged();
+            emit syncStatusChanged();
+            emit alfaConnectionChanged();
+        },
+        this);
     if (private_->credentials && private_->credentials->supported()) {
         for (const auto& connectorId : supportedConnectorIds()) {
             const auto configuration = bankConfiguration(connectorId);
@@ -484,6 +552,7 @@ AppController::AppController(std::unique_ptr<CredentialBackend> credentials,
     }
 
     QSettings settings;
+    alfa_connected_ = settings.value(QStringLiteral("alfa/connected"), false).toBool();
     const auto configuredBundle =
         settings.value(QStringLiteral("zenPlugin/bundlePath"))
             .toString();
@@ -563,13 +632,25 @@ AppController::AppController(std::unique_ptr<CredentialBackend> credentials,
                     (void)synchronizeTBank();
                 }
             });
+    private_->alfa_auto_update_timer.setSingleShot(true);
+    connect(&private_->alfa_auto_update_timer, &QTimer::timeout, this,
+            [this] {
+                if (alfaAutoUpdate() && alfa_connected_ &&
+                    !private_->alfa_sync_running && !alfa_login_active_) {
+                    (void)synchronizeAlfa();
+                }
+            });
     refreshZenPluginAutoUpdateSchedule();
     refreshTBankAutoUpdateSchedule();
+    refreshAlfaAutoUpdateSchedule();
     refreshBankConnections();
     import_status_ = QStringLiteral("Нет импортированных выписок");
     sync_status_ = QStringLiteral("Нет синхронизированных подключений");
     if (tbank_connected_) {
         QTimer::singleShot(0, this, [this] { (void)synchronizeTBank(); });
+    }
+    if (alfa_connected_) {
+        QTimer::singleShot(0, this, [this] { (void)synchronizeAlfa(); });
     }
 }
 
@@ -704,6 +785,46 @@ QWindow* AppController::tbankWebView() {
     return private_->tbank_login->existingWebView();
 }
 
+bool AppController::alfaConnected() const noexcept { return alfa_connected_; }
+
+bool AppController::alfaLoginActive() const noexcept { return alfa_login_active_; }
+
+bool AppController::alfaSyncRunning() const noexcept {
+    return private_->alfa_sync_running;
+}
+
+bool AppController::alfaAutoUpdate() const {
+    return QSettings{}.value(QStringLiteral("alfa/autoUpdate"), true).toBool();
+}
+
+QString AppController::alfaLastSync() const {
+    const auto lastSync = settingsDateTime(QStringLiteral("alfa/lastSyncAt"));
+    return lastSync ? formatSyncDateTime(*lastSync)
+                    : QStringLiteral("Нет успешного обновления");
+}
+
+QString AppController::alfaNextSync() const {
+    if (!alfaAutoUpdate()) {
+        return QStringLiteral("Выключено");
+    }
+    if (!alfa_connected_) {
+        return QStringLiteral("После подключения");
+    }
+    return private_->next_alfa_auto_update_at.isValid()
+        ? formatSyncDateTime(private_->next_alfa_auto_update_at)
+        : QStringLiteral("После успешного обновления");
+}
+
+QString AppController::alfaLoginStatus() const { return alfa_login_status_; }
+
+QUrl AppController::alfaLoginUrl() const {
+    return QUrl{QStringLiteral("https://web.alfabank.ru/")};
+}
+
+QWindow* AppController::alfaWebView() {
+    return private_->alfa_login->existingWebView();
+}
+
 void AppController::refreshBankConnections() {
     const bool externalBundleSelected = private_->zen_descriptor.has_value();
     const auto localZenStatus = [this, externalBundleSelected] {
@@ -737,11 +858,18 @@ void AppController::refreshBankConnections() {
          true},
         {QStringLiteral("alfa-retail"),
          QStringLiteral("Альфа-Банк"),
-         QStringLiteral("Карты, счета и операции"),
-         QStringLiteral("Телефон + код · локальный адаптер"),
-         QStringLiteral("Нужен адаптер"),
-         false,
-         false},
+         QStringLiteral("Карты, счета и последние операции"),
+         QStringLiteral("Вход внутри приложения · встроенный коннектор"),
+         alfa_login_active_
+             ? QStringLiteral("Вход в банк")
+             : private_->alfa_sync_running
+                 ? QStringLiteral("Синхронизация")
+                 : alfa_connected_
+                     ? alfaAutoUpdate() ? QStringLiteral("Автообновление")
+                                        : QStringLiteral("Подключено")
+                     : QStringLiteral("Требуется вход"),
+         alfa_connected_,
+         true},
         {QStringLiteral("tbank-business"),
          QStringLiteral("Т-Банк Бизнес"),
          QStringLiteral("Счета и выписки"),
@@ -868,6 +996,34 @@ void AppController::scheduleTBankAutoUpdateAfter(const QDateTime& from) {
     private_->tbank_auto_update_timer.start(static_cast<int>(milliseconds));
 }
 
+void AppController::refreshAlfaAutoUpdateSchedule() {
+    private_->alfa_auto_update_timer.stop();
+    private_->next_alfa_auto_update_at = {};
+    if (!alfaAutoUpdate() || !alfa_connected_) {
+        return;
+    }
+    if (const auto lastSync = settingsDateTime(QStringLiteral("alfa/lastSyncAt"))) {
+        scheduleAlfaAutoUpdateAfter(*lastSync);
+    }
+}
+
+void AppController::scheduleAlfaAutoUpdateAfter(const QDateTime& from) {
+    if (!alfaAutoUpdate() || !alfa_connected_) {
+        return;
+    }
+    const auto now = QDateTime::currentDateTimeUtc();
+    auto next = from.toUTC().addSecs(zenAutoUpdateIntervalSeconds);
+    auto secondsUntilNext = now.secsTo(next);
+    if (secondsUntilNext < 10) {
+        secondsUntilNext = 10;
+        next = now.addSecs(secondsUntilNext);
+    }
+    private_->next_alfa_auto_update_at = next;
+    const auto milliseconds = std::min<qint64>(
+        secondsUntilNext * 1000LL, std::numeric_limits<int>::max());
+    private_->alfa_auto_update_timer.start(static_cast<int>(milliseconds));
+}
+
 void AppController::loadDemoData() {
     demo_mode_ = true;
     accounts_.replace({
@@ -961,6 +1117,13 @@ void AppController::clearDemoData() {
 void AppController::lock() {
     if (tbank_login_active_) {
         cancelTBankLogin();
+    }
+    if (alfa_login_active_ || private_->alfa_sync_running) {
+        private_->alfa_login->cancel();
+        alfa_login_active_ = false;
+        private_->alfa_sync_running = false;
+        alfa_login_status_ = QStringLiteral("Вход или синхронизация остановлены экраном приватности");
+        emit alfaConnectionChanged();
     }
     if (zen_plugin_running_) {
         cancelZenPlugin();
@@ -1990,7 +2153,8 @@ bool AppController::prepareTBankConnection() {
         emit tbankConnectionChanged();
         return false;
     };
-    if (zen_plugin_running_ || private_->tbank_sync_running) {
+    if (zen_plugin_running_ || private_->tbank_sync_running || alfa_login_active_ ||
+        private_->alfa_sync_running) {
         return reportFailure(QStringLiteral(
             "Сначала завершите текущую синхронизацию"));
     }
@@ -2264,6 +2428,104 @@ void AppController::disconnectTBank() {
     emit tbankConnectionChanged();
 }
 
+bool AppController::prepareAlfaConnection() {
+    const auto reportFailure = [this](QString message) {
+        sync_status_ = std::move(message);
+        alfa_login_status_ = sync_status_;
+        emit syncStatusChanged();
+        emit alfaConnectionChanged();
+        return false;
+    };
+    if (zen_plugin_running_ || private_->tbank_sync_running || tbank_login_active_ ||
+        private_->alfa_sync_running) {
+        return reportFailure(QStringLiteral("Сначала завершите текущую синхронизацию"));
+    }
+    refreshBankConnections();
+    return true;
+}
+
+void AppController::beginAlfaLogin() {
+    if (!prepareAlfaConnection()) {
+        return;
+    }
+    alfa_login_active_ = true;
+    private_->alfa_login->startLogin(alfaLoginUrl());
+    refreshBankConnections();
+    emit alfaConnectionChanged();
+}
+
+void AppController::reloadAlfaLoginPage() {
+    if (alfa_login_active_) {
+        private_->alfa_login->reload();
+    }
+}
+
+void AppController::cancelAlfaLogin() {
+    if (!alfa_login_active_) {
+        return;
+    }
+    private_->alfa_login->cancel();
+    alfa_login_active_ = false;
+    alfa_login_status_ = QStringLiteral("Вход отменён");
+    refreshBankConnections();
+    emit alfaConnectionChanged();
+}
+
+bool AppController::synchronizeAlfa() {
+    if (private_->alfa_sync_running || alfa_login_active_) {
+        sync_status_ = QStringLiteral("Альфа-Банк уже выполняет вход или синхронизацию");
+        emit syncStatusChanged();
+        return false;
+    }
+    if (!alfa_connected_) {
+        sync_status_ = QStringLiteral("Сначала войдите в Альфа-Банк");
+        emit syncStatusChanged();
+        return false;
+    }
+    if (zen_plugin_running_ || private_->tbank_sync_running || tbank_login_active_) {
+        sync_status_ = QStringLiteral("Сначала завершите текущую синхронизацию");
+        emit syncStatusChanged();
+        return false;
+    }
+
+    private_->alfa_auto_update_timer.stop();
+    private_->alfa_sync_running = true;
+    alfa_login_status_ = QStringLiteral("Загружаем счета и операции…");
+    sync_status_ = QStringLiteral("Альфа-Банк: получаем счета…");
+    private_->alfa_login->synchronize(QUrl{QStringLiteral("https://web.alfabank.ru/dashboard")});
+    refreshBankConnections();
+    emit syncStatusChanged();
+    emit alfaConnectionChanged();
+    return true;
+}
+
+void AppController::setAlfaAutoUpdate(const bool enabled) {
+    QSettings{}.setValue(QStringLiteral("alfa/autoUpdate"), enabled);
+    refreshAlfaAutoUpdateSchedule();
+    refreshBankConnections();
+    emit alfaConnectionChanged();
+}
+
+void AppController::disconnectAlfa() {
+    private_->alfa_login->disconnectBank();
+    private_->alfa_sync_running = false;
+    alfa_connected_ = false;
+    alfa_login_active_ = false;
+    private_->alfa_auto_update_timer.stop();
+    private_->next_alfa_auto_update_at = {};
+    QSettings{}.remove(QStringLiteral("alfa"));
+    private_->bank_batches.remove(QStringLiteral("alfa-retail"));
+    if (!demo_mode_) {
+        rebuildBankModels();
+    }
+    alfa_login_status_ = QStringLiteral("Альфа-Банк отключён");
+    sync_status_ = alfa_login_status_;
+    refreshBankConnections();
+    emit dashboardChanged();
+    emit syncStatusChanged();
+    emit alfaConnectionChanged();
+}
+
 void AppController::describeBankConnection(const QString& connectorId) {
     if (connectorId == QStringLiteral("zenplugins-local")) {
         connection_message_ = QStringLiteral(
@@ -2282,6 +2544,15 @@ void AppController::describeBankConnection(const QString& connectorId) {
             "его в системном хранилище только после подтверждения доступа "
             "CLIENT. Cookies удаляются после входа или отмены. Встроенный "
             "C++-коннектор выполняет только запросы счетов и операций.");
+    } else if (connectorId == QStringLiteral("alfa-retail")) {
+        connection_message_ = QStringLiteral(
+            "WealthTracker показывает официальный вход Альфа-Банка внутри "
+            "приложения через системный WebView. Телефон, пароль и код "
+            "обрабатывает только страница банка. Альфа-Онлайн использует "
+            "браузерную сессию: приложение не читает её cookies, заголовки или "
+            "хранилище и получает из страницы только ограниченный снимок счетов, "
+            "остатков и операций. Сессия остаётся в защищённом хранилище "
+            "системного WebView для автообновления и удаляется при отключении.");
     } else if (connectorId == QStringLiteral("alfa-api")) {
         connection_message_ = QStringLiteral(
             "Нужен access token приложения Альфа-Банка со scope для счетов и "

@@ -73,6 +73,15 @@ class AppController final : public QObject {
     Q_PROPERTY(QString tbankLoginStatus READ tbankLoginStatus NOTIFY tbankConnectionChanged)
     Q_PROPERTY(QUrl tbankLoginUrl READ tbankLoginUrl CONSTANT)
     Q_PROPERTY(QWindow* tbankWebView READ tbankWebView NOTIFY tbankConnectionChanged)
+    Q_PROPERTY(bool alfaConnected READ alfaConnected NOTIFY alfaConnectionChanged)
+    Q_PROPERTY(bool alfaLoginActive READ alfaLoginActive NOTIFY alfaConnectionChanged)
+    Q_PROPERTY(bool alfaSyncRunning READ alfaSyncRunning NOTIFY alfaConnectionChanged)
+    Q_PROPERTY(bool alfaAutoUpdate READ alfaAutoUpdate NOTIFY alfaConnectionChanged)
+    Q_PROPERTY(QString alfaLastSync READ alfaLastSync NOTIFY alfaConnectionChanged)
+    Q_PROPERTY(QString alfaNextSync READ alfaNextSync NOTIFY alfaConnectionChanged)
+    Q_PROPERTY(QString alfaLoginStatus READ alfaLoginStatus NOTIFY alfaConnectionChanged)
+    Q_PROPERTY(QUrl alfaLoginUrl READ alfaLoginUrl CONSTANT)
+    Q_PROPERTY(QWindow* alfaWebView READ alfaWebView NOTIFY alfaConnectionChanged)
 
 public:
     explicit AppController(QObject* parent = nullptr);
@@ -119,6 +128,15 @@ public:
     [[nodiscard]] QString tbankLoginStatus() const;
     [[nodiscard]] QUrl tbankLoginUrl() const;
     [[nodiscard]] QWindow* tbankWebView();
+    [[nodiscard]] bool alfaConnected() const noexcept;
+    [[nodiscard]] bool alfaLoginActive() const noexcept;
+    [[nodiscard]] bool alfaSyncRunning() const noexcept;
+    [[nodiscard]] bool alfaAutoUpdate() const;
+    [[nodiscard]] QString alfaLastSync() const;
+    [[nodiscard]] QString alfaNextSync() const;
+    [[nodiscard]] QString alfaLoginStatus() const;
+    [[nodiscard]] QUrl alfaLoginUrl() const;
+    [[nodiscard]] QWindow* alfaWebView();
 
     Q_INVOKABLE void loadDemoData();
     Q_INVOKABLE void clearDemoData();
@@ -147,6 +165,13 @@ public:
     Q_INVOKABLE bool synchronizeTBank();
     Q_INVOKABLE void setTBankAutoUpdate(bool enabled);
     Q_INVOKABLE void disconnectTBank();
+    Q_INVOKABLE bool prepareAlfaConnection();
+    Q_INVOKABLE void beginAlfaLogin();
+    Q_INVOKABLE void reloadAlfaLoginPage();
+    Q_INVOKABLE void cancelAlfaLogin();
+    Q_INVOKABLE bool synchronizeAlfa();
+    Q_INVOKABLE void setAlfaAutoUpdate(bool enabled);
+    Q_INVOKABLE void disconnectAlfa();
 
 signals:
     void dashboardChanged();
@@ -158,6 +183,7 @@ signals:
     void connectionMessageChanged();
     void zenPluginChanged();
     void tbankConnectionChanged();
+    void alfaConnectionChanged();
 
 private:
     AccountModel accounts_;
@@ -179,6 +205,9 @@ private:
     bool tbank_connected_ = false;
     bool tbank_login_active_ = false;
     QString tbank_login_status_;
+    bool alfa_connected_ = false;
+    bool alfa_login_active_ = false;
+    QString alfa_login_status_;
     QString live_net_worth_ = QStringLiteral("0 ₽");
     QString live_monthly_income_ = QStringLiteral("0 ₽");
     QString live_monthly_spending_ = QStringLiteral("0 ₽");
@@ -196,6 +225,8 @@ private:
     void scheduleTBankAutoUpdateAfter(const QDateTime& from);
     void failTBankLogin(QString message);
     void acceptTBankSession(QByteArray session);
+    void refreshAlfaAutoUpdateSchedule();
+    void scheduleAlfaAutoUpdateAfter(const QDateTime& from);
     void rebuildBankModels();
 };
 
