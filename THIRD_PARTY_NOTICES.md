@@ -21,6 +21,12 @@ session behavior documented in `jfk9w-go/tbank-api`, which is MIT-licensed:
 <https://github.com/jfk9w-go/tbank-api>. WealthTracker does not embed that Go
 library; the notice records protocol provenance and its compatible license.
 
+Retail Alfa-Bank protocol research included Alfa's public web login and the
+historical `ab-money-alfabank` provider in
+<https://github.com/dukei/any-balance-providers>. WealthTracker does not copy,
+execute, or distribute that provider; the connector is an independent C++/Qt
+implementation and the reference is recorded only as protocol provenance.
+
 Node.js is an optional user-installed runtime for external local plugins only;
 it is not included in WealthTracker packages. ZenPlugins source and generated
 bundles are GPL-3.0, are not included in this repository or release packages,

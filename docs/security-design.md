@@ -2,9 +2,10 @@
 
 ## Assets and trust
 
-The sensitive assets are bank tokens, the retail T-Bank session, external
-plugin state, and normalized financial records. The local operating system,
-the running application binary, and each bank's own login page are trusted.
+The sensitive assets are bank tokens, the retail T-Bank API session, the Alfa
+Online browser session, external plugin state, and normalized financial
+records. The local operating system, the running application binary, and each
+bank's own login page are trusted.
 User-selected JavaScript plugins are trusted only when the user has reviewed
 them; WealthTracker cannot sandbox them.
 
@@ -12,11 +13,13 @@ them; WealthTracker cannot sandbox them.
 
 macOS uses Keychain items restricted to the unlocked device. Windows uses
 Credential Manager. Linux currently has no supported secure credential backend,
-so live connections fail closed there.
+so token and API-session connections that require it fail closed there.
 
 Credentials are loaded for request construction and temporary byte arrays are
 cleared immediately afterward. They are not exposed as QML properties or
 included in status text. Removing a connection deletes its credential entry.
+Alfa Online is different: the system WebView owns its browser cookie store and
+WealthTracker never extracts or copies cookie values into application memory.
 
 The desktop controller currently retains normalized financial data only in
 memory. The SQLCipher and Argon2id components are independently tested building
@@ -51,6 +54,26 @@ window and textual status.
 The synchronization connector separately permits only account and operation
 reads at `www.tbank.ru`. The API is undocumented, so parse or authentication
 changes fail closed.
+
+## Retail Alfa-Bank login
+
+The official Alfa Online phone/SMS page runs inside a separate coordinator-owned
+system WebView. File access and persistent local storage are disabled. Standard
+operating-system TLS and browser-cookie policy remain in force; the application
+does not install certificate exceptions or inspect cookie contents.
+
+A fixed expression checks the exact `https://web.alfabank.ru` origin and reads
+only known page-state objects. It projects a versioned allowlist of financial
+fields rather than returning raw page state. C++ enforces an 8 MiB response
+limit, 256-account and 20,000-operation limits, exact integer amounts, bounded
+text, valid currencies and dates, and account ownership for each operation.
+QML receives only the native window and textual status.
+
+The browser session remains in the operating-system WebView for automatic
+dashboard refreshes and is cleared when the connection is removed. A redirect
+to `private.auth.alfabank.ru` during synchronization invalidates the connection.
+The page-state schema is undocumented, so missing or changed data fails closed
+without switching to direct password requests, cookie export, or write calls.
 
 ## External plugin process
 

@@ -1,7 +1,9 @@
 # Bank connections
 
-All built-in connections are read-only. Tokens and reusable sessions use a
-separate entry in macOS Keychain or Windows Credential Manager. Synchronized
+All built-in connectors expose financial data to WealthTracker as read-only.
+API tokens and the retail T-Bank session use separate entries in macOS Keychain
+or Windows Credential Manager. Alfa Online keeps its browser session inside the
+operating-system WebView; WealthTracker does not extract it. Synchronized
 financial records currently remain in memory and disappear when the app exits.
 
 ## Support matrix
@@ -9,12 +11,13 @@ financial records currently remain in memory and disappear when the app exits.
 | Connection | Accounts | Balances | Operations | Authentication |
 | --- | --- | --- | --- | --- |
 | Retail T-Bank | Yes | Yes | Yes | Embedded official login |
+| Retail Alfa-Bank | Yes | Yes | Recent snapshot | Embedded official login |
 | Alfa-Bank B2C API | Yes | Yes | Yes | Issued integration token |
 | T-Bank Business | Yes | Yes | Yes | T-API token |
 | Modulbank | Yes | Yes | Yes | API token or public sandbox token |
 | T-Invest | Access check | No | No | User-created read-only token |
 | External ZenPlugins bundle | Plugin-dependent | Plugin-dependent | Plugin-dependent | Plugin-defined |
-| Retail Alfa-Bank, Sber, VTB | No | No | No | Adapter not implemented |
+| Retail Sber, VTB | No | No | No | Adapter not implemented |
 
 Bank operations are normalized locally. Dashboard totals include RUB values
 only; foreign-currency accounts stay visible without an implicit conversion.
@@ -53,6 +56,44 @@ These retail endpoints are undocumented and unsupported by T-Bank as a public
 API. A bank-side change can break login or synchronization. WealthTracker does
 not fall back to certificate bypasses, cookie export, direct password APIs, or
 write endpoints.
+
+## Retail Alfa-Bank
+
+Open **Подключения → Альфа-Банк → Войти** and complete the official Alfa Online
+phone/SMS page inside the dialog. The page owns the phone number, password when
+requested, one-time code, TLS connection, and browser cookies. QML and C++ do
+not receive those values.
+
+Alfa Online does not expose a public retail account API comparable to its
+partner B2C product. The built-in connector therefore keeps the authenticated
+page in the operating-system WebView and runs a fixed projection expression.
+The expression reads only known in-page state objects and returns these bounded
+fields:
+
+- at most 256 account identifiers, names, types, currencies, masked numbers,
+  and balances;
+- at most 20,000 recent operations with account, date, amount, description,
+  merchant, category, MCC, and internal-transfer state;
+- a version and authenticated flag.
+
+It does not read cookie values, authorization headers, form fields, request
+bodies, local storage, or arbitrary DOM content. C++ limits the projection to
+8 MiB, validates exact integer minor units and ISO dates, rejects malformed
+accounts, and skips malformed or duplicate operations with a visible warning
+count. Internal transfers do not contribute to income, spending, savings rate,
+or category totals.
+
+The system WebView retains Alfa's browser session so the app can reload the
+dashboard every six hours while auto-update is enabled. Disconnecting clears
+that browser session. If Alfa redirects a refresh back to its authentication
+host, the connection is marked expired and its in-memory rows are removed.
+
+This path uses undocumented Alfa Online page state. It may provide fewer
+operations than a full statement and can stop working after a frontend change.
+WealthTracker does not bypass certificate validation, submit direct credential
+requests, extract cookies, replay private headers, or call write endpoints. The
+separate **Альфа-Банк API** row remains the supported option for users who
+already have an issued B2C integration token.
 
 ## Token-based APIs
 
@@ -108,7 +149,8 @@ repository or distributed with WealthTracker.
 
 ## Unsupported retail banks
 
-Retail Alfa-Bank Russia, Sber, and VTB rows describe planned phone-and-code
-adapters. They are deliberately unavailable until a maintainable, reviewable
-implementation exists. A similarly named `altabanka-rs` plugin targets Alta
-Banka Serbia and is not an Alfa-Bank Russia connector.
+Retail Sber and VTB rows describe planned phone-and-code adapters. They remain
+unavailable until a maintainable, reviewable implementation exists. ZenPlugins
+does not currently contain a Russian Alfa-Bank retail connector; similarly
+named `alfabank-by`, `alfabank-ua`, and `altabanka-rs` plugins target other
+countries or banks.

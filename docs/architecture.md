@@ -11,13 +11,14 @@ Headers are retained only where Qt `moc` or a platform ABI requires them.
 - `platform`: secure buffers, key wrapping, and operating-system credentials.
 - `connectors`: file parsing, network policy, bank clients, normalization, and
   deduplication.
-- `app`: synchronization coordinators, the external-plugin runner, T-Bank
-  login lifecycle, models, and QML commands.
+- `app`: synchronization coordinators, the external-plugin runner, retail-bank
+  WebView lifecycles, models, and QML commands.
 - `ui`: QML pages and reusable visual components.
 
 The QML root receives one explicit `app` property. It has no database handle,
-credential object, token, or T-Bank session value. List delegates declare their
-roles explicitly so runtime binding errors are caught by QML lint.
+credential object, token, T-Bank session value, or Alfa cookie value. List
+delegates declare their roles explicitly so runtime binding errors are caught
+by QML lint.
 
 ## Runtime data flow
 
@@ -34,6 +35,8 @@ Each connector has at most one coordinator. Removing a connection or enabling
 the privacy screen aborts its replies and discards pending work. Retail T-Bank
 has separate login and synchronization coordinators so WebView callbacks,
 network replies, timers, cancellation, and session erasure have one owner.
+Retail Alfa-Bank has one WebView coordinator for both login and snapshot
+refresh, so its browser-owned session never crosses into the C++ network stack.
 
 The current desktop controller does not persist normalized financial batches.
 The `storage` module is tested independently and is intended for that later
@@ -56,6 +59,22 @@ preview but does not commit the result.
 
 The retail API is undocumented. A schema or authentication change fails closed
 without expanding the permitted host or introducing write requests.
+
+## Retail Alfa-Bank
+
+1. A coordinator opens the official Alfa Online page in a native Qt WebView.
+2. The bank page owns phone/SMS authentication and its browser session.
+3. A fixed expression checks the exact Alfa Online origin and converts known
+   page state into a small versioned account/balance/operation projection.
+4. `AlfaRetailClient` validates bounds, exact amounts, identifiers, dates,
+   currencies, duplicates, and account ownership before producing a
+   `NormalizedBatch`.
+5. The WebView session stays browser-owned for periodic dashboard reloads and
+   is deleted when the user disconnects the bank.
+
+No cookie, password, OTP, authorization header, or raw page-state object is
+passed through QML or persisted by WealthTracker. The projection is an
+undocumented compatibility boundary and fails closed when its schema changes.
 
 ## External JavaScript plugins
 

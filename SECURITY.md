@@ -16,12 +16,15 @@ material only after agreeing on a secure channel and retention period.
 
 - Built-in connectors use exact HTTPS origins, read-only methods, manual
   redirects, response limits, and validated normalized output.
-- Official tokens and the retail T-Bank session are stored in macOS Keychain or
-  Windows Credential Manager. Temporary byte arrays are cleared after use.
+- Official tokens and the retail T-Bank API session are stored in macOS Keychain
+  or Windows Credential Manager. Temporary byte arrays are cleared after use.
 - T-Bank credentials and MFA stay inside the operating-system WebView. QML
   receives only its native window, never the extracted session projection.
 - T-Bank browser storage is restricted, cookies are deleted around each login,
   and the accepted session is validated before the connection becomes active.
+- Alfa-Bank credentials and MFA stay inside the official page. Its browser
+  session remains owned by the system WebView; the app receives only a bounded,
+  versioned financial projection and clears the session on disconnect.
 - Hiding financial data cancels active bank login, synchronization, and plugin
   processes. It is a privacy screen, not an encrypted-memory lock.
 - Telemetry and remote crash reporting are not included.
@@ -46,5 +49,5 @@ with WealthTracker.
 
 The application cannot defend against an administrator, malware running as the
 same user, a compromised bank page, screenshots, or a modified local binary.
-If a device or T-Bank session may be compromised, revoke sessions through the
+If a device or bank session may be compromised, revoke sessions through the
 bank and rotate affected credentials.
