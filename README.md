@@ -34,7 +34,11 @@ browser-session based: WealthTracker does not read cookie values, headers,
 login fields, or web storage. A fixed page expression projects only bounded
 account, balance, and recent-operation fields into C++, and the system WebView
 retains the browser session for six-hour refreshes while auto-update is enabled.
-This interface is undocumented and can break after a bank-side change.
+This interface is undocumented and can break after a bank-side change. Alfa
+Online uses Russian TLS certificates; on systems that do not trust the Russian
+Trusted Root CA, the connection dialog links to
+[Alfa-Bank's official installation instructions](https://alfabank.ru/cert/).
+WealthTracker never installs a root certificate or disables TLS verification.
 
 External JavaScript plugins are not sandboxed. They run as the current user and
 can access local files and the network. WealthTracker does not distribute

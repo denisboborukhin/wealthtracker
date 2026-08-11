@@ -64,6 +64,16 @@ phone/SMS page inside the dialog. The page owns the phone number, password when
 requested, one-time code, TLS connection, and browser cookies. QML and C++ do
 not receive those values.
 
+Alfa Online uses certificates rooted at the Russian Trusted Root CA. A default
+macOS installation may not trust that root, in which case the WebView blocks the
+page before login. WealthTracker identifies the certificate failure and shows
+**Как установить сертификаты**, which opens
+[Alfa-Bank's official instructions](https://alfabank.ru/cert/). Installing a
+system trust anchor is an explicit operating-system security decision: the app
+does not download or install the certificate, accept the failed certificate,
+or disable TLS checks. After following the official instructions, restart
+WealthTracker and retry the connection.
+
 Alfa Online does not expose a public retail account API comparable to its
 partner B2C product. The built-in connector therefore keeps the authenticated
 page in the operating-system WebView and runs a fixed projection expression.

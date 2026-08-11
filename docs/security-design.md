@@ -62,6 +62,14 @@ system WebView. File access and persistent local storage are disabled. Standard
 operating-system TLS and browser-cookie policy remain in force; the application
 does not install certificate exceptions or inspect cookie contents.
 
+Alfa Online's current chain is rooted at the Russian Trusted Root CA, which may
+be absent from the operating-system trust store. A certificate-related WebView
+failure remains blocking. The UI exposes only a user-triggered link to
+`https://alfabank.ru/cert/`, the bank's official installation guidance; it does
+not fetch a root certificate, mutate a trust store, or accept an invalid chain.
+Failure text is derived from a fixed classification and an allowlisted hostname,
+never from a complete URL or raw renderer error that could contain login data.
+
 A fixed expression checks the exact `https://web.alfabank.ru` origin and reads
 only known page-state objects. It projects a versioned allowlist of financial
 fields rather than returning raw page state. C++ enforces an 8 MiB response
