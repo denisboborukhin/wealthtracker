@@ -42,6 +42,13 @@ disabled for these C++ requests. The session is removed if initial validation
 or later authentication fails. Successful connections refresh every six hours
 while the application is running when auto-update is enabled.
 
+Account histories are requested serially to avoid overlapping requests on the
+bank connection. `NO_DATA_FOUND` means an empty history, not a failed account.
+Malformed individual operations are skipped with a visible count while valid
+accounts, balances, and operations are retained. Operations marked `isInner`
+by T-Bank appear under **Внутренний перевод** and do not contribute to income,
+spending, savings rate, or spending-category totals.
+
 These retail endpoints are undocumented and unsupported by T-Bank as a public
 API. A bank-side change can break login or synchronization. WealthTracker does
 not fall back to certificate bypasses, cookie export, direct password APIs, or

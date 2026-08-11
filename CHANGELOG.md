@@ -13,6 +13,12 @@
 
 ### Changed
 
+- Retail T-Bank history requests are serialized, bounded by a transfer timeout,
+  and no longer read failed TLS replies.
+- Internal T-Bank transfers use a separate category and are excluded from
+  income, spending, savings-rate, and spending-category totals.
+- A malformed operation is reported and skipped without discarding valid
+  account balances and other operations from the same synchronization.
 - Split bank synchronization, T-Bank login, and external-plugin execution into
   dedicated C++23 modules with bounded lifecycle ownership.
 - Limited synchronization concurrency, pagination, responses, records, and
