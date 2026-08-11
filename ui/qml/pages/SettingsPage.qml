@@ -1,8 +1,13 @@
+pragma ComponentBehavior: Bound
+
 import QtQuick
 import QtQuick.Layouts
 import "../components"
 
 Item {
+    id: page
+    required property var app
+
     ColumnLayout {
         anchors.fill: parent
         anchors.margins: Theme.pageMargin
@@ -18,7 +23,7 @@ Item {
                 font.weight: Font.DemiBold
             }
             Text {
-                text: qsTr("Отображение, безопасность и локальное поведение")
+                text: qsTr("Локальное поведение приложения")
                 color: Theme.textMuted
                 font.pixelSize: 12
             }
@@ -26,7 +31,7 @@ Item {
 
         SectionCard {
             Layout.fillWidth: true
-            Layout.preferredHeight: 300
+            Layout.preferredHeight: 142
 
             ColumnLayout {
                 anchors.fill: parent
@@ -34,67 +39,10 @@ Item {
                 spacing: 20
 
                 Text {
-                    text: qsTr("Основные")
+                    text: qsTr("Данные для знакомства")
                     color: Theme.text
                     font.pixelSize: 14
                     font.weight: Font.DemiBold
-                }
-
-                GridLayout {
-                    Layout.fillWidth: true
-                    columns: 2
-                    columnSpacing: 24
-                    rowSpacing: 20
-
-                    ColumnLayout {
-                        Layout.fillWidth: true
-                        spacing: 7
-                        Text {
-                            text: qsTr("Основная валюта")
-                            color: Theme.text
-                            font.pixelSize: 12
-                            font.weight: Font.Medium
-                        }
-                        MinimalComboBox {
-                            Layout.fillWidth: true
-                            Layout.preferredHeight: 40
-                            model: ["RUB — ₽", "CNY — ¥", "USD — $", "EUR — €"]
-                        }
-                    }
-
-                    ColumnLayout {
-                        Layout.fillWidth: true
-                        spacing: 7
-                        Text {
-                            text: qsTr("Автоблокировка")
-                            color: Theme.text
-                            font.pixelSize: 12
-                            font.weight: Font.Medium
-                        }
-                        MinimalComboBox {
-                            Layout.fillWidth: true
-                            Layout.preferredHeight: 40
-                            model: [qsTr("5 минут"), qsTr("15 минут"), qsTr("30 минут"), qsTr("Никогда")]
-                            currentIndex: 1
-                        }
-                    }
-                }
-
-                Rectangle {
-                    Layout.fillWidth: true
-                    Layout.preferredHeight: 1
-                    color: Theme.border
-                }
-
-                RowLayout {
-                    Layout.fillWidth: true
-                    ColumnLayout {
-                        Layout.fillWidth: true
-                        spacing: 3
-                        Text { text: qsTr("Синхронизация при запуске"); color: Theme.text; font.pixelSize: 12; font.weight: Font.Medium }
-                        Text { text: qsTr("Запускать только подключённые read-only коннекторы"); color: Theme.textMuted; font.pixelSize: 11 }
-                    }
-                    MinimalSwitch { checked: false }
                 }
 
                 RowLayout {
@@ -106,8 +54,8 @@ Item {
                         Text { text: qsTr("Показывать пример данных вместо пустого состояния"); color: Theme.textMuted; font.pixelSize: 11 }
                     }
                     MinimalSwitch {
-                        checked: App.demoMode
-                        onToggled: checked ? App.loadDemoData() : App.clearDemoData()
+                        checked: page.app.demoMode
+                        onToggled: checked ? page.app.loadDemoData() : page.app.clearDemoData()
                     }
                 }
             }
@@ -122,12 +70,12 @@ Item {
                 ColumnLayout {
                     Layout.fillWidth: true
                     spacing: 3
-                    Text { text: qsTr("Заблокировать хранилище"); color: Theme.text; font.pixelSize: 13; font.weight: Font.Medium }
-                    Text { text: qsTr("Потребуется системный ключ для повторного доступа"); color: Theme.textMuted; font.pixelSize: 11 }
+                    Text { text: qsTr("Скрыть финансовые данные"); color: Theme.text; font.pixelSize: 13; font.weight: Font.Medium }
+                    Text { text: qsTr("Закрывает вход в банк и останавливает активные синхронизации"); color: Theme.textMuted; font.pixelSize: 11 }
                 }
                 ActionButton {
-                    text: qsTr("Заблокировать")
-                    onClicked: App.lock()
+                    text: qsTr("Скрыть")
+                    onClicked: page.app.lock()
                 }
             }
         }

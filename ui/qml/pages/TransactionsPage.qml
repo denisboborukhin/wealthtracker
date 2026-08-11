@@ -1,9 +1,14 @@
+pragma ComponentBehavior: Bound
+
 import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
 import "../components"
 
 Item {
+    id: page
+    required property var app
+
     ColumnLayout {
         anchors.fill: parent
         anchors.margins: Theme.pageMargin
@@ -82,9 +87,17 @@ Item {
                     Layout.fillHeight: true
                     visible: count > 0
                     clip: true
-                    model: App.transactions
+                    model: page.app.transactions
 
                     delegate: Item {
+                        id: transactionRow
+                        required property string date
+                        required property string title
+                        required property string subtitle
+                        required property string category
+                        required property string amount
+                        required property bool income
+
                         width: ListView.view.width
                         height: 58
 
@@ -97,7 +110,7 @@ Item {
                                 Layout.minimumWidth: 95
                                 Layout.preferredWidth: 95
                                 Layout.maximumWidth: 95
-                                text: model.date
+                                text: transactionRow.date
                                 color: Theme.textMuted
                                 font.pixelSize: 11
                             }
@@ -107,7 +120,7 @@ Item {
                                 spacing: 2
                                 Text {
                                     Layout.fillWidth: true
-                                    text: model.title
+                                    text: transactionRow.title
                                     color: Theme.text
                                     font.pixelSize: 13
                                     font.weight: Font.Medium
@@ -115,7 +128,7 @@ Item {
                                 }
                                 Text {
                                     Layout.fillWidth: true
-                                    text: model.subtitle
+                                    text: transactionRow.subtitle
                                     color: Theme.textMuted
                                     font.pixelSize: 10
                                     elide: Text.ElideRight
@@ -125,7 +138,7 @@ Item {
                                 Layout.minimumWidth: 170
                                 Layout.preferredWidth: 170
                                 Layout.maximumWidth: 170
-                                text: model.category
+                                text: transactionRow.category
                                 color: Theme.textMuted
                                 font.pixelSize: 11
                                 elide: Text.ElideRight
@@ -135,8 +148,8 @@ Item {
                                 Layout.preferredWidth: 115
                                 Layout.maximumWidth: 115
                                 horizontalAlignment: Text.AlignRight
-                                text: model.amount
-                                color: model.income ? Theme.positive : Theme.text
+                                text: transactionRow.amount
+                                color: transactionRow.income ? Theme.positive : Theme.text
                                 font.pixelSize: 12
                                 font.weight: Font.Medium
                             }

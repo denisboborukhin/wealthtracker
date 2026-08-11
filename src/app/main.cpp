@@ -3,10 +3,10 @@
 #include <QGuiApplication>
 #include <QImage>
 #include <QQmlApplicationEngine>
-#include <QQmlContext>
 #include <QQuickWindow>
 #include <QQuickStyle>
 #include <QTimer>
+#include <QVariantMap>
 #include <QtWebView/QtWebView>
 
 int main(int argc, char* argv[]) {
@@ -19,7 +19,8 @@ int main(int argc, char* argv[]) {
 
     wealthtracker::app::AppController controller;
     QQmlApplicationEngine engine;
-    engine.rootContext()->setContextProperty(QStringLiteral("App"), &controller);
+    engine.setInitialProperties(QVariantMap{
+        {QStringLiteral("app"), QVariant::fromValue<QObject*>(&controller)}});
     engine.loadFromModule(QStringLiteral("WealthTracker"), QStringLiteral("Main"));
     if (engine.rootObjects().isEmpty()) {
         return 1;

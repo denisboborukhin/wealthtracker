@@ -1,8 +1,13 @@
+pragma ComponentBehavior: Bound
+
 import QtQuick
 import QtQuick.Layouts
 import "../components"
 
 Item {
+    id: page
+    required property var app
+
     ColumnLayout {
         anchors.fill: parent
         anchors.margins: Theme.pageMargin
@@ -87,9 +92,17 @@ Item {
                         id: accountList
                         anchors.fill: parent
                         clip: true
-                        model: App.accounts
+                        model: page.app.accounts
 
                         delegate: Item {
+                            id: accountRow
+                            required property string accent
+                            required property string name
+                            required property string institution
+                            required property string type
+                            required property string balance
+                            required property string currency
+
                             width: ListView.view.width
                             height: 62
 
@@ -105,7 +118,7 @@ Item {
                                     Layout.maximumWidth: 8
                                     Layout.preferredHeight: 34
                                     radius: 4
-                                    color: model.accent
+                                    color: accountRow.accent
                                 }
                                 ColumnLayout {
                                     Layout.fillWidth: true
@@ -113,7 +126,7 @@ Item {
                                     spacing: 2
                                     Text {
                                         Layout.fillWidth: true
-                                        text: model.name
+                                        text: accountRow.name
                                         color: Theme.text
                                         font.pixelSize: 13
                                         font.weight: Font.Medium
@@ -121,7 +134,7 @@ Item {
                                     }
                                     Text {
                                         Layout.fillWidth: true
-                                        text: model.institution
+                                        text: accountRow.institution
                                         color: Theme.textMuted
                                         font.pixelSize: 11
                                         elide: Text.ElideRight
@@ -131,7 +144,7 @@ Item {
                                     Layout.minimumWidth: 200
                                     Layout.preferredWidth: 200
                                     Layout.maximumWidth: 200
-                                    text: model.type
+                                    text: accountRow.type
                                     color: Theme.textMuted
                                     font.pixelSize: 12
                                     elide: Text.ElideRight
@@ -141,7 +154,7 @@ Item {
                                     Layout.preferredWidth: 145
                                     Layout.maximumWidth: 145
                                     horizontalAlignment: Text.AlignRight
-                                    text: model.balance + " " + model.currency
+                                    text: accountRow.balance + " " + accountRow.currency
                                     color: Theme.text
                                     font.pixelSize: 14
                                     font.weight: Font.Medium

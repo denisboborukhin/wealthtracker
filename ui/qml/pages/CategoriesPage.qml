@@ -1,22 +1,23 @@
+pragma ComponentBehavior: Bound
+
 import QtQuick
 import QtQuick.Layouts
 import "../components"
 
 Item {
+    id: page
+    required property var app
+
     ColumnLayout {
         anchors.fill: parent
         anchors.margins: Theme.pageMargin
         spacing: 20
 
-        RowLayout {
+        ColumnLayout {
             Layout.fillWidth: true
-            ColumnLayout {
-                spacing: 4
-                Text { text: qsTr("Категории"); color: Theme.text; font.pixelSize: 26; font.weight: Font.DemiBold }
-                Text { text: qsTr("Расходы и правила автоматической категоризации"); color: Theme.textMuted; font.pixelSize: 12 }
-            }
-            Item { Layout.fillWidth: true }
-            ActionButton { text: qsTr("Новое правило"); primary: true }
+            spacing: 4
+            Text { text: qsTr("Категории"); color: Theme.text; font.pixelSize: 26; font.weight: Font.DemiBold }
+            Text { text: qsTr("Распределение расходов по категориям банка"); color: Theme.textMuted; font.pixelSize: 12 }
         }
 
         SectionCard {
@@ -45,9 +46,15 @@ Item {
                     Layout.fillWidth: true
                     Layout.fillHeight: true
                     visible: count > 0
-                    model: App.categories
+                    model: page.app.categories
                     clip: true
                     delegate: Item {
+                        id: categoryRow
+                        required property string color
+                        required property string name
+                        required property string amount
+                        required property real share
+
                         width: ListView.view.width
                         height: 54
                         RowLayout {
@@ -55,10 +62,10 @@ Item {
                             anchors.leftMargin: 18
                             anchors.rightMargin: 18
                             spacing: 10
-                            Rectangle { Layout.minimumWidth: 8; Layout.preferredWidth: 8; Layout.maximumWidth: 8; Layout.preferredHeight: 8; radius: 4; color: model.color }
-                            Text { Layout.fillWidth: true; Layout.minimumWidth: 0; text: model.name; color: Theme.text; font.pixelSize: 13 }
-                            Text { Layout.minimumWidth: 140; Layout.preferredWidth: 140; Layout.maximumWidth: 140; horizontalAlignment: Text.AlignRight; text: model.amount; color: Theme.text; font.pixelSize: 12 }
-                            Text { Layout.minimumWidth: 80; Layout.preferredWidth: 80; Layout.maximumWidth: 80; horizontalAlignment: Text.AlignRight; text: Math.round(model.share * 100) + "%"; color: Theme.textMuted; font.pixelSize: 12 }
+                            Rectangle { Layout.minimumWidth: 8; Layout.preferredWidth: 8; Layout.maximumWidth: 8; Layout.preferredHeight: 8; radius: 4; color: categoryRow.color }
+                            Text { Layout.fillWidth: true; Layout.minimumWidth: 0; text: categoryRow.name; color: Theme.text; font.pixelSize: 13 }
+                            Text { Layout.minimumWidth: 140; Layout.preferredWidth: 140; Layout.maximumWidth: 140; horizontalAlignment: Text.AlignRight; text: categoryRow.amount; color: Theme.text; font.pixelSize: 12 }
+                            Text { Layout.minimumWidth: 80; Layout.preferredWidth: 80; Layout.maximumWidth: 80; horizontalAlignment: Text.AlignRight; text: Math.round(categoryRow.share * 100) + "%"; color: Theme.textMuted; font.pixelSize: 12 }
                         }
                         Rectangle { width: parent.width; height: 1; anchors.bottom: parent.bottom; color: Theme.border }
                     }

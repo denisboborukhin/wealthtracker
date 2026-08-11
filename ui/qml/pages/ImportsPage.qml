@@ -1,9 +1,14 @@
+pragma ComponentBehavior: Bound
+
 import QtQuick
 import QtQuick.Dialogs
 import QtQuick.Layouts
 import "../components"
 
 Item {
+    id: page
+    required property var app
+
     FileDialog {
         id: statementDialog
         title: qsTr("Выберите банковскую выписку")
@@ -11,7 +16,7 @@ Item {
             qsTr("Выписки (*.csv *.xlsx *.ofx *.qif *.txt *.pdf)"),
             qsTr("Все файлы (*)")
         ]
-        onAccepted: App.previewImport(selectedFile)
+        onAccepted: page.app.previewImport(selectedFile)
     }
 
     ColumnLayout {
@@ -77,7 +82,7 @@ Item {
                     Layout.fillWidth: true
                     spacing: 4
                     Text { text: qsTr("Состояние импорта"); color: Theme.text; font.pixelSize: 12; font.weight: Font.Medium }
-                    Text { Layout.fillWidth: true; text: App.importStatus; color: Theme.textMuted; font.pixelSize: 11; wrapMode: Text.WordWrap }
+                    Text { Layout.fillWidth: true; text: page.app.importStatus; color: Theme.textMuted; font.pixelSize: 11; wrapMode: Text.WordWrap }
                 }
             }
         }

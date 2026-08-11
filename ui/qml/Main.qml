@@ -1,3 +1,5 @@
+pragma ComponentBehavior: Bound
+
 import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
@@ -6,6 +8,7 @@ import "pages"
 
 ApplicationWindow {
     id: window
+    required property var app
     width: 1320
     height: 820
     minimumWidth: 1020
@@ -23,7 +26,6 @@ ApplicationWindow {
         { "title": qsTr("Инвестиции") },
         { "title": qsTr("Категории") },
         { "title": qsTr("Подключения") },
-        { "title": qsTr("Резервные копии") },
         { "title": qsTr("Настройки") }
     ]
 
@@ -57,24 +59,28 @@ ApplicationWindow {
                 Repeater {
                     model: window.navigationItems
                     delegate: Rectangle {
+                        id: navigationItem
+                        required property int index
+                        required property var modelData
+
                         Layout.fillWidth: true
                         Layout.preferredHeight: 38
                         radius: 7
-                        color: navigation.currentIndex === index ? Theme.surfaceRaised : "transparent"
+                        color: navigation.currentIndex === navigationItem.index ? Theme.surfaceRaised : "transparent"
                         Text {
                             anchors.fill: parent
                             anchors.leftMargin: 12
                             anchors.rightMargin: 12
-                            text: modelData.title
-                            color: navigation.currentIndex === index ? Theme.text : Theme.textMuted
+                            text: navigationItem.modelData.title
+                            color: navigation.currentIndex === navigationItem.index ? Theme.text : Theme.textMuted
                             font.pixelSize: 13
-                            font.weight: navigation.currentIndex === index ? Font.Medium : Font.Normal
+                            font.weight: navigation.currentIndex === navigationItem.index ? Font.Medium : Font.Normal
                             verticalAlignment: Text.AlignVCenter
                         }
                         MouseArea {
                             anchors.fill: parent
                             cursorShape: Qt.PointingHandCursor
-                            onClicked: navigation.currentIndex = index
+                            onClicked: navigation.currentIndex = navigationItem.index
                         }
                     }
                 }
@@ -106,21 +112,20 @@ ApplicationWindow {
             Layout.fillHeight: true
             currentIndex: 0
 
-            DashboardPage {}
-            AccountsPage {}
-            TransactionsPage {}
-            ImportsPage {}
-            InvestmentsPage {}
-            CategoriesPage {}
-            ConnectionsPage {}
-            BackupsPage {}
-            SettingsPage {}
+            DashboardPage { app: window.app }
+            AccountsPage { app: window.app }
+            TransactionsPage { app: window.app }
+            ImportsPage { app: window.app }
+            InvestmentsPage { app: window.app }
+            CategoriesPage { app: window.app }
+            ConnectionsPage { app: window.app }
+            SettingsPage { app: window.app }
         }
     }
 
     Rectangle {
         anchors.fill: parent
-        visible: App.locked
+        visible: window.app.locked
         z: 100
         color: "#D9F5F6F7"
 
@@ -138,7 +143,7 @@ ApplicationWindow {
                 spacing: 14
                 Text {
                     Layout.alignment: Qt.AlignHCenter
-                    text: qsTr("Хранилище заблокировано")
+                    text: qsTr("Финансовые данные скрыты")
                     color: Theme.text
                     font.pixelSize: 20
                     font.weight: Font.DemiBold
@@ -146,15 +151,15 @@ ApplicationWindow {
                 Text {
                     Layout.fillWidth: true
                     horizontalAlignment: Text.AlignHCenter
-                    text: qsTr("Ключ будет получен из защищённого хранилища операционной системы")
+                    text: qsTr("Активные подключения остановлены. Покажите данные, чтобы продолжить работу.")
                     color: Theme.textMuted
                     wrapMode: Text.WordWrap
                 }
                 ActionButton {
                     Layout.fillWidth: true
-                    text: qsTr("Разблокировать")
+                    text: qsTr("Показать данные")
                     primary: true
-                    onClicked: App.unlock()
+                    onClicked: window.app.unlock()
                 }
             }
         }

@@ -1,8 +1,13 @@
+pragma ComponentBehavior: Bound
+
 import QtQuick
 import QtQuick.Layouts
 import "../components"
 
 Flickable {
+    id: page
+    required property var app
+
     contentHeight: content.implicitHeight + Theme.pageMargin * 2
     clip: true
 
@@ -24,9 +29,9 @@ Flickable {
                     font.weight: Font.DemiBold
                 }
                 Text {
-                    text: App.demoMode
+                    text: page.app.demoMode
                           ? qsTr("Пример данных · июль 2026")
-                          : App.hasFinancialData
+                          : page.app.hasFinancialData
                             ? qsTr("Все подключённые счета")
                             : qsTr("Подключите банк или импортируйте выписку")
                     color: Theme.textMuted
@@ -35,7 +40,7 @@ Flickable {
             }
             Item { Layout.fillWidth: true }
             StatusBadge {
-                visible: App.demoMode
+                visible: page.app.demoMode
                 text: qsTr("Демо-данные")
             }
         }
@@ -49,32 +54,32 @@ Flickable {
             MetricCard {
                 Layout.fillWidth: true
                 title: qsTr("Капитал")
-                value: App.netWorth
-                hint: App.demoMode ? qsTr("+4,2% за месяц")
+                value: page.app.netWorth
+                hint: page.app.demoMode ? qsTr("+4,2% за месяц")
                                    : qsTr("Текущий остаток")
                 accent: Theme.positive
             }
             MetricCard {
                 Layout.fillWidth: true
                 title: qsTr("Доходы")
-                value: App.monthlyIncome
-                hint: App.demoMode ? qsTr("+12,5% к июню")
+                value: page.app.monthlyIncome
+                hint: page.app.demoMode ? qsTr("+12,5% к июню")
                                    : qsTr("Текущий месяц")
                 accent: Theme.positive
             }
             MetricCard {
                 Layout.fillWidth: true
                 title: qsTr("Расходы")
-                value: App.monthlySpending
-                hint: App.demoMode ? qsTr("−6,8% к июню")
+                value: page.app.monthlySpending
+                hint: page.app.demoMode ? qsTr("−6,8% к июню")
                                    : qsTr("Текущий месяц")
                 accent: Theme.textMuted
             }
             MetricCard {
                 Layout.fillWidth: true
                 title: qsTr("Сбережения")
-                value: App.savingsRate
-                hint: App.demoMode ? qsTr("Цель 40%")
+                value: page.app.savingsRate
+                hint: page.app.demoMode ? qsTr("Цель 40%")
                                    : qsTr("Доходы минус расходы")
                 accent: Theme.warning
             }
@@ -110,13 +115,13 @@ Flickable {
                         Layout.fillWidth: true
                         Layout.fillHeight: true
                         Layout.topMargin: 10
-                        visible: App.netWorthSeries.length > 1
-                        values: App.netWorthSeries
+                        visible: page.app.netWorthSeries.length > 1
+                        values: page.app.netWorthSeries
                     }
                     Text {
                         Layout.fillWidth: true
                         Layout.fillHeight: true
-                        visible: App.netWorthSeries.length <= 1
+                        visible: page.app.netWorthSeries.length <= 1
                         text: qsTr("История капитала появится после нескольких снимков баланса")
                         color: Theme.textMuted
                         font.pixelSize: 12
@@ -145,8 +150,14 @@ Flickable {
 
                     Repeater {
                         id: categoryRepeater
-                        model: App.categories
+                        model: page.app.categories
                         delegate: ColumnLayout {
+                            id: categorySummary
+                            required property string name
+                            required property string amount
+                            required property real share
+                            required property string color
+
                             Layout.fillWidth: true
                             spacing: 4
 
@@ -154,12 +165,12 @@ Flickable {
                                 Layout.fillWidth: true
                                 Text {
                                     Layout.fillWidth: true
-                                    text: model.name
+                                    text: categorySummary.name
                                     color: Theme.text
                                     font.pixelSize: 12
                                 }
                                 Text {
-                                    text: model.amount
+                                    text: categorySummary.amount
                                     color: Theme.textMuted
                                     font.pixelSize: 12
                                 }
@@ -170,10 +181,10 @@ Flickable {
                                 radius: 2
                                 color: Theme.surfaceRaised
                                 Rectangle {
-                                    width: parent.width * model.share
+                                    width: parent.width * categorySummary.share
                                     height: parent.height
                                     radius: 2
-                                    color: model.color
+                                    color: categorySummary.color
                                 }
                             }
                         }
@@ -240,10 +251,17 @@ Flickable {
                     ListView {
                         id: transactionList
                         anchors.fill: parent
-                        model: App.transactions
+                        model: page.app.transactions
                         clip: true
 
                         delegate: Item {
+                            id: recentTransaction
+                            required property string date
+                            required property string title
+                            required property string category
+                            required property string amount
+                            required property bool income
+
                             width: ListView.view.width
                             height: 44
 
@@ -253,20 +271,20 @@ Flickable {
                                 anchors.rightMargin: 18
                                 Text {
                                     Layout.preferredWidth: 88
-                                    text: model.date
+                                    text: recentTransaction.date
                                     color: Theme.textMuted
                                     font.pixelSize: 11
                                 }
                                 Text {
                                     Layout.fillWidth: true
-                                    text: model.title
+                                    text: recentTransaction.title
                                     color: Theme.text
                                     font.pixelSize: 12
                                     elide: Text.ElideRight
                                 }
                                 Text {
                                     Layout.preferredWidth: 160
-                                    text: model.category
+                                    text: recentTransaction.category
                                     color: Theme.textMuted
                                     font.pixelSize: 11
                                     elide: Text.ElideRight
@@ -274,8 +292,8 @@ Flickable {
                                 Text {
                                     Layout.preferredWidth: 105
                                     horizontalAlignment: Text.AlignRight
-                                    text: model.amount
-                                    color: model.income ? Theme.positive : Theme.text
+                                    text: recentTransaction.amount
+                                    color: recentTransaction.income ? Theme.positive : Theme.text
                                     font.pixelSize: 12
                                     font.weight: Font.Medium
                                 }

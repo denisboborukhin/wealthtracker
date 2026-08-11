@@ -1,3 +1,5 @@
+pragma ComponentBehavior: Bound
+
 import QtQuick
 import QtQuick.Controls
 import QtQuick.Dialogs as PlatformDialogs
@@ -6,10 +8,11 @@ import "../components"
 
 Item {
     id: page
+    required property var app
 
     function openConnection(connectorId, institution, method, status,
                             connected, available) {
-        App.describeBankConnection(connectorId)
+        page.app.describeBankConnection(connectorId)
         connectionDialog.connectorId = connectorId
         connectionDialog.institution = institution
         connectionDialog.method = method
@@ -18,14 +21,17 @@ Item {
         connectionDialog.available = available
         connectionDialog.open()
         if (connectorId === "tbank-retail")
-            App.prepareTBankConnection()
+            page.app.prepareTBankConnection()
     }
 
     PlatformDialogs.FileDialog {
         id: pluginBundleDialog
         title: qsTr("Выберите собранный ZenPlugins bundle")
         nameFilters: [qsTr("JavaScript bundle (*.js *.cjs)")]
-        onAccepted: App.inspectZenPluginBundle(selectedFile)
+        onAccepted: {
+            connectionDialog.pluginValues = ({})
+            page.app.inspectZenPluginBundle(selectedFile)
+        }
     }
 
     Dialog {
@@ -33,9 +39,9 @@ Item {
         parent: Overlay.overlay
         modal: true
         focus: true
-        width: App.tbankLoginActive
+        width: page.app.tbankLoginActive
                ? Math.min(parent.width - 32, 760) : 520
-        height: App.tbankLoginActive
+        height: page.app.tbankLoginActive
                 ? Math.min(parent.height - 32, 760) : implicitHeight
         x: Math.round((parent.width - width) / 2)
         y: Math.round((parent.height - height) / 2)
@@ -47,28 +53,27 @@ Item {
         property string status: ""
         property bool connected: false
         property bool available: false
+        property var pluginValues: ({})
+        signal resetSensitivePluginFields()
         readonly property bool builtinTBank:
             connectorId === "tbank-retail"
         readonly property bool localPlugin:
-            connectorId === "zenplugins-local" || builtinTBank
+            connectorId === "zenplugins-local"
         readonly property bool effectiveConnected:
-            builtinTBank ? App.tbankConnected : connected
+            builtinTBank ? page.app.tbankConnected : connected
 
         function pluginPreferences() {
-            let result = {}
-            for (let index = 0; index < preferenceRepeater.count; ++index) {
-                let field = preferenceRepeater.itemAt(index)
-                result[field.fieldKey] = field.fieldValue
-            }
-            return result
+            return pluginValues
+        }
+
+        function setPluginPreference(key, value) {
+            let values = Object.assign({}, pluginValues)
+            values[key] = value
+            pluginValues = values
         }
 
         function clearSensitivePluginFields() {
-            for (let index = 0; index < preferenceRepeater.count; ++index) {
-                let field = preferenceRepeater.itemAt(index)
-                if (field.sensitive)
-                    field.clearValue()
-            }
+            resetSensitivePluginFields()
         }
 
         background: Rectangle {
@@ -109,7 +114,7 @@ Item {
             ColumnLayout {
                 Layout.fillWidth: true
                 Layout.fillHeight: connectionDialog.builtinTBank
-                                   && App.tbankLoginActive
+                                   && page.app.tbankLoginActive
                 Layout.leftMargin: 24
                 Layout.rightMargin: 24
                 Layout.topMargin: 20
@@ -118,8 +123,8 @@ Item {
 
                 Text {
                     Layout.fillWidth: true
-                    visible: !App.tbankLoginActive
-                    text: App.connectionMessage
+                    visible: !page.app.tbankLoginActive
+                    text: page.app.connectionMessage
                     color: Theme.textMuted
                     font.pixelSize: 13
                     lineHeight: 1.35
@@ -130,6 +135,7 @@ Item {
                     Layout.fillWidth: true
                     visible: connectionDialog.available
                                && !connectionDialog.connected
+                               && !connectionDialog.builtinTBank
                                && !connectionDialog.localPlugin
                     spacing: 7
 
@@ -172,6 +178,7 @@ Item {
                 StatusBadge {
                     visible: connectionDialog.available
                              && connectionDialog.effectiveConnected
+                             && !connectionDialog.builtinTBank
                              && !connectionDialog.localPlugin
                     text: qsTr("Подключено")
                     tone: "positive"
@@ -179,15 +186,15 @@ Item {
 
                 ColumnLayout {
                     Layout.fillWidth: true
-                    Layout.fillHeight: App.tbankLoginActive
+                    Layout.fillHeight: page.app.tbankLoginActive
                     visible: connectionDialog.builtinTBank
                              && !connectionDialog.effectiveConnected
                     spacing: 10
 
                     Text {
                         Layout.fillWidth: true
-                        text: App.tbankLoginStatus.length > 0
-                              ? App.tbankLoginStatus
+                        text: page.app.tbankLoginStatus.length > 0
+                              ? page.app.tbankLoginStatus
                               : qsTr("Нажмите «Войти», чтобы открыть официальную страницу Т-Банка внутри приложения.")
                         color: Theme.text
                         font.pixelSize: 12
@@ -198,7 +205,7 @@ Item {
                         Layout.fillWidth: true
                         Layout.fillHeight: true
                         Layout.minimumHeight: 340
-                        visible: App.tbankLoginActive
+                        visible: page.app.tbankLoginActive
                         color: Theme.surface
                         radius: 8
                         border.color: Theme.border
@@ -207,14 +214,14 @@ Item {
                         WindowContainer {
                             anchors.fill: parent
                             anchors.margins: 1
-                            visible: App.tbankLoginActive
-                            window: App.tbankWebView
+                            visible: page.app.tbankLoginActive
+                            window: page.app.tbankWebView
                         }
                     }
 
                     Text {
                         Layout.fillWidth: true
-                        visible: App.tbankLoginActive
+                        visible: page.app.tbankLoginActive
                         text: qsTr("Телефон и код обрабатывает официальная страница банка. Веб-хранилище непостоянно; WealthTracker получает только идентификатор API-сессии и удаляет cookies после завершения.")
                         color: Theme.textMuted
                         font.pixelSize: 10
@@ -225,19 +232,16 @@ Item {
                 ColumnLayout {
                     Layout.fillWidth: true
                     visible: connectionDialog.localPlugin
-                             && (!connectionDialog.builtinTBank
-                                 || connectionDialog.effectiveConnected)
                     spacing: 12
 
                     RowLayout {
                         Layout.fillWidth: true
-                        visible: !connectionDialog.builtinTBank
                         ColumnLayout {
                             Layout.fillWidth: true
                             spacing: 2
                             Text {
-                                text: App.zenPluginId.length > 0
-                                      ? App.zenPluginId
+                                text: page.app.zenPluginId.length > 0
+                                      ? page.app.zenPluginId
                                       : qsTr("Bundle не выбран")
                                 color: Theme.text
                                 font.pixelSize: 12
@@ -245,8 +249,8 @@ Item {
                             }
                             Text {
                                 Layout.fillWidth: true
-                                text: App.zenPluginBundlePath.length > 0
-                                      ? App.zenPluginBundlePath
+                                text: page.app.zenPluginBundlePath.length > 0
+                                      ? page.app.zenPluginBundlePath
                                       : qsTr("Сначала соберите plugin через yarn build <plugin-id>")
                                 color: Theme.textMuted
                                 font.pixelSize: 10
@@ -255,16 +259,15 @@ Item {
                         }
                         ActionButton {
                             text: qsTr("Выбрать bundle")
-                            enabled: !App.zenPluginRunning
+                            enabled: !page.app.zenPluginRunning
                             onClicked: pluginBundleDialog.open()
                         }
                     }
 
                     ColumnLayout {
                         Layout.fillWidth: true
-                        visible: !connectionDialog.builtinTBank
-                                 && App.zenPluginId.length > 0
-                                 && !App.zenPluginRunning
+                        visible: page.app.zenPluginId.length > 0
+                                 && !page.app.zenPluginRunning
                         spacing: 7
 
                         Text {
@@ -277,7 +280,7 @@ Item {
                             id: pluginInstitutionField
                             Layout.fillWidth: true
                             Layout.preferredHeight: 40
-                            text: App.zenPluginInstitution
+                            text: page.app.zenPluginInstitution
                             placeholderText: qsTr("Как показывать банк в счетах")
                             color: Theme.text
                             selectByMouse: true
@@ -291,14 +294,15 @@ Item {
 
                         Repeater {
                             id: preferenceRepeater
-                            model: App.zenPluginFields
+                            model: page.app.zenPluginFields
 
                             delegate: ColumnLayout {
+                                id: preferenceField
                                 required property var modelData
-                                readonly property string fieldKey: modelData.key
-                                readonly property bool sensitive: modelData.sensitive
+                                readonly property string fieldKey: preferenceField.modelData.key
+                                readonly property bool sensitive: preferenceField.modelData.sensitive
                                 readonly property var fieldValue:
-                                    modelData.kind === "checkbox"
+                                    preferenceField.modelData.kind === "checkbox"
                                     ? checkboxField.checked
                                     : valueField.text
 
@@ -306,12 +310,25 @@ Item {
                                     valueField.clear()
                                 }
 
+                                Component.onCompleted:
+                                    connectionDialog.setPluginPreference(
+                                        preferenceField.fieldKey,
+                                        preferenceField.fieldValue)
+
+                                Connections {
+                                    target: connectionDialog
+                                    function onResetSensitivePluginFields() {
+                                        if (preferenceField.sensitive)
+                                            preferenceField.clearValue()
+                                    }
+                                }
+
                                 Layout.fillWidth: true
                                 spacing: 5
 
                                 Text {
-                                    text: modelData.label
-                                          + (modelData.required ? " *" : "")
+                                    text: preferenceField.modelData.label
+                                          + (preferenceField.modelData.required ? " *" : "")
                                     color: Theme.text
                                     font.pixelSize: 12
                                     font.weight: Font.Medium
@@ -320,17 +337,20 @@ Item {
                                     id: valueField
                                     Layout.fillWidth: true
                                     Layout.preferredHeight: 40
-                                    visible: modelData.kind !== "checkbox"
-                                    text: modelData.defaultValue
-                                    echoMode: modelData.sensitive
+                                    visible: preferenceField.modelData.kind !== "checkbox"
+                                    text: preferenceField.modelData.defaultValue
+                                    echoMode: preferenceField.modelData.sensitive
                                               ? TextInput.Password
                                               : TextInput.Normal
                                     inputMethodHints:
-                                        modelData.kind === "number"
-                                        || modelData.kind === "phone"
+                                        preferenceField.modelData.kind === "number"
+                                        || preferenceField.modelData.kind === "phone"
                                         ? Qt.ImhDigitsOnly : Qt.ImhNone
                                     color: Theme.text
                                     selectByMouse: true
+                                    onTextChanged:
+                                        connectionDialog.setPluginPreference(
+                                            preferenceField.fieldKey, text)
                                     background: Rectangle {
                                         color: Theme.surface
                                         border.color: valueField.activeFocus
@@ -341,9 +361,12 @@ Item {
                                 }
                                 MinimalSwitch {
                                     id: checkboxField
-                                    visible: modelData.kind === "checkbox"
-                                    checked: modelData.defaultValue === true
-                                             || modelData.defaultValue === "true"
+                                    visible: preferenceField.modelData.kind === "checkbox"
+                                    checked: preferenceField.modelData.defaultValue === true
+                                             || preferenceField.modelData.defaultValue === "true"
+                                    onCheckedChanged:
+                                        connectionDialog.setPluginPreference(
+                                            preferenceField.fieldKey, checked)
                                 }
                             }
                         }
@@ -359,16 +382,8 @@ Item {
 
                     ColumnLayout {
                         Layout.fillWidth: true
-                        visible: App.zenPluginId.length > 0
+                        visible: page.app.zenPluginId.length > 0
                         spacing: 7
-
-                        StatusBadge {
-                            visible: connectionDialog.builtinTBank
-                            text: App.zenPluginRunning
-                                  ? qsTr("Синхронизация")
-                                  : qsTr("Подключено")
-                            tone: App.zenPluginRunning ? "neutral" : "positive"
-                        }
 
                         RowLayout {
                             Layout.fillWidth: true
@@ -380,16 +395,16 @@ Item {
                                 font.weight: Font.Medium
                             }
                             MinimalSwitch {
-                                checked: App.zenPluginAutoUpdate
-                                enabled: !App.zenPluginRunning
-                                onToggled: App.setZenPluginAutoUpdate(checked)
+                                checked: page.app.zenPluginAutoUpdate
+                                enabled: !page.app.zenPluginRunning
+                                onToggled: page.app.setZenPluginAutoUpdate(checked)
                             }
                         }
 
                         Text {
                             Layout.fillWidth: true
-                            text: qsTr("Последнее: ") + App.zenPluginLastSync
-                                  + qsTr(" · Следующее: ") + App.zenPluginNextSync
+                            text: qsTr("Последнее: ") + page.app.zenPluginLastSync
+                                  + qsTr(" · Следующее: ") + page.app.zenPluginNextSync
                             color: Theme.textMuted
                             font.pixelSize: 10
                             wrapMode: Text.WordWrap
@@ -398,20 +413,20 @@ Item {
 
                     ColumnLayout {
                         Layout.fillWidth: true
-                        visible: App.zenPluginRunning
+                        visible: page.app.zenPluginRunning
                         spacing: 7
 
                         StatusBadge {
-                            text: App.zenPluginPrompt.length > 0
+                            text: page.app.zenPluginPrompt.length > 0
                                   ? qsTr("Требуется ответ")
                                   : qsTr("Синхронизация")
-                            tone: App.zenPluginPrompt.length > 0
+                            tone: page.app.zenPluginPrompt.length > 0
                                   ? "warning" : "neutral"
                         }
                         Text {
                             Layout.fillWidth: true
-                            visible: App.zenPluginPrompt.length > 0
-                            text: App.zenPluginPrompt
+                            visible: page.app.zenPluginPrompt.length > 0
+                            text: page.app.zenPluginPrompt
                             color: Theme.text
                             font.pixelSize: 12
                             wrapMode: Text.WordWrap
@@ -420,8 +435,8 @@ Item {
                             id: pluginPromptField
                             Layout.fillWidth: true
                             Layout.preferredHeight: 40
-                            visible: App.zenPluginPrompt.length > 0
-                            echoMode: App.zenPluginPromptSecret
+                            visible: page.app.zenPluginPrompt.length > 0
+                            echoMode: page.app.zenPluginPromptSecret
                                       ? TextInput.Password
                                       : TextInput.Normal
                             inputMethodHints: Qt.ImhDigitsOnly
@@ -435,6 +450,42 @@ Item {
                                 radius: 7
                             }
                         }
+                    }
+                }
+
+                ColumnLayout {
+                    Layout.fillWidth: true
+                    visible: connectionDialog.builtinTBank
+                             && connectionDialog.effectiveConnected
+                    spacing: 10
+
+                    StatusBadge {
+                        text: page.app.tbankSyncRunning
+                              ? qsTr("Синхронизация") : qsTr("Подключено")
+                        tone: page.app.tbankSyncRunning ? "neutral" : "positive"
+                    }
+                    RowLayout {
+                        Layout.fillWidth: true
+                        Text {
+                            Layout.fillWidth: true
+                            text: qsTr("Автообновление")
+                            color: Theme.text
+                            font.pixelSize: 12
+                            font.weight: Font.Medium
+                        }
+                        MinimalSwitch {
+                            checked: page.app.tbankAutoUpdate
+                            enabled: !page.app.tbankSyncRunning
+                            onToggled: page.app.setTBankAutoUpdate(checked)
+                        }
+                    }
+                    Text {
+                        Layout.fillWidth: true
+                        text: qsTr("Последнее: ") + page.app.tbankLastSync
+                              + qsTr(" · Следующее: ") + page.app.tbankNextSync
+                        color: Theme.textMuted
+                        font.pixelSize: 10
+                        wrapMode: Text.WordWrap
                     }
                 }
 
@@ -454,12 +505,13 @@ Item {
                     ActionButton {
                         visible: connectionDialog.available
                                  && !connectionDialog.effectiveConnected
+                                 && !connectionDialog.builtinTBank
                                  && !connectionDialog.localPlugin
                         text: qsTr("Сохранить токен")
                         primary: true
                         enabled: tokenField.text.trim().length > 0
                         onClicked: {
-                            if (App.saveBankToken(connectionDialog.connectorId,
+                            if (page.app.saveBankToken(connectionDialog.connectorId,
                                                   tokenField.text)) {
                                 tokenField.clear()
                                 connectionDialog.close()
@@ -469,92 +521,88 @@ Item {
                     ActionButton {
                         visible: connectionDialog.available
                                  && connectionDialog.effectiveConnected
+                                 && !connectionDialog.builtinTBank
                                  && !connectionDialog.localPlugin
                         text: qsTr("Синхронизировать")
                         primary: true
                         onClicked: {
-                            App.synchronizeBank(connectionDialog.connectorId)
+                            page.app.synchronizeBank(connectionDialog.connectorId)
                             connectionDialog.close()
                         }
                     }
                     ActionButton {
                         visible: connectionDialog.available
                                  && connectionDialog.effectiveConnected
+                                 && !connectionDialog.builtinTBank
                                  && !connectionDialog.localPlugin
                         text: qsTr("Отключить")
                         destructive: true
                         onClicked: {
-                            App.removeBankToken(connectionDialog.connectorId)
+                            page.app.removeBankToken(connectionDialog.connectorId)
                             connectionDialog.close()
                         }
                     }
                     ActionButton {
                         visible: connectionDialog.builtinTBank
                                  && !connectionDialog.effectiveConnected
-                                 && !App.tbankLoginActive
+                                 && !page.app.tbankLoginActive
+                                 && !page.app.tbankSyncRunning
                         text: qsTr("Войти")
                         primary: true
-                        onClicked: App.beginTBankLogin()
+                        onClicked: page.app.beginTBankLogin()
                     }
                     ActionButton {
                         visible: connectionDialog.builtinTBank
-                                 && App.tbankLoginActive
+                                 && page.app.tbankLoginActive
                         text: qsTr("Повторить")
-                        onClicked: App.reloadTBankLoginPage()
+                        onClicked: page.app.reloadTBankLoginPage()
                     }
                     ActionButton {
                         visible: connectionDialog.builtinTBank
-                                 && App.tbankLoginActive
+                                 && page.app.tbankLoginActive
                         text: qsTr("Отмена")
                         destructive: true
                         onClicked: {
-                            if (App.zenPluginRunning)
-                                App.cancelZenPlugin()
-                            App.cancelTBankLogin()
+                            page.app.cancelTBankLogin()
                         }
                     }
                     ActionButton {
                         visible: connectionDialog.localPlugin
-                                 && !connectionDialog.builtinTBank
-                                 && App.zenPluginRunning
-                                 && App.zenPluginPrompt.length === 0
+                                 && page.app.zenPluginRunning
+                                 && page.app.zenPluginPrompt.length === 0
                         text: qsTr("Отменить")
                         destructive: true
-                        onClicked: App.cancelZenPlugin()
+                        onClicked: page.app.cancelZenPlugin()
                     }
                     ActionButton {
                         visible: connectionDialog.localPlugin
-                                 && !connectionDialog.builtinTBank
-                                 && App.zenPluginRunning
-                                 && App.zenPluginPrompt.length > 0
+                                 && page.app.zenPluginRunning
+                                 && page.app.zenPluginPrompt.length > 0
                         text: qsTr("Передать")
                         primary: true
                         enabled: pluginPromptField.text.length > 0
                         onClicked: {
-                            if (App.answerZenPluginPrompt(
+                            if (page.app.answerZenPluginPrompt(
                                         pluginPromptField.text))
                                 pluginPromptField.clear()
                         }
                     }
                     ActionButton {
                         visible: connectionDialog.localPlugin
-                                 && !App.zenPluginRunning
-                                 && App.zenPluginId.length > 0
-                                 && (!connectionDialog.builtinTBank
-                                     || connectionDialog.effectiveConnected)
+                                 && !page.app.zenPluginRunning
+                                 && page.app.zenPluginId.length > 0
                         text: qsTr("Обновить")
-                        onClicked: App.synchronizeZenPlugin()
+                        onClicked: page.app.synchronizeZenPlugin()
                     }
                     ActionButton {
                         visible: connectionDialog.localPlugin
-                                 && !connectionDialog.builtinTBank
-                                 && !App.zenPluginRunning
-                                 && App.zenPluginId.length > 0
+                                 && !page.app.zenPluginRunning
+                                 && page.app.zenPluginId.length > 0
                         text: qsTr("Запустить")
                         primary: true
                         enabled: pluginInstitutionField.text.trim().length > 0
                         onClicked: {
-                            if (App.startZenPlugin(
+                            if (page.app.startZenPlugin(
                                         pluginInstitutionField.text,
                                         connectionDialog.pluginPreferences()))
                                 connectionDialog.clearSensitivePluginFields()
@@ -562,18 +610,31 @@ Item {
                     }
                     ActionButton {
                         visible: connectionDialog.localPlugin
-                                 && !App.zenPluginRunning
-                                 && App.zenPluginId.length > 0
-                                 && (!connectionDialog.builtinTBank
-                                     || connectionDialog.effectiveConnected)
-                        text: connectionDialog.builtinTBank
-                              ? qsTr("Отключить") : qsTr("Удалить")
+                                 && !page.app.zenPluginRunning
+                                 && page.app.zenPluginId.length > 0
+                        text: qsTr("Удалить")
                         destructive: true
                         onClicked: {
-                            if (connectionDialog.builtinTBank)
-                                App.disconnectTBank()
-                            else
-                                App.removeZenPlugin()
+                            page.app.removeZenPlugin()
+                            connectionDialog.close()
+                        }
+                    }
+                    ActionButton {
+                        visible: connectionDialog.builtinTBank
+                                 && connectionDialog.effectiveConnected
+                                 && !page.app.tbankSyncRunning
+                        text: qsTr("Обновить")
+                        primary: true
+                        onClicked: page.app.synchronizeTBank()
+                    }
+                    ActionButton {
+                        visible: connectionDialog.builtinTBank
+                                 && connectionDialog.effectiveConnected
+                                 && !page.app.tbankSyncRunning
+                        text: qsTr("Отключить")
+                        destructive: true
+                        onClicked: {
+                            page.app.disconnectTBank()
                             connectionDialog.close()
                         }
                     }
@@ -582,10 +643,8 @@ Item {
         }
 
         onClosed: {
-            if (connectionDialog.builtinTBank && App.tbankLoginActive) {
-                if (App.zenPluginRunning)
-                    App.cancelZenPlugin()
-                App.cancelTBankLogin()
+            if (connectionDialog.builtinTBank && page.app.tbankLoginActive) {
+                page.app.cancelTBankLogin()
             }
             tokenField.clear()
             pluginPromptField.clear()
@@ -661,7 +720,7 @@ Item {
                     Layout.fillWidth: true
                     Layout.fillHeight: true
                     clip: true
-                    model: App.bankConnections
+                    model: page.app.bankConnections
 
                     delegate: Item {
                         id: connectorRow
@@ -748,7 +807,7 @@ Item {
 
         Text {
             Layout.fillWidth: true
-            text: qsTr("Т-Банк подключается через официальную страницу входа и встроенный read-only bundle. Для Альфа-Банка, Сбера и ВТБ по-прежнему нужен отдельный проверяемый локальный адаптер.")
+            text: qsTr("Т-Банк использует встроенный C++ коннектор только для чтения. Для Альфа-Банка, Сбера и ВТБ нужен отдельный проверяемый локальный адаптер.")
             color: Theme.textMuted
             font.pixelSize: 11
             wrapMode: Text.WordWrap
