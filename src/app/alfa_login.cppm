@@ -32,6 +32,57 @@ struct AlfaLoginFailure {
     QString message;
 };
 
+enum class AlfaLoadFailureKind { CertificateTrust, Network };
+
+struct AlfaLoadFailure {
+    AlfaLoadFailureKind kind{AlfaLoadFailureKind::Network};
+    QString message;
+    bool certificateHelpRequired = false;
+};
+
+[[nodiscard]] QUrl alfa_certificate_instructions_url() {
+    return QUrl{QStringLiteral("https://alfabank.ru/cert/")};
+}
+
+[[nodiscard]] AlfaLoadFailure
+classify_alfa_load_failure(const QUrl& failedUrl, const QString& errorString) {
+    const auto host = failedUrl.host().toLower();
+    const bool knownHost =
+        host == QStringLiteral("web.alfabank.ru") ||
+        host == QStringLiteral("private.auth.alfabank.ru");
+    const auto target = knownHost
+        ? host
+        : QStringLiteral("официальную страницу Альфа-Банка");
+    const auto foldedError = errorString.toCaseFolded();
+    const bool certificateFailure =
+        foldedError.contains(QStringLiteral("certificate")) ||
+        foldedError.contains(QStringLiteral("сертифик")) ||
+        foldedError.contains(QStringLiteral("server trust")) ||
+        foldedError.contains(QStringLiteral("servertrust")) ||
+        foldedError.contains(QStringLiteral("err_cert_")) ||
+        foldedError.contains(QStringLiteral("-1202"));
+
+    if (certificateFailure) {
+        return {
+            AlfaLoadFailureKind::CertificateTrust,
+            QStringLiteral(
+                "Не удалось проверить сертификат %1. Альфа-Онлайн использует "
+                "российские сертификаты Минцифры. Установите их по официальной "
+                "инструкции Альфа-Банка, перезапустите WealthTracker и повторите "
+                "вход. Проверка TLS не отключена.")
+                .arg(target),
+            true};
+    }
+
+    return {
+        AlfaLoadFailureKind::Network,
+        QStringLiteral(
+            "Не удалось загрузить %1. Проверьте подключение, DNS, VPN или прокси "
+            "и нажмите «Повторить».")
+            .arg(target),
+        false};
+}
+
 class AlfaLoginCoordinator final : public QObject {
 public:
     using StatusChanged = std::function<void(QString)>;
@@ -53,6 +104,9 @@ public:
     [[nodiscard]] bool synchronizing() const noexcept {
         return active_ && mode_ == Mode::Synchronize;
     }
+    [[nodiscard]] bool certificateHelpRequired() const noexcept {
+        return certificate_help_required_;
+    }
     [[nodiscard]] QWindow* existingWebView() const noexcept { return web_view_.get(); }
 
     [[nodiscard]] QWindow* webView() {
@@ -71,13 +125,16 @@ public:
                         }
                         if (information.status() == QWebViewLoadingInfo::LoadStatus::Failed) {
                             load_succeeded_ = false;
-                            reportStatus(QStringLiteral(
-                                "Не удалось загрузить страницу Альфа-Банка. Проверьте сеть и "
-                                "нажмите «Повторить»."));
+                            auto failure = classify_alfa_load_failure(
+                                information.url(), information.errorString());
+                            certificate_help_required_ =
+                                failure.certificateHelpRequired;
+                            reportStatus(std::move(failure.message));
                             return;
                         }
                         if (information.status() == QWebViewLoadingInfo::LoadStatus::Succeeded) {
                             load_succeeded_ = true;
+                            certificate_help_required_ = false;
                             if (mode_ == Mode::Synchronize &&
                                 web_view_->url().host() ==
                                     QStringLiteral("private.auth.alfabank.ru")) {
@@ -106,6 +163,7 @@ public:
         if (!active_ || !web_view_) {
             return;
         }
+        certificate_help_required_ = false;
         reportStatus(QStringLiteral("Повторно загружаем официальную страницу Альфа-Банка…"));
         web_view_->reload();
     }
@@ -126,6 +184,7 @@ private:
         mode_ = mode;
         active_ = true;
         load_succeeded_ = false;
+        certificate_help_required_ = false;
         authenticated_observed_elapsed_ = -1;
         elapsed_.start();
         reportStatus(std::move(status));
@@ -242,6 +301,7 @@ private:
     Mode mode_{Mode::Login};
     bool probe_pending_ = false;
     bool load_succeeded_ = false;
+    bool certificate_help_required_ = false;
     bool active_ = false;
 };
 

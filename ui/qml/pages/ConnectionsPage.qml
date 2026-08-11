@@ -634,6 +634,13 @@ Item {
                         onClicked: connectionDialog.reloadRetailLogin()
                     }
                     ActionButton {
+                        visible: connectionDialog.builtinAlfa
+                                 && connectionDialog.retailLoginActive
+                                 && page.app.alfaCertificateHelpRequired
+                        text: qsTr("Как установить сертификаты")
+                        onClicked: page.app.openAlfaCertificateInstructions()
+                    }
+                    ActionButton {
                         visible: connectionDialog.builtinRetail
                                  && connectionDialog.retailLoginActive
                         text: qsTr("Отмена")

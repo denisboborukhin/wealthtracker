@@ -29,6 +29,7 @@
 import wt.tbank_auth;
 import wt.tbank_browser;
 import wt.alfa_browser;
+import wt.alfa_login;
 import wt.connectors;
 
 namespace {
@@ -397,6 +398,58 @@ TEST_CASE("Alfa login UI projects bounded finance fields without reading cookies
     CHECK(ready->authenticated);
     REQUIRE(ready->batch);
     CHECK(ready->batch->accounts.size() == 1);
+}
+
+TEST_CASE("Alfa WebView failures distinguish certificate trust without leaking URLs") {
+    using wealthtracker::app::AlfaLoadFailureKind;
+    using wealthtracker::app::classify_alfa_load_failure;
+
+    const auto certificateFailure = classify_alfa_load_failure(
+        QUrl{QStringLiteral(
+            "https://web.alfabank.ru/login?authorization=secret-value")},
+        QStringLiteral("The certificate for this server is invalid (-1202)"));
+    CHECK(certificateFailure.kind == AlfaLoadFailureKind::CertificateTrust);
+    CHECK(certificateFailure.certificateHelpRequired);
+    CHECK(certificateFailure.message.contains(QStringLiteral("web.alfabank.ru")));
+    CHECK(certificateFailure.message.contains(QStringLiteral("сертификат"),
+                                              Qt::CaseInsensitive));
+    CHECK_FALSE(certificateFailure.message.contains(QStringLiteral("authorization")));
+    CHECK_FALSE(certificateFailure.message.contains(QStringLiteral("secret-value")));
+
+    const auto networkFailure = classify_alfa_load_failure(
+        QUrl{QStringLiteral("https://private.auth.alfabank.ru/start?phone=secret")},
+        QStringLiteral("The Internet connection appears to be offline"));
+    CHECK(networkFailure.kind == AlfaLoadFailureKind::Network);
+    CHECK_FALSE(networkFailure.certificateHelpRequired);
+    CHECK(networkFailure.message.contains(
+        QStringLiteral("private.auth.alfabank.ru")));
+    CHECK_FALSE(networkFailure.message.contains(QStringLiteral("phone")));
+    CHECK_FALSE(networkFailure.message.contains(QStringLiteral("secret")));
+
+    const auto untrustedHost = classify_alfa_load_failure(
+        QUrl{QStringLiteral("https://attacker.example/capture?code=secret")},
+        QStringLiteral("invalid certificate"));
+    CHECK_FALSE(untrustedHost.message.contains(QStringLiteral("attacker.example")));
+    CHECK_FALSE(untrustedHost.message.contains(QStringLiteral("code")));
+    CHECK_FALSE(untrustedHost.message.contains(QStringLiteral("secret")));
+}
+
+TEST_CASE("Alfa certificate help uses only the official bank instructions") {
+    using wealthtracker::app::alfa_certificate_instructions_url;
+
+    const auto helpUrl = alfa_certificate_instructions_url();
+    CHECK(helpUrl.scheme() == QStringLiteral("https"));
+    CHECK(helpUrl.host() == QStringLiteral("alfabank.ru"));
+    CHECK(helpUrl.path() == QStringLiteral("/cert/"));
+    CHECK(helpUrl.query().isEmpty());
+
+    QFile page(QStringLiteral(
+        WEALTHTRACKER_SOURCE_DIR "/ui/qml/pages/ConnectionsPage.qml"));
+    REQUIRE(page.open(QIODevice::ReadOnly));
+    const auto source = page.readAll();
+    CHECK(source.contains(QByteArrayLiteral("alfaCertificateHelpRequired")));
+    CHECK(source.contains(
+        QByteArrayLiteral("page.app.openAlfaCertificateInstructions()")));
 }
 
 TEST_CASE("T-Bank API session identifiers reject unsafe values") {

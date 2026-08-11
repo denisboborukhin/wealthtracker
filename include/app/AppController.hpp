@@ -80,6 +80,8 @@ class AppController final : public QObject {
     Q_PROPERTY(QString alfaLastSync READ alfaLastSync NOTIFY alfaConnectionChanged)
     Q_PROPERTY(QString alfaNextSync READ alfaNextSync NOTIFY alfaConnectionChanged)
     Q_PROPERTY(QString alfaLoginStatus READ alfaLoginStatus NOTIFY alfaConnectionChanged)
+    Q_PROPERTY(bool alfaCertificateHelpRequired READ alfaCertificateHelpRequired
+               NOTIFY alfaConnectionChanged)
     Q_PROPERTY(QUrl alfaLoginUrl READ alfaLoginUrl CONSTANT)
     Q_PROPERTY(QWindow* alfaWebView READ alfaWebView NOTIFY alfaConnectionChanged)
 
@@ -135,6 +137,7 @@ public:
     [[nodiscard]] QString alfaLastSync() const;
     [[nodiscard]] QString alfaNextSync() const;
     [[nodiscard]] QString alfaLoginStatus() const;
+    [[nodiscard]] bool alfaCertificateHelpRequired() const noexcept;
     [[nodiscard]] QUrl alfaLoginUrl() const;
     [[nodiscard]] QWindow* alfaWebView();
 
@@ -168,6 +171,7 @@ public:
     Q_INVOKABLE bool prepareAlfaConnection();
     Q_INVOKABLE void beginAlfaLogin();
     Q_INVOKABLE void reloadAlfaLoginPage();
+    Q_INVOKABLE bool openAlfaCertificateInstructions();
     Q_INVOKABLE void cancelAlfaLogin();
     Q_INVOKABLE bool synchronizeAlfa();
     Q_INVOKABLE void setAlfaAutoUpdate(bool enabled);

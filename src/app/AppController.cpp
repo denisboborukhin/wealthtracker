@@ -2,6 +2,7 @@
 
 #include <QDate>
 #include <QCryptographicHash>
+#include <QDesktopServices>
 #include <QFileInfo>
 #include <QHash>
 #include <QJsonDocument>
@@ -816,6 +817,10 @@ QString AppController::alfaNextSync() const {
 }
 
 QString AppController::alfaLoginStatus() const { return alfa_login_status_; }
+
+bool AppController::alfaCertificateHelpRequired() const noexcept {
+    return private_->alfa_login->certificateHelpRequired();
+}
 
 QUrl AppController::alfaLoginUrl() const {
     return QUrl{QStringLiteral("https://web.alfabank.ru/")};
@@ -2458,6 +2463,18 @@ void AppController::reloadAlfaLoginPage() {
     if (alfa_login_active_) {
         private_->alfa_login->reload();
     }
+}
+
+bool AppController::openAlfaCertificateInstructions() {
+    const bool opened =
+        QDesktopServices::openUrl(alfa_certificate_instructions_url());
+    if (!opened) {
+        alfa_login_status_ = QStringLiteral(
+            "Не удалось открыть инструкцию. Откройте вручную: "
+            "https://alfabank.ru/cert/");
+        emit alfaConnectionChanged();
+    }
+    return opened;
 }
 
 void AppController::cancelAlfaLogin() {
