@@ -116,6 +116,7 @@ target_sources(
         src/connectors/network_policy.cpp
         src/connectors/t_invest_client.cpp
         src/connectors/official_bank_clients.cpp
+        src/connectors/tbank_retail_client.cpp
         src/connectors/cbr_fx_client.cpp
 )
 target_link_libraries(
@@ -138,10 +139,11 @@ target_sources(
         FILE_SET CXX_MODULES
         TYPE CXX_MODULES
         FILES
-            src/app/read_only_resource.cppm
+            src/app/bank_sync.cppm
+            src/app/zen_plugin_runner.cppm
             src/app/tbank_auth.cppm
             src/app/tbank_browser.cppm
-            src/app/tbank_session.cppm
+            src/app/tbank_login.cppm
     PRIVATE
         include/app/AppController.hpp
         include/app/FinanceModels.hpp
@@ -156,8 +158,6 @@ qt_add_resources(
         "/org/wealthtracker/runtime"
     FILES
         scripts/zen_plugin_host.mjs
-        bundles/tbank-retail/preferences.xml
-        bundles/tbank-retail/tbank-retail.cjs
 )
 target_link_libraries(
     app
@@ -209,7 +209,6 @@ qt_add_qml_module(
         ui/qml/pages/InvestmentsPage.qml
         ui/qml/pages/CategoriesPage.qml
         ui/qml/pages/ConnectionsPage.qml
-        ui/qml/pages/BackupsPage.qml
         ui/qml/pages/SettingsPage.qml
 )
 
@@ -249,6 +248,7 @@ if(BUILD_TESTING)
     target_link_libraries(core_tests PRIVATE core Catch2::Catch2WithMain)
     set_property(TARGET core_tests PROPERTY CXX_SCAN_FOR_MODULES ON)
     enable_strict_warnings(core_tests)
+    enable_catch2_compatibility(core_tests)
     enable_sanitizers(core_tests)
     catch_discover_tests(core_tests)
 
@@ -256,6 +256,7 @@ if(BUILD_TESTING)
     target_link_libraries(storage_tests PRIVATE storage Catch2::Catch2WithMain)
     set_property(TARGET storage_tests PROPERTY CXX_SCAN_FOR_MODULES ON)
     enable_strict_warnings(storage_tests)
+    enable_catch2_compatibility(storage_tests)
     enable_sanitizers(storage_tests)
     catch_discover_tests(storage_tests)
 
@@ -263,6 +264,7 @@ if(BUILD_TESTING)
     target_link_libraries(platform_tests PRIVATE platform Catch2::Catch2WithMain)
     set_property(TARGET platform_tests PROPERTY CXX_SCAN_FOR_MODULES ON)
     enable_strict_warnings(platform_tests)
+    enable_catch2_compatibility(platform_tests)
     enable_sanitizers(platform_tests)
     catch_discover_tests(platform_tests)
 
@@ -286,18 +288,9 @@ if(BUILD_TESTING)
             WEALTHTRACKER_SOURCE_DIR="${CMAKE_CURRENT_SOURCE_DIR}"
     )
     enable_strict_warnings(connectors_tests)
+    enable_catch2_compatibility(connectors_tests)
     enable_sanitizers(connectors_tests)
     catch_discover_tests(connectors_tests)
-
-    find_program(NODE_EXECUTABLE node)
-    if(NODE_EXECUTABLE)
-        add_test(
-            NAME tbank_bundle_test
-            COMMAND
-                "${NODE_EXECUTABLE}"
-                "${CMAKE_CURRENT_SOURCE_DIR}/tests/scripts/tbank_bundle_test.cjs"
-        )
-    endif()
 
     add_executable(app_tests
         tests/app/test_main.cpp
@@ -312,6 +305,7 @@ if(BUILD_TESTING)
             WEALTHTRACKER_SOURCE_DIR="${CMAKE_CURRENT_SOURCE_DIR}"
     )
     enable_strict_warnings(app_tests)
+    enable_catch2_compatibility(app_tests)
     enable_sanitizers(app_tests)
     catch_discover_tests(app_tests)
 endif()

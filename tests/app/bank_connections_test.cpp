@@ -7,11 +7,9 @@
 #include <QElapsedTimer>
 #include <QEventLoop>
 #include <QFile>
-#include <QFileInfo>
 #include <QHash>
 #include <QSettings>
 #include <QStandardPaths>
-#include <QTemporaryDir>
 #include <QThread>
 #include <QUrl>
 #include <QUrlQuery>
@@ -22,10 +20,9 @@
 #include <optional>
 #include <string>
 
-import wt.read_only_resource;
 import wt.tbank_auth;
 import wt.tbank_browser;
-import wt.tbank_session;
+import wt.connectors;
 
 namespace {
 
@@ -129,42 +126,7 @@ TEST_CASE("new installations start with empty data and optional demo mode") {
     CHECK(controller.accounts()->rowCount() == 0);
 }
 
-TEST_CASE("T-Bank runtime bundle upgrades an existing read-only resource") {
-    using wealthtracker::app::install_read_only_resource;
-    QTemporaryDir directory;
-    REQUIRE(directory.isValid());
-    const auto destination = directory.filePath(
-        QStringLiteral("tbank-retail.cjs"));
-    const QByteArray firstContents{"first embedded bundle"};
-    const QByteArray updatedContents{"updated embedded bundle"};
-
-    const auto firstInstall =
-        install_read_only_resource(destination, firstContents);
-    REQUIRE(firstInstall);
-    CHECK(*firstInstall);
-    CHECK_FALSE(QFileInfo(destination).permissions()
-                & QFileDevice::WriteOwner);
-
-    const auto unchangedInstall =
-        install_read_only_resource(destination, firstContents);
-    REQUIRE(unchangedInstall);
-    CHECK_FALSE(*unchangedInstall);
-
-    const auto updatedInstall =
-        install_read_only_resource(destination, updatedContents);
-    REQUIRE(updatedInstall);
-    CHECK(*updatedInstall);
-    QFile installed(destination);
-    REQUIRE(installed.open(QIODevice::ReadOnly));
-    CHECK(installed.readAll() == updatedContents);
-    installed.close();
-    CHECK_FALSE(QFileInfo(destination).permissions()
-                & QFileDevice::WriteOwner);
-    (void)QFile::setPermissions(
-        destination, QFileDevice::ReadOwner | QFileDevice::WriteOwner);
-}
-
-TEST_CASE("T-Bank is bundled while other retail banks remain adapter slots") {
+TEST_CASE("T-Bank is built in while other retail banks remain adapter slots") {
     auto credentials = std::make_unique<MemoryCredentialBackend>();
     wealthtracker::app::AppController controller(std::move(credentials),
                                                   nullptr);
@@ -172,15 +134,14 @@ TEST_CASE("T-Bank is bundled while other retail banks remain adapter slots") {
     const auto tbankAvailable = connectionValue(
         controller.bankConnections(), QStringLiteral("tbank-retail"),
         wealthtracker::app::ConnectionModel::AvailableRole).toBool();
-    CHECK(tbankAvailable
-          == !QStandardPaths::findExecutable(QStringLiteral("node")).isEmpty());
+    CHECK(tbankAvailable);
     CHECK_FALSE(connectionState(controller.bankConnections(),
                                 QStringLiteral("tbank-retail")));
     CHECK(connectionValue(controller.bankConnections(),
                           QStringLiteral("tbank-retail"),
                           wealthtracker::app::ConnectionModel::MethodRole)
               .toString()
-              .contains(QStringLiteral("Вход внутри приложения")));
+              .contains(QStringLiteral("встроенный коннектор")));
     CHECK(connectionValue(controller.bankConnections(),
                           QStringLiteral("tbank-retail"),
                           wealthtracker::app::ConnectionModel::StatusRole)
@@ -190,7 +151,7 @@ TEST_CASE("T-Bank is bundled while other retail banks remain adapter slots") {
     CHECK(controller.connectionMessage().contains(
         QStringLiteral("идентификатор сессии")));
     CHECK(controller.connectionMessage().contains(
-        QStringLiteral("непостоянном режиме")));
+        QStringLiteral("C++-коннектор")));
 
     for (const auto& connectorId :
          {QStringLiteral("alfa-retail"), QStringLiteral("sber-retail"),
@@ -210,28 +171,15 @@ TEST_CASE("T-Bank is bundled while other retail banks remain adapter slots") {
     }
 }
 
-TEST_CASE("T-Bank runtime bundle is embedded in the application") {
-    QFile bundle(QStringLiteral(
-        ":/org/wealthtracker/runtime/bundles/tbank-retail/tbank-retail.cjs"));
-    QFile preferences(QStringLiteral(
-        ":/org/wealthtracker/runtime/bundles/tbank-retail/preferences.xml"));
-    REQUIRE(bundle.open(QIODevice::ReadOnly));
-    REQUIRE(preferences.open(QIODevice::ReadOnly));
-    const auto source = bundle.readAll();
-    CHECK(source.contains(QByteArrayLiteral("accounts_light_ib")));
-    CHECK(source.contains(QByteArrayLiteral("apiGet('operations'")));
-    CHECK(preferences.readAll().contains(QByteArrayLiteral("startDate")));
-}
-
-TEST_CASE("T-Bank login UI embeds a controller-owned native WebView") {
+TEST_CASE("T-Bank login UI embeds a coordinator-owned native WebView") {
     QFile page(QStringLiteral(
         WEALTHTRACKER_SOURCE_DIR "/ui/qml/pages/ConnectionsPage.qml"));
     REQUIRE(page.open(QIODevice::ReadOnly));
     const auto source = page.readAll();
-    CHECK(source.contains(QByteArrayLiteral("App.beginTBankLogin()")));
+    CHECK(source.contains(QByteArrayLiteral("page.app.beginTBankLogin()")));
     CHECK(source.contains(QByteArrayLiteral("WindowContainer {")));
     CHECK(source.contains(QByteArrayLiteral(
-        "window: App.tbankWebView")));
+        "window: page.app.tbankWebView")));
     CHECK_FALSE(source.contains(QByteArrayLiteral("sessionid")));
     CHECK_FALSE(source.contains(QByteArrayLiteral("runJavaScript(")));
     CHECK_FALSE(source.contains(QByteArrayLiteral("отдельном Chrome")));
@@ -239,38 +187,38 @@ TEST_CASE("T-Bank login UI embeds a controller-owned native WebView") {
     CHECK_FALSE(source.contains(QByteArrayLiteral("WebEngineView")));
     CHECK_FALSE(source.contains(QByteArrayLiteral("WebEngineProfile")));
 
-    QFile controllerSource(QStringLiteral(
-        WEALTHTRACKER_SOURCE_DIR "/src/app/AppController.cpp"));
-    REQUIRE(controllerSource.open(QIODevice::ReadOnly));
-    const auto controller = controllerSource.readAll();
-    CHECK(controller.contains(QByteArrayLiteral(
+    QFile coordinatorSource(QStringLiteral(
+        WEALTHTRACKER_SOURCE_DIR "/src/app/tbank_login.cppm"));
+    REQUIRE(coordinatorSource.open(QIODevice::ReadOnly));
+    const auto coordinator = coordinatorSource.readAll();
+    CHECK(coordinator.contains(QByteArrayLiteral(
         "QNetworkRequest::CookieLoadControlAttribute")));
-    CHECK(controller.contains(QByteArrayLiteral(
+    CHECK(coordinator.contains(QByteArrayLiteral(
         "QNetworkRequest::CookieSaveControlAttribute")));
-    CHECK(controller.contains(QByteArrayLiteral(
+    CHECK(coordinator.contains(QByteArrayLiteral(
         "QNetworkRequest::Manual")));
-    CHECK(controller.contains(QByteArrayLiteral(
+    CHECK(coordinator.contains(QByteArrayLiteral(
         "parse_tbank_session_projection")));
-    CHECK(controller.contains(QByteArrayLiteral("runJavaScript(")));
-    CHECK(controller.contains(QByteArrayLiteral("LocalStorageEnabled")));
-    CHECK(controller.contains(QByteArrayLiteral("deleteAllCookies()")));
-    CHECK_FALSE(controller.contains(QByteArrayLiteral(
+    CHECK(coordinator.contains(QByteArrayLiteral("runJavaScript(")));
+    CHECK(coordinator.contains(QByteArrayLiteral("LocalStorageEnabled")));
+    CHECK(coordinator.contains(QByteArrayLiteral("deleteAllCookies()")));
+    CHECK_FALSE(coordinator.contains(QByteArrayLiteral(
         "TBankBrowserRunner")));
-    CHECK_FALSE(controller.contains(QByteArrayLiteral(
+    CHECK_FALSE(coordinator.contains(QByteArrayLiteral(
         "QDesktopServices::openUrl")));
-    CHECK_FALSE(controller.contains(QByteArrayLiteral(
+    CHECK_FALSE(coordinator.contains(QByteArrayLiteral(
         "RedirectionTargetAttribute")));
-    CHECK_FALSE(controller.contains(QByteArrayLiteral("cookieStore()")));
+    CHECK_FALSE(coordinator.contains(QByteArrayLiteral("cookieStore()")));
 }
 
 TEST_CASE("T-Bank API session identifiers reject unsafe values") {
-    using wealthtracker::app::is_valid_tbank_session_id;
-    CHECK(is_valid_tbank_session_id("observed-session-123456"));
-    CHECK_FALSE(is_valid_tbank_session_id("session;injected-value"));
-    CHECK_FALSE(is_valid_tbank_session_id("session?query-injected"));
-    CHECK_FALSE(is_valid_tbank_session_id("session&query-injected"));
-    CHECK_FALSE(is_valid_tbank_session_id("session\nheader-value"));
-    CHECK_FALSE(is_valid_tbank_session_id("too-short"));
+    using wealthtracker::connectors::isValidTBankRetailSessionId;
+    CHECK(isValidTBankRetailSessionId("observed-session-123456"));
+    CHECK_FALSE(isValidTBankRetailSessionId("session;injected-value"));
+    CHECK_FALSE(isValidTBankRetailSessionId("session?query-injected"));
+    CHECK_FALSE(isValidTBankRetailSessionId("session&query-injected"));
+    CHECK_FALSE(isValidTBankRetailSessionId("session\nheader-value"));
+    CHECK_FALSE(isValidTBankRetailSessionId("too-short"));
 }
 
 TEST_CASE("T-Bank WebView projection is bounded before API validation") {
@@ -374,7 +322,6 @@ TEST_CASE("application runs a selected local bundle through the embedded host") 
     wealthtracker::app::AppController controller(std::move(credentials),
                                                   nullptr);
     const auto baselineCredentialCount = stored->values.size();
-    REQUIRE(stored->values.contains(QStringLiteral("database-key")));
     const auto fixture = QStringLiteral(
         WEALTHTRACKER_SOURCE_DIR
         "/tests/fixtures/zen_plugin_fixture.cjs");
@@ -427,7 +374,6 @@ TEST_CASE("application runs a selected local bundle through the embedded host") 
     CHECK(controller.accounts()->rowCount() == 0);
     CHECK(controller.transactions()->rowCount() == 0);
     CHECK(stored->values.size() == baselineCredentialCount);
-    CHECK(stored->values.contains(QStringLiteral("database-key")));
     CHECK(controller.zenPluginId().isEmpty());
     CHECK_FALSE(controller.zenPluginAutoUpdate());
 }

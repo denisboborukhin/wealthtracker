@@ -64,9 +64,13 @@ class AppController final : public QObject {
     Q_PROPERTY(QString zenPluginNextSync READ zenPluginNextSync NOTIFY zenPluginChanged)
     Q_PROPERTY(bool tbankConnected READ tbankConnected NOTIFY tbankConnectionChanged)
     Q_PROPERTY(bool tbankLoginActive READ tbankLoginActive NOTIFY tbankConnectionChanged)
+    Q_PROPERTY(bool tbankSyncRunning READ tbankSyncRunning NOTIFY tbankConnectionChanged)
+    Q_PROPERTY(bool tbankAutoUpdate READ tbankAutoUpdate NOTIFY tbankConnectionChanged)
+    Q_PROPERTY(QString tbankLastSync READ tbankLastSync NOTIFY tbankConnectionChanged)
+    Q_PROPERTY(QString tbankNextSync READ tbankNextSync NOTIFY tbankConnectionChanged)
     Q_PROPERTY(QString tbankLoginStatus READ tbankLoginStatus NOTIFY tbankConnectionChanged)
     Q_PROPERTY(QUrl tbankLoginUrl READ tbankLoginUrl CONSTANT)
-    Q_PROPERTY(QWindow* tbankWebView READ tbankWebView CONSTANT)
+    Q_PROPERTY(QWindow* tbankWebView READ tbankWebView NOTIFY tbankConnectionChanged)
 
 public:
     explicit AppController(QObject* parent = nullptr);
@@ -104,6 +108,10 @@ public:
     [[nodiscard]] QString zenPluginNextSync() const;
     [[nodiscard]] bool tbankConnected() const noexcept;
     [[nodiscard]] bool tbankLoginActive() const noexcept;
+    [[nodiscard]] bool tbankSyncRunning() const noexcept;
+    [[nodiscard]] bool tbankAutoUpdate() const;
+    [[nodiscard]] QString tbankLastSync() const;
+    [[nodiscard]] QString tbankNextSync() const;
     [[nodiscard]] QString tbankLoginStatus() const;
     [[nodiscard]] QUrl tbankLoginUrl() const;
     [[nodiscard]] QWindow* tbankWebView();
@@ -132,6 +140,8 @@ public:
     Q_INVOKABLE void beginTBankLogin();
     Q_INVOKABLE void reloadTBankLoginPage();
     Q_INVOKABLE void cancelTBankLogin();
+    Q_INVOKABLE bool synchronizeTBank();
+    Q_INVOKABLE void setTBankAutoUpdate(bool enabled);
     Q_INVOKABLE void disconnectTBank();
 
 signals:
@@ -178,9 +188,8 @@ private:
     void refreshBankConnections();
     void refreshZenPluginAutoUpdateSchedule();
     void scheduleZenPluginAutoUpdateAfter(const QDateTime& from);
-    void pollTBankAuthorization();
-    void observeTBankLoginTraffic(const QString& projection);
-    void clearTBankWebView();
+    void refreshTBankAutoUpdateSchedule();
+    void scheduleTBankAutoUpdateAfter(const QDateTime& from);
     void failTBankLogin(QString message);
     void acceptTBankSession(QByteArray session);
     void rebuildBankModels();

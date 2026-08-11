@@ -20,6 +20,7 @@ module;
 #include <expected>
 #include <memory>
 #include <optional>
+#include <string_view>
 
 export module wt.connectors;
 
@@ -519,6 +520,33 @@ public:
 private:
     [[nodiscard]] ConnectorResult<QNetworkReply *>
     post(const QUrl &url, const QJsonObject &body, const QByteArray &readOnlyToken);
+
+    QNetworkAccessManager &network_;
+    HostAllowlist allowlist_;
+};
+
+enum class TBankRetailReadMethod { Accounts, Operations };
+
+[[nodiscard]] bool isValidTBankRetailSessionId(std::string_view value);
+
+class TBankRetailClient final : public ILiveConnector {
+public:
+    explicit TBankRetailClient(QNetworkAccessManager &network);
+    [[nodiscard]] ConnectorManifest manifest() const override;
+    [[nodiscard]] ConnectorResult<QNetworkReply *>
+    discoverAccounts(const QByteArray &sessionId) override;
+    [[nodiscard]] ConnectorResult<QVector<QNetworkReply *>>
+    synchronize(const LiveSyncRequest &request, const QByteArray &sessionId) override;
+    [[nodiscard]] static QString restPath(TBankRetailReadMethod method);
+    [[nodiscard]] static bool isReadOnlyPath(QStringView path);
+    [[nodiscard]] static ConnectorResult<NormalizedBatch>
+    parseAccountsResponse(const QByteArray &json, const QDateTime &observedAt);
+    [[nodiscard]] static ConnectorResult<NormalizedBatch>
+    parseOperationsResponse(const QByteArray &json, const QString &accountExternalId);
+
+private:
+    [[nodiscard]] ConnectorResult<QNetworkReply *>
+    get(const QUrl &url, const QByteArray &sessionId);
 
     QNetworkAccessManager &network_;
     HostAllowlist allowlist_;

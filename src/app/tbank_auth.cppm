@@ -13,7 +13,7 @@ module;
 
 export module wt.tbank_auth;
 
-import wt.tbank_session;
+import wt.connectors;
 
 export namespace wealthtracker::app {
 
@@ -51,7 +51,7 @@ constexpr qsizetype maximumTBankAuthResponseSize = 64 * 1024;
     const QByteArray& sessionId) {
     const auto view = std::string_view{
         sessionId.constData(), static_cast<std::size_t>(sessionId.size())};
-    if (!is_valid_tbank_session_id(view)) {
+    if (!wealthtracker::connectors::isValidTBankRetailSessionId(view)) {
         return std::unexpected(
             QStringLiteral("Т-Банк вернул некорректную API-сессию"));
     }

@@ -1,9 +1,0 @@
-<?xml version="1.0" encoding="utf-8"?>
-<PreferenceScreen>
-    <EditTextPreference
-        key="startDate"
-        title="Операции с даты"
-        dialogTitle="Операции с даты"
-        inputType="date"
-        obligatory="false" />
-</PreferenceScreen>

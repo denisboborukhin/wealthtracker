@@ -283,7 +283,8 @@ QString decodeCp1251(const QByteArray &bytes)
         u'\u00B1', u'\u0406', u'\u0456', u'\u0491', u'\u00B5', u'\u00B6', u'\u00B7',
         u'\u0451', u'\u2116', u'\u0454', u'\u00BB', u'\u0458', u'\u0405', u'\u0455',
         u'\u0457'};
-    for (const unsigned char byte : bytes) {
+    for (const char rawByte : bytes) {
+        const auto byte = static_cast<unsigned char>(rawByte);
         if (byte < 0x80) {
             result.append(QChar(byte));
         } else if (byte >= 0xC0) {
@@ -380,6 +381,8 @@ ParsedTable parseOfx(const QString &text)
     const auto account = extractTag(text, QStringLiteral("ACCTID"));
     constexpr auto openingTag = "<STMTTRN>";
     constexpr auto closingTag = "</STMTTRN>";
+    constexpr qsizetype openingTagSize = sizeof("<STMTTRN>") - 1;
+    constexpr qsizetype closingTagSize = sizeof("</STMTTRN>") - 1;
     qsizetype searchFrom = 0;
     while (true) {
         const auto start =
@@ -387,7 +390,7 @@ ParsedTable parseOfx(const QString &text)
         if (start < 0) {
             break;
         }
-        const auto contentStart = start + std::char_traits<char>::length(openingTag);
+        const auto contentStart = start + openingTagSize;
         auto end =
             text.indexOf(QString::fromLatin1(closingTag), contentStart, Qt::CaseInsensitive);
         if (end < 0) {
@@ -412,10 +415,10 @@ ParsedTable parseOfx(const QString &text)
         }
         table.rows.push_back({date, extractTag(block, QStringLiteral("TRNAMT")), description,
                               extractTag(block, QStringLiteral("FITID")), currency, account});
-        searchFrom = end + (text.mid(end, std::char_traits<char>::length(closingTag))
+        searchFrom = end + (text.mid(end, closingTagSize)
                                     .compare(QString::fromLatin1(closingTag),
                                              Qt::CaseInsensitive) == 0
-                                ? std::char_traits<char>::length(closingTag)
+                                ? closingTagSize
                                 : 0);
     }
     return table;
@@ -751,13 +754,13 @@ QString normalizedHeader(QString value)
 ColumnMapping inferColumnMapping(const QStringList &columns, const BankPreset &preset)
 {
     ColumnMapping mapping;
-    for (int index = 0; index < columns.size(); ++index) {
+    for (qsizetype index = 0; index < columns.size(); ++index) {
         const auto header = normalizedHeader(columns.at(index));
         for (auto it = preset.columnAliases.cbegin(); it != preset.columnAliases.cend(); ++it) {
             if (std::ranges::any_of(it.value(), [&header](const QString &alias) {
                     return header == normalizedHeader(alias);
                 })) {
-                setMappingField(mapping, it.key(), index);
+                setMappingField(mapping, it.key(), static_cast<int>(index));
             }
         }
     }
@@ -948,7 +951,8 @@ ConnectorResult<NormalizedBatch> normalizeStatement(const ParsedTable &table,
             {},
             provenance,
         };
-        for (int column = 0; column < std::min(table.columns.size(), row.size()); ++column) {
+        for (qsizetype column = 0;
+             column < std::min(table.columns.size(), row.size()); ++column) {
             transaction.sourceFields.insert(table.columns.at(column), row.at(column));
         }
         batch.transactions.push_back(std::move(transaction));

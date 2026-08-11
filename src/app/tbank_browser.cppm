@@ -14,7 +14,7 @@ module;
 
 export module wt.tbank_browser;
 
-import wt.tbank_session;
+import wt.connectors;
 
 export namespace wealthtracker::app {
 
@@ -70,7 +70,7 @@ parse_tbank_session_projection(const QString& projection) {
         auto session = value.toString().toLatin1();
         const auto view = std::string_view{
             session.constData(), static_cast<std::size_t>(session.size())};
-        if (!is_valid_tbank_session_id(view)) {
+        if (!wealthtracker::connectors::isValidTBankRetailSessionId(view)) {
             session.fill('\0');
             return std::unexpected(QStringLiteral(
                 "Встроенная страница вернула некорректную API-сессию"));

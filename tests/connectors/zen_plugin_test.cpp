@@ -55,14 +55,6 @@ TEST_CASE("Zen plugin descriptors validate bundle and preference metadata")
     REQUIRE_FALSE(missing);
     CHECK(missing.error().code == ErrorCode::InvalidInput);
 
-    const auto tbankBundle = inspectZenPluginBundle(
-        QStringLiteral(WEALTHTRACKER_SOURCE_DIR
-                       "/bundles/tbank-retail/tbank-retail.cjs"));
-    REQUIRE(tbankBundle);
-    CHECK(tbankBundle->pluginId == QStringLiteral("tbank-retail"));
-    REQUIRE(tbankBundle->preferences.size() == 1);
-    CHECK(tbankBundle->preferences.front().key
-          == QStringLiteral("startDate"));
 }
 
 TEST_CASE("Zen plugin result events normalize accounts and signed operations")
@@ -183,7 +175,7 @@ TEST_CASE("local host blocks bundle requests outside its network allowlist")
     CHECK(process.waitForFinished(5000));
 }
 
-TEST_CASE("local host makes allowlisted built-in plugins read-only")
+TEST_CASE("local host makes explicitly allowlisted fetches read-only")
 {
     const auto node = QStandardPaths::findExecutable(QStringLiteral("node"));
     if (node.isEmpty()) {

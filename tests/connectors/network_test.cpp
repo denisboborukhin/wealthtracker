@@ -6,6 +6,7 @@
 #include <QNetworkReply>
 #include <QNetworkRequest>
 #include <QUrl>
+#include <QUrlQuery>
 
 import wt.connectors;
 
@@ -285,6 +286,95 @@ TEST_CASE("T-Bank Business responses normalize statement signs and cursor")
     CHECK(statement->transactions.at(0).amount.minorUnits == 15025);
     CHECK(statement->transactions.at(1).amount.minorUnits == -2510);
     CHECK(statement->nextCursor == QByteArrayLiteral("cursor-2"));
+}
+
+TEST_CASE("T-Bank retail connector permits only exact read requests")
+{
+    CapturingNetworkAccessManager network;
+    TBankRetailClient client(network);
+    const QByteArray session{"verified-session-123456"};
+
+    const auto accounts = client.discoverAccounts(session);
+    REQUIRE(accounts);
+    CHECK(network.operation == QNetworkAccessManager::GetOperation);
+    CHECK(network.request.url().scheme() == QStringLiteral("https"));
+    CHECK(network.request.url().host() == QStringLiteral("www.tbank.ru"));
+    CHECK(network.request.url().path()
+          == QStringLiteral("/api/common/v1/accounts_light_ib"));
+    CHECK(QUrlQuery(network.request.url()).queryItemValue(
+              QStringLiteral("sessionid")) == QString::fromLatin1(session));
+    CHECK(network.request.attribute(
+              QNetworkRequest::RedirectPolicyAttribute).toInt()
+          == QNetworkRequest::ManualRedirectPolicy);
+    CHECK(network.request.attribute(
+              QNetworkRequest::CookieLoadControlAttribute).toInt()
+          == QNetworkRequest::Manual);
+    CHECK(network.request.attribute(
+              QNetworkRequest::CookieSaveControlAttribute).toInt()
+          == QNetworkRequest::Manual);
+
+    const auto requests = client.synchronize(
+        LiveSyncRequest{
+            .accountExternalId = QStringLiteral("account-1"),
+            .from = QDateTime::fromString(
+                QStringLiteral("2026-07-01T00:00:00Z"), Qt::ISODate),
+            .pageSize = 1'000,
+        },
+        session);
+    REQUIRE(requests);
+    CHECK(network.operation == QNetworkAccessManager::GetOperation);
+    CHECK(network.request.url().path()
+          == QStringLiteral("/api/common/v1/operations"));
+    CHECK(QUrlQuery(network.request.url()).queryItemValue(
+              QStringLiteral("account")) == QStringLiteral("account-1"));
+
+    CHECK_FALSE(client.discoverAccounts(QByteArrayLiteral("unsafe;session-value")));
+    CHECK_FALSE(TBankRetailClient::isReadOnlyPath(
+        QStringLiteral("/api/common/v1/payments")));
+}
+
+TEST_CASE("T-Bank retail responses normalize balances and operations")
+{
+    const auto observedAt = QDateTime::fromString(
+        QStringLiteral("2026-07-30T10:00:00Z"), Qt::ISODate);
+    const auto accounts = TBankRetailClient::parseAccountsResponse(
+        QByteArrayLiteral(R"({"resultCode":"OK","payload":[{"id":"account-1","name":"Black","accountType":"Debit","moneyAmount":{"value":"12500.255","currency":{"name":"RUR"}},"cards":[{"value":"553691******1234"}]},{"id":"credit-1","name":"Platinum","accountType":"Credit","moneyAmount":{"value":55000,"currency":{"name":"RUB"}},"creditLimit":{"value":100000,"currency":{"name":"RUB"}}}]})"),
+        observedAt);
+    REQUIRE(accounts);
+    REQUIRE(accounts->accounts.size() == 2);
+    REQUIRE(accounts->balances.size() == 2);
+    CHECK(accounts->accounts.front().maskedNumber == QStringLiteral("•••• 1234"));
+    CHECK(accounts->balances.front().balance
+          == Money{1'250'026, QStringLiteral("RUB")});
+    CHECK(accounts->accounts.at(1).kind == QStringLiteral("credit-card"));
+    CHECK(accounts->balances.at(1).balance
+          == Money{-4'500'000, QStringLiteral("RUB")});
+
+    const auto operations = TBankRetailClient::parseOperationsResponse(
+        QByteArrayLiteral(R"({"resultCode":"OK","payload":[{"id":"operation-1","status":"OK","type":"Debit","accountAmount":{"value":-427.5,"currency":{"name":"RUB"}},"operationTime":{"milliseconds":1785489300000},"debitingTime":{"milliseconds":1785489400000},"merchant":{"name":"Кофейня"},"spendingCategory":{"name":"Кафе"},"mcc":5814}]})"),
+        QStringLiteral("account-1"));
+    REQUIRE(operations);
+    REQUIRE(operations->transactions.size() == 1);
+    const auto& operation = operations->transactions.front();
+    CHECK(operation.externalId == QStringLiteral("operation-1"));
+    CHECK(operation.amount == Money{-42'750, QStringLiteral("RUB")});
+    CHECK(operation.merchant == QStringLiteral("Кофейня"));
+    CHECK(operation.bankCategory == QStringLiteral("Кафе"));
+    CHECK(operation.mcc == QStringLiteral("5814"));
+    CHECK_FALSE(operation.sourceFields.contains(QStringLiteral("hold")));
+
+    const auto expired = TBankRetailClient::parseAccountsResponse(
+        QByteArrayLiteral(
+            R"({"resultCode":"INSUFFICIENT_PRIVILEGES","errorMessage":"Authentication required"})"),
+        observedAt);
+    REQUIRE_FALSE(expired);
+    CHECK(expired.error().code == ErrorCode::AuthenticationFailed);
+
+    const auto invalidCreditLimit = TBankRetailClient::parseAccountsResponse(
+        QByteArrayLiteral(R"({"resultCode":"OK","payload":[{"id":"credit-1","accountType":"Credit","moneyAmount":{"value":"100.00","currency":{"name":"RUB"}},"creditLimit":{"value":"-500.00","currency":{"name":"RUB"}}}]})"),
+        observedAt);
+    REQUIRE_FALSE(invalidCreditLimit);
+    CHECK(invalidCreditLimit.error().code == ErrorCode::ParseFailed);
 }
 
 TEST_CASE("Modulbank responses normalize business accounts and directions")
