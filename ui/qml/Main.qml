@@ -127,12 +127,12 @@ ApplicationWindow {
         anchors.fill: parent
         visible: window.app.locked
         z: 100
-        color: "#D9F5F6F7"
+        color: Theme.background
 
         Rectangle {
             anchors.centerIn: parent
-            width: 420
-            height: 240
+            width: Math.min(440, parent.width - 48)
+            height: 276
             radius: 12
             color: Theme.surface
             border.color: Theme.border
@@ -143,7 +143,7 @@ ApplicationWindow {
                 spacing: 14
                 Text {
                     Layout.alignment: Qt.AlignHCenter
-                    text: qsTr("Финансовые данные скрыты")
+                    text: qsTr("Экран приватности включён")
                     color: Theme.text
                     font.pixelSize: 20
                     font.weight: Font.DemiBold
@@ -151,13 +151,21 @@ ApplicationWindow {
                 Text {
                     Layout.fillWidth: true
                     horizontalAlignment: Text.AlignHCenter
-                    text: qsTr("Активные подключения остановлены. Покажите данные, чтобы продолжить работу.")
+                    text: qsTr("Суммы и операции скрыты. Текущие входы и синхронизации остановлены, сохранённые данные не удалены.")
                     color: Theme.textMuted
+                    wrapMode: Text.WordWrap
+                }
+                Text {
+                    Layout.fillWidth: true
+                    horizontalAlignment: Text.AlignHCenter
+                    text: qsTr("Это не блокировка приложения: для возврата пароль не требуется.")
+                    color: Theme.textMuted
+                    font.pixelSize: 11
                     wrapMode: Text.WordWrap
                 }
                 ActionButton {
                     Layout.fillWidth: true
-                    text: qsTr("Показать данные")
+                    text: qsTr("Вернуться к данным")
                     primary: true
                     onClicked: window.app.unlock()
                 }

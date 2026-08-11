@@ -63,18 +63,39 @@ Item {
 
         SectionCard {
             Layout.fillWidth: true
-            Layout.preferredHeight: 96
+            Layout.preferredHeight: 142
             RowLayout {
                 anchors.fill: parent
                 anchors.margins: 20
+                spacing: 20
                 ColumnLayout {
                     Layout.fillWidth: true
-                    spacing: 3
-                    Text { text: qsTr("Скрыть финансовые данные"); color: Theme.text; font.pixelSize: 13; font.weight: Font.Medium }
-                    Text { text: qsTr("Закрывает вход в банк и останавливает активные синхронизации"); color: Theme.textMuted; font.pixelSize: 11 }
+                    Layout.minimumWidth: 0
+                    spacing: 5
+                    Text {
+                        Layout.fillWidth: true
+                        text: qsTr("Экран приватности")
+                        color: Theme.text
+                        font.pixelSize: 13
+                        font.weight: Font.Medium
+                    }
+                    Text {
+                        Layout.fillWidth: true
+                        text: qsTr("Скрывает суммы и операции в окне и останавливает текущие входы и синхронизации.")
+                        color: Theme.textMuted
+                        font.pixelSize: 11
+                        wrapMode: Text.WordWrap
+                    }
+                    Text {
+                        Layout.fillWidth: true
+                        text: qsTr("Для возврата пароль не нужен. Данные не удаляются — это не блокировка приложения.")
+                        color: Theme.textMuted
+                        font.pixelSize: 11
+                        wrapMode: Text.WordWrap
+                    }
                 }
                 ActionButton {
-                    text: qsTr("Скрыть")
+                    text: qsTr("Скрыть данные")
                     onClicked: page.app.lock()
                 }
             }
