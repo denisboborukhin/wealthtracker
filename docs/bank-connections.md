@@ -77,8 +77,13 @@ WealthTracker and retry the connection.
 Alfa Online does not expose a public retail account API comparable to its
 partner B2C product. The built-in connector therefore keeps the authenticated
 page in the operating-system WebView and runs a fixed projection expression.
-The expression reads only known in-page state objects and returns these bounded
-fields:
+The expression reads only known global state or the JSON argument of the bank's
+inline `window.runApp({ appState: ... })`/`initialState` dashboard bootstrap for
+accounts and balances. It then installs a one-shot observer while Alfa's normal
+`/history` page loads. The observer accepts only a successful response from the
+exact same-origin `/api/v1/operations-history/operations` path, never changes
+the request, and restores the browser API after that response. The resulting
+projection contains only these bounded fields:
 
 - at most 256 account identifiers, names, types, currencies, masked numbers,
   and balances;
@@ -87,11 +92,19 @@ fields:
 - a version and authenticated flag.
 
 It does not read cookie values, authorization headers, form fields, request
-bodies, local storage, or arbitrary DOM content. C++ limits the projection to
-8 MiB, validates exact integer minor units and ISO dates, rejects malformed
-accounts, and skips malformed or duplicate operations with a visible warning
-count. Internal transfers do not contribute to income, spending, savings rate,
-or category totals.
+bodies, local storage, rendered text, or arbitrary DOM elements. Inline script
+scanning is limited by count and size; history capture requires 2xx JSON and is
+limited to 8 MiB. Raw bootstrap and response objects never leave the bank page.
+C++ limits the returned projection to 8 MiB, validates exact integer minor units
+and ISO dates, rejects malformed accounts, and skips malformed or duplicate
+operations with a visible warning count. Internal transfers do not contribute
+to income, spending, savings rate, or category totals.
+
+After Alfa redirects back to its dashboard, the dialog shows **Вход выполнен.
+Получаем счета из Альфа-Онлайн…**. If the bank no longer exposes a supported
+bootstrap schema, synchronization stops with a compatibility error after 30
+seconds instead of leaving the login dialog waiting indefinitely. The same
+bounded failure applies if the history response does not finish.
 
 The system WebView retains Alfa's browser session so the app can reload the
 dashboard every six hours while auto-update is enabled. Disconnecting clears

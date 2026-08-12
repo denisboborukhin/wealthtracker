@@ -31,9 +31,11 @@ implements payments, transfers, card management, or trading.
 
 Retail Alfa-Bank uses the official Alfa Online phone/SMS page. Its login is
 browser-session based: WealthTracker does not read cookie values, headers,
-login fields, or web storage. A fixed page expression projects only bounded
-account, balance, and recent-operation fields into C++, and the system WebView
-retains the browser session for six-hour refreshes while auto-update is enabled.
+login fields, or web storage. A fixed page expression reads the bank's known
+dashboard bootstrap state for accounts and a one-shot observer accepts only the
+bank history page's exact same-origin operations response. Only bounded account,
+balance, and operation fields reach C++. The system WebView retains the browser
+session for six-hour refreshes while auto-update is enabled.
 This interface is undocumented and can break after a bank-side change. Alfa
 Online uses Russian TLS certificates; on systems that do not trust the Russian
 Trusted Root CA, the connection dialog links to

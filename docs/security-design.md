@@ -71,11 +71,20 @@ Failure text is derived from a fixed classification and an allowlisted hostname,
 never from a complete URL or raw renderer error that could contain login data.
 
 A fixed expression checks the exact `https://web.alfabank.ru` origin and reads
-only known page-state objects. It projects a versioned allowlist of financial
-fields rather than returning raw page state. C++ enforces an 8 MiB response
-limit, 256-account and 20,000-operation limits, exact integer amounts, bounded
-text, valid currencies and dates, and account ownership for each operation.
-QML receives only the native window and textual status.
+only known global or inline dashboard bootstrap objects. Inline scripts are
+bounded to 64 elements, 8 MiB each, and 16 MiB total; external scripts, rendered
+DOM, fields, and storage are not read. Only the `initialState` object or
+`runApp` `appState` JSON is considered for accounts and balances.
+
+For history, a one-shot observer follows the bank's normal `/history` route and
+accepts only a 2xx JSON response, no larger than 8 MiB, from the exact same-origin
+`/api/v1/operations-history/operations` path. It does not inspect or alter the
+request and restores the browser API after the response. The projection returns
+an allowlist of fields rather than raw page or response state, then releases its
+temporary response reference. C++ enforces an
+8 MiB result limit, 256-account and 20,000-operation limits, exact integer
+amounts, bounded text, valid currencies and dates, and account ownership for
+each operation. QML receives only the native window and textual status.
 
 The browser session remains in the operating-system WebView for automatic
 dashboard refreshes and is cleared when the connection is removed. A redirect
