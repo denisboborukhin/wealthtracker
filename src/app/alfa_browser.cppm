@@ -16,23 +16,161 @@ import wt.connectors;
 
 export namespace wealthtracker::app {
 
-struct AlfaFinancialProjection {
-    bool authenticated = false;
-    std::optional<wealthtracker::connectors::NormalizedBatch> batch;
+enum class AlfaProjectionStage {
+    Authentication,
+    DashboardLoading,
+    OperationsLoading,
+    OperationsFailed,
+    Ready
 };
+
+struct AlfaFinancialProjection {
+    AlfaProjectionStage stage{AlfaProjectionStage::Authentication};
+    std::optional<wealthtracker::connectors::NormalizedBatch> batch;
+    bool historyCaptured = false;
+};
+
+[[nodiscard]] const QString& alfa_history_capture_script() {
+    static const QString script = QStringLiteral(R"ALFA((() => {
+  try {
+    const pageUrl = new URL(globalThis.location.href)
+    if (pageUrl.protocol !== 'https:' || pageUrl.hostname !== 'web.alfabank.ru' ||
+        (pageUrl.port !== '' && pageUrl.port !== '443') ||
+        pageUrl.username !== '' || pageUrl.password !== '') return 'wrong-origin'
+    const stateKey = '__wealthtrackerAlfaHistory'
+    const existing = globalThis[stateKey]
+    if (existing && (existing.status === 'waiting' || existing.status === 'ready'))
+      return existing.status
+
+    const state = globalThis[stateKey] = { status: 'waiting' }
+    const prototype = globalThis.XMLHttpRequest?.prototype
+    if (!prototype || typeof prototype.open !== 'function' ||
+        typeof prototype.send !== 'function') {
+      state.status = 'failed'
+      return state.status
+    }
+    const nativeOpen = prototype.open
+    const nativeSend = prototype.send
+    const endpoint = '/api/v1/operations-history/operations'
+    const matchesEndpoint = value => {
+      try {
+        const url = new URL(String(value ?? ''), pageUrl.origin)
+        return url.origin === pageUrl.origin && url.pathname === endpoint
+      } catch (ignored) { return false }
+    }
+    const restore = () => {
+      if (prototype.open === wrappedOpen) prototype.open = nativeOpen
+      if (prototype.send === wrappedSend) prototype.send = nativeSend
+    }
+    function wrappedOpen(method, url, ...rest) {
+      this.__wealthtrackerAlfaHistoryRequest =
+        String(method ?? '').toUpperCase() === 'POST' && matchesEndpoint(url)
+      return nativeOpen.call(this, method, url, ...rest)
+    }
+    function wrappedSend(body) {
+      if (this.__wealthtrackerAlfaHistoryRequest) {
+        this.addEventListener('loadend', () => {
+          if (state.status !== 'waiting') return
+          if (this.status < 200 || this.status >= 300 ||
+              typeof this.responseText !== 'string' ||
+              this.responseText.length > 8 * 1024 * 1024) {
+            state.status = 'failed'
+            restore()
+            return
+          }
+          try {
+            const payload = JSON.parse(this.responseText)
+            if (!payload || typeof payload !== 'object' ||
+                !Array.isArray(payload.operations)) throw new Error('invalid response')
+            state.payload = payload
+            state.status = 'ready'
+          } catch (ignored) { state.status = 'failed' }
+          restore()
+        }, { once: true })
+      }
+      return nativeSend.call(this, body)
+    }
+    prototype.open = wrappedOpen
+    prototype.send = wrappedSend
+    globalThis.history.pushState({}, '', '/history')
+    globalThis.dispatchEvent(new PopStateEvent('popstate'))
+    return state.status
+  } catch (ignored) {
+    if (globalThis.__wealthtrackerAlfaHistory)
+      globalThis.__wealthtrackerAlfaHistory.status = 'failed'
+    return 'failed'
+  }
+})())ALFA");
+    return script;
+}
 
 [[nodiscard]] const QString& alfa_financial_projection_script() {
     static const QString script = QStringLiteral(R"ALFA((() => {
-  const result = { version: 1, authenticated: false, accounts: [], transactions: [] }
+  const result = { version: 1, stage: 'authentication', authenticated: false,
+                   historyCaptured: false, accounts: [], transactions: [] }
   try {
     const pageUrl = new URL(globalThis.location.href)
     if (pageUrl.protocol !== 'https:' || pageUrl.hostname !== 'web.alfabank.ru' ||
         (pageUrl.port !== '' && pageUrl.port !== '443') ||
         pageUrl.username !== '' || pageUrl.password !== '') return JSON.stringify(result)
 
-    const roots = [globalThis.initialState, globalThis.__INITIAL_STATE__,
-                   globalThis.__PRELOADED_STATE__, globalThis.__NEXT_DATA__]
-      .filter(value => value && typeof value === 'object')
+    result.stage = 'dashboard-loading'
+    const roots = []
+    const seenRoots = new Set()
+    const addRoot = value => {
+      if (!value || typeof value !== 'object' || seenRoots.has(value)) return
+      seenRoots.add(value)
+      roots.push(value)
+    }
+    addRoot(globalThis.initialState)
+    addRoot(globalThis.__INITIAL_STATE__)
+    addRoot(globalThis.__PRELOADED_STATE__)
+    addRoot(globalThis.__NEXT_DATA__)
+    const historyState = globalThis.__wealthtrackerAlfaHistory
+
+    const parseObjectAt = (source, start) => {
+      if (start < 0 || source[start] !== '{') return null
+      let depth = 0
+      let quoted = false
+      let escaped = false
+      const limit = Math.min(source.length, start + 8 * 1024 * 1024)
+      for (let index = start; index < limit; ++index) {
+        const character = source[index]
+        if (quoted) {
+          if (escaped) escaped = false
+          else if (character === '\\') escaped = true
+          else if (character === '"') quoted = false
+          continue
+        }
+        if (character === '"') quoted = true
+        else if (character === '{') ++depth
+        else if (character === '}' && --depth === 0) {
+          try { return JSON.parse(source.slice(start, index + 1)) } catch (ignored) { return null }
+        }
+      }
+      return null
+    }
+    const parseAfter = (source, marker) => {
+      const markerIndex = source.indexOf(marker)
+      if (markerIndex < 0) return null
+      return parseObjectAt(source, source.indexOf('{', markerIndex + marker.length))
+    }
+    let scannedCharacters = 0
+    const inlineScripts = globalThis.document?.scripts
+      ? Array.from(globalThis.document.scripts).slice(0, 64) : []
+    for (const element of inlineScripts) {
+      if (element.src) continue
+      const source = String(element.textContent ?? '')
+      scannedCharacters += source.length
+      if (source.length > 8 * 1024 * 1024 || scannedCharacters > 16 * 1024 * 1024) break
+      const runApp = parseAfter(source, 'window.runApp(')
+      addRoot(runApp?.appState)
+      addRoot(parseAfter(source, 'window.initialState ='))
+      addRoot(parseAfter(source, 'window.initialState='))
+      addRoot(parseAfter(source, 'globalThis.initialState ='))
+      addRoot(parseAfter(source, 'globalThis.initialState='))
+    }
+    addRoot(historyState?.payload)
     if (roots.length === 0) return JSON.stringify(result)
 
     const text = value => {
@@ -75,6 +213,28 @@ struct AlfaFinancialProjection {
       return 'checking'
     }
     const seenAccounts = new Set()
+    const accountAliases = new Map()
+    const identifier = value => text(value).slice(0, 160)
+    const registerAlias = (value, accountId) => {
+      const alias = identifier(value)
+      if (!alias) return
+      if (!accountAliases.has(alias)) accountAliases.set(alias, accountId)
+      else if (accountAliases.get(alias) !== accountId) accountAliases.set(alias, '')
+      const digits = alias.replace(/\D/g, '')
+      if (digits.length >= 4) {
+        const suffix = digits.slice(-4)
+        if (!accountAliases.has(suffix)) accountAliases.set(suffix, accountId)
+        else if (accountAliases.get(suffix) !== accountId) accountAliases.set(suffix, '')
+      }
+    }
+    const registerRouteAliases = (value, accountId) => {
+      try {
+        const url = new URL(String(value ?? ''), pageUrl.origin)
+        if (url.origin !== pageUrl.origin) return
+        for (const segment of url.pathname.split('/'))
+          if (/^[A-Za-z0-9_-]{6,160}$/.test(segment)) registerAlias(segment, accountId)
+      } catch (ignored) {}
+    }
     const addAccount = (item, fallbackKind) => {
       if (!item || typeof item !== 'object' || result.accounts.length >= 256) return
       const card = Array.isArray(item.cards) && item.cards.length > 0 ? item.cards[0] : null
@@ -94,21 +254,75 @@ struct AlfaFinancialProjection {
         maskedNumber: lastFour(item.maskedNumber ?? item.number ?? item.accountNumber ?? card?.number),
         balanceMinor: amount.minor
       })
+      registerAlias(id, id)
+      registerAlias(item.accountId ?? item.number ?? item.accountNumber, id)
+      registerAlias(item.maskedNumber ?? card?.number, id)
+    }
+    const lineItems = line => Array.isArray(line?.items) ? line.items : []
+    const lineText = line => {
+      for (const item of lineItems(line)) {
+        const value = item?.content?.value
+        if (typeof value === 'string' && text(value)) return text(value)
+      }
+      return ''
+    }
+    const lineMoney = line => {
+      for (const item of lineItems(line)) {
+        const value = money(item?.content?.value)
+        if (value?.currency) return value
+      }
+      return null
+    }
+    const addDashboardProduct = item => {
+      if (!item || typeof item !== 'object' || result.accounts.length >= 256) return
+      const main = item.content?.main
+      const amount = lineMoney(main?.thirdLine) ?? lineMoney(main?.secondLine) ??
+                     lineMoney(main?.firstLine)
+      const id = identifier(item.id)
+      if (!id || !amount?.currency || seenAccounts.has(id)) return
+      const masked = item.content?.rightAddon?.content?.primary?.maskedNumber ??
+                     item.content?.rightAddon?.content?.secondary?.maskedNumber
+      seenAccounts.add(id)
+      result.accounts.push({
+        id,
+        name: lineText(main?.firstLine) || lineText(main?.secondLine) ||
+              'Счёт Альфа-Банка',
+        kind: accountType(`${text(item.sectionId)} ${text(item.type)}`, 'checking',
+                          Boolean(masked)),
+        currency: amount.currency,
+        maskedNumber: lastFour(masked),
+        balanceMinor: amount.minor
+      })
+      registerAlias(id, id)
+      registerAlias(item.properties?.action?.id, id)
+      registerAlias(masked, id)
+      registerRouteAliases(item.content?.deeplink, id)
     }
     for (const root of roots) {
       const layout = root.layoutData ?? root.data?.layoutData ?? root.props?.pageProps?.layoutData
       if (!layout || typeof layout !== 'object') continue
       const groups = [
         [layout.accountsWithCards, 'checking'], [layout.accounts, 'checking'],
-        [layout.accountsWithoutCards, 'checking'], [layout.savingsAccounts, 'checking'],
+        [layout.accountsWithoutCards, 'checking'], [layout.capitalAccounts, 'checking'],
+        [layout.savingsAccounts, 'checking'],
         [layout.deposits, 'deposit'], [layout.credits, 'loan'], [layout.loans, 'loan'],
         [layout.products?.accounts, 'checking'], [layout.products?.deposits, 'deposit'],
         [layout.products?.credits, 'loan']
       ]
       for (const [group, kind] of groups)
         if (Array.isArray(group)) for (const item of group) addAccount(item, kind)
+      if (Array.isArray(layout.allProducts))
+        for (const item of layout.allProducts) addDashboardProduct(item)
     }
     if (result.accounts.length === 0) return JSON.stringify(result)
+    if (historyState?.status === 'waiting') {
+      result.stage = 'operations-loading'
+      return JSON.stringify(result)
+    }
+    if (historyState?.status === 'failed') {
+      result.stage = 'operations-failed'
+      return JSON.stringify(result)
+    }
 
     const operationKey = /(operation|transaction|history|statement|recent|activity)/i
     const dateValue = value => {
@@ -127,28 +341,45 @@ struct AlfaFinancialProjection {
       const amount = money(item.accountAmount ?? item.amount ?? item.moneyAmount ??
                            item.transactionAmount ?? item.sum)
       const date = dateValue(item.operationTime ?? item.debitingTime ?? item.occurredAt ??
-                             item.postingDate ?? item.date ?? item.createdAt)
+                             item.postingDate ?? item.date ?? item.dateTime ?? item.createdAt)
       if (!amount || !date) return
-      let accountId = text(item.accountId ?? item.accountExternalId ?? item.accountNumber ??
-                           item.account?.id ?? item.account?.number)
+      const candidates = [item.accountId, item.accountExternalId, item.accountNumber,
+                          item.account?.id, item.account?.number, item.clickReference]
+      if (Array.isArray(item.actions))
+        for (const action of item.actions)
+          candidates.push(action?.accountNumber, action?.referenceId)
+      let accountId = ''
+      for (const candidate of candidates) {
+        const alias = identifier(candidate)
+        const digits = alias.replace(/\D/g, '')
+        const resolved = accountAliases.get(alias) ||
+                         (digits.length >= 4 ? accountAliases.get(digits.slice(-4)) : '')
+        if (resolved) { accountId = resolved; break }
+      }
       if (!accountId && result.accounts.length === 1) accountId = result.accounts[0].id
       if (!seenAccounts.has(accountId)) return
-      const description = text(item.description ?? item.title ?? item.message ??
+      const description = text(item.description ?? item.title ?? item.comment ?? item.message ??
                                item.purpose ?? item.operationName)
       const merchant = text(item.merchant?.name ?? item.merchant ?? item.brand?.name)
       const category = text(item.category?.name ?? item.category ??
                             item.spendingCategory?.name ?? item.operationCategory?.name)
       const id = text(item.id ?? item.operationId ?? item.transactionId ?? item.reference)
-      const identity = `${accountId}\n${id || `${date.toISOString()}|${amount.minor}|${description}`}`
+      const direction = text(item.direction).toLowerCase()
+      let signedMinor = amount.minor
+      if (/debit|expense|outcome|outgoing|spend|расход/.test(direction) &&
+          !signedMinor.startsWith('-')) signedMinor = `-${signedMinor}`
+      else if (/credit|income|incoming|доход/.test(direction) &&
+               signedMinor.startsWith('-')) signedMinor = signedMinor.slice(1)
+      const identity = `${accountId}\n${id || `${date.toISOString()}|${signedMinor}|${description}`}`
       if (seenTransactions.has(identity)) return
       seenTransactions.add(identity)
-      const transferText = `${description} ${category} ${text(item.type)}`.toLowerCase()
+      const transferText = `${description} ${category} ${text(item.type)} ${direction}`.toLowerCase()
       result.transactions.push({
         id,
         accountId,
         postingDate: date.toISOString().slice(0, 10),
         occurredAt: date.toISOString(),
-        amountMinor: amount.minor,
+        amountMinor: signedMinor,
         currency: amount.currency || result.accounts.find(account => account.id === accountId)?.currency || '',
         description,
         merchant,
@@ -171,8 +402,14 @@ struct AlfaFinancialProjection {
         visit(child, childKey, depth + 1)
     }
     for (const root of roots) visit(root, '', 0)
+    result.stage = 'ready'
     result.authenticated = true
-  } catch {}
+    result.historyCaptured = historyState?.status === 'ready'
+    if (result.historyCaptured) {
+      delete historyState.payload
+      historyState.status = 'consumed'
+    }
+  } catch (ignored) {}
   return JSON.stringify(result)
 })())ALFA");
     return script;
@@ -197,14 +434,39 @@ parse_alfa_financial_projection(const QString& projection, const QDateTime& obse
         return std::unexpected(
             QStringLiteral("Версия ответа встроенной страницы Альфа-Банка не поддерживается"));
     }
+    const auto stageText = object.value(QStringLiteral("stage")).toString();
+    AlfaProjectionStage stage{};
+    if (stageText == QStringLiteral("authentication")) {
+        stage = AlfaProjectionStage::Authentication;
+    } else if (stageText == QStringLiteral("dashboard-loading")) {
+        stage = AlfaProjectionStage::DashboardLoading;
+    } else if (stageText == QStringLiteral("operations-loading")) {
+        stage = AlfaProjectionStage::OperationsLoading;
+    } else if (stageText == QStringLiteral("operations-failed")) {
+        stage = AlfaProjectionStage::OperationsFailed;
+    } else if (stageText == QStringLiteral("ready")) {
+        stage = AlfaProjectionStage::Ready;
+    } else {
+        return std::unexpected(
+            QStringLiteral("Этап ответа встроенной страницы Альфа-Банка неизвестен"));
+    }
+    if (stage != AlfaProjectionStage::Ready) {
+        if (object.value(QStringLiteral("authenticated")).toBool()) {
+            return std::unexpected(
+                QStringLiteral("Состояние встроенной страницы Альфа-Банка противоречиво"));
+        }
+        return AlfaFinancialProjection{stage, std::nullopt, false};
+    }
     if (!object.value(QStringLiteral("authenticated")).toBool()) {
-        return AlfaFinancialProjection{};
+        return std::unexpected(
+            QStringLiteral("Состояние встроенной страницы Альфа-Банка противоречиво"));
     }
     auto batch = wealthtracker::connectors::AlfaRetailClient::parseProjection(encoded, observedAt);
     if (!batch) {
         return std::unexpected(batch.error().message);
     }
-    return AlfaFinancialProjection{true, std::move(*batch)};
+    return AlfaFinancialProjection{AlfaProjectionStage::Ready, std::move(*batch),
+                                   object.value(QStringLiteral("historyCaptured")).toBool()};
 }
 
 } // namespace wealthtracker::app

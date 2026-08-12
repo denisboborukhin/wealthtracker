@@ -8,6 +8,7 @@
 #include <QEventLoop>
 #include <QFile>
 #include <QHash>
+#include <QJSEngine>
 #include <QNetworkAccessManager>
 #include <QNetworkReply>
 #include <QNetworkRequest>
@@ -358,6 +359,8 @@ TEST_CASE("T-Bank login UI embeds a coordinator-owned native WebView") {
 }
 
 TEST_CASE("Alfa login UI projects bounded finance fields without reading cookies") {
+    using wealthtracker::app::AlfaProjectionStage;
+    using wealthtracker::app::alfa_history_capture_script;
     using wealthtracker::app::alfa_financial_projection_script;
     using wealthtracker::app::parse_alfa_financial_projection;
 
@@ -375,29 +378,240 @@ TEST_CASE("Alfa login UI projects bounded finance fields without reading cookies
     const auto script = alfa_financial_projection_script();
     CHECK(script.contains(QStringLiteral("web.alfabank.ru")));
     CHECK(script.contains(QStringLiteral("globalThis.initialState")));
+    CHECK(script.contains(QStringLiteral("window.runApp(")));
+    CHECK(script.contains(QStringLiteral("document?.scripts")));
+    CHECK(script.contains(QStringLiteral("layout.allProducts")));
+    CHECK(script.contains(QStringLiteral("layout.capitalAccounts")));
     CHECK(script.contains(QStringLiteral("balanceMinor")));
     CHECK(script.contains(QStringLiteral("internalTransfer")));
     CHECK_FALSE(script.contains(QStringLiteral("document.cookie"), Qt::CaseInsensitive));
     CHECK_FALSE(script.contains(QStringLiteral("localStorage"), Qt::CaseInsensitive));
+    CHECK_FALSE(script.contains(QStringLiteral("innerHTML"), Qt::CaseInsensitive));
+    CHECK_FALSE(script.contains(QStringLiteral("querySelector"), Qt::CaseInsensitive));
     CHECK(script.contains(QStringLiteral("pageUrl.password !== ''")));
     CHECK_FALSE(script.contains(QStringLiteral("password:"), Qt::CaseInsensitive));
 
+    const auto historyScript = alfa_history_capture_script();
+    CHECK(historyScript.contains(QStringLiteral(
+        "/api/v1/operations-history/operations")));
+    CHECK(historyScript.contains(QStringLiteral("XMLHttpRequest")));
+    CHECK(historyScript.contains(QStringLiteral("history.pushState")));
+    CHECK(historyScript.contains(QStringLiteral("8 * 1024 * 1024")));
+    CHECK_FALSE(historyScript.contains(QStringLiteral("document.cookie"),
+                                       Qt::CaseInsensitive));
+    CHECK_FALSE(historyScript.contains(QStringLiteral("localStorage"),
+                                       Qt::CaseInsensitive));
+
     const auto waiting = parse_alfa_financial_projection(
         QStringLiteral(
-            R"({"version":1,"authenticated":false,"accounts":[],"transactions":[]})"),
+            R"({"version":1,"stage":"authentication","authenticated":false,"accounts":[],"transactions":[]})"),
         QDateTime::currentDateTimeUtc());
     REQUIRE(waiting);
-    CHECK_FALSE(waiting->authenticated);
+    CHECK(waiting->stage == AlfaProjectionStage::Authentication);
     CHECK_FALSE(waiting->batch.has_value());
 
     const auto ready = parse_alfa_financial_projection(
         QStringLiteral(
-            R"({"version":1,"authenticated":true,"accounts":[{"id":"account-1","name":"Альфа-Карта","kind":"checking","currency":"RUB","maskedNumber":"•••• 1234","balanceMinor":"10000"}],"transactions":[]})"),
+            R"({"version":1,"stage":"ready","authenticated":true,"accounts":[{"id":"account-1","name":"Альфа-Карта","kind":"checking","currency":"RUB","maskedNumber":"•••• 1234","balanceMinor":"10000"}],"transactions":[]})"),
         QDateTime::currentDateTimeUtc());
     REQUIRE(ready);
-    CHECK(ready->authenticated);
+    CHECK(ready->stage == AlfaProjectionStage::Ready);
     REQUIRE(ready->batch);
     CHECK(ready->batch->accounts.size() == 1);
+}
+
+TEST_CASE("Alfa projection reads the current inline runApp state after hydration") {
+    using wealthtracker::app::AlfaProjectionStage;
+    using wealthtracker::app::alfa_financial_projection_script;
+    using wealthtracker::app::parse_alfa_financial_projection;
+
+    QJSEngine engine;
+    const auto setup = engine.evaluate(QStringLiteral(R"JS(
+        var globalThis = this
+        globalThis.URL = function() {
+            return { protocol: 'https:', hostname: 'web.alfabank.ru', port: '',
+                     username: '', password: '', origin: 'https://web.alfabank.ru',
+                     pathname: '/dashboard' }
+        }
+        globalThis.location = { href: 'https://web.alfabank.ru/dashboard' }
+        globalThis.document = { scripts: [{
+            src: '',
+            textContent: 'window.runApp(' + JSON.stringify({ appState: { layoutData: {
+                allProducts: [{
+                    id: 'product-inline-1', sectionId: 'deposits', type: 'product',
+                    content: {
+                        deeplink: '/accounts/product-inline-1',
+                        main: {
+                            firstLine: { items: [{ type: 'textItem',
+                                content: { value: 'Savings' } }] },
+                            thirdLine: { items: [{ type: 'amountItem', content: {
+                                value: { value: 125050, minorUnits: 100,
+                                         currency: 'RUR' }
+                            } }] }
+                        },
+                        rightAddon: { content: { primary: {
+                            maskedNumber: '•••• 1234'
+                        } } }
+                    },
+                    properties: { action: { id: 'account-number-1' } }
+                }, {
+                    id: 'product-inline-2', sectionId: 'accounts', type: 'product',
+                    content: { main: {
+                        firstLine: { items: [{ type: 'textItem',
+                            content: { value: 'Current' } }] },
+                        thirdLine: { items: [{ type: 'amountItem', content: {
+                            value: { value: 9000, minorUnits: 100, currency: 'RUR' }
+                        } }] }
+                    } },
+                    properties: { action: { id: 'account-number-2' } }
+                }]
+            } } }) + ')'
+        }] }
+        globalThis.__wealthtrackerAlfaHistory = { status: 'ready', payload: {
+            operations: [{
+                id: 'operation-inline-1', operationId: 'operation-reference-1',
+                dateTime: '2026-08-11T08:30:00Z', direction: 'EXPENSE',
+                amount: { value: 5000, minorUnits: 100, currency: 'RUR' },
+                title: 'Coffee', category: { name: 'Cafes' },
+                actions: [{ accountNumber: 'account-number-1' }]
+            }]
+        } }
+    )JS"));
+    REQUIRE_FALSE(setup.isError());
+
+    const auto evaluated = engine.evaluate(alfa_financial_projection_script());
+    REQUIRE_FALSE(evaluated.isError());
+    const auto projection = parse_alfa_financial_projection(
+        evaluated.toString(), QDateTime::currentDateTimeUtc());
+    REQUIRE(projection);
+    CHECK(projection->stage == AlfaProjectionStage::Ready);
+    CHECK(projection->historyCaptured);
+    CHECK(engine.evaluate(QStringLiteral(
+              "globalThis.__wealthtrackerAlfaHistory.status === 'consumed' && "
+              "globalThis.__wealthtrackerAlfaHistory.payload === undefined"))
+              .toBool());
+    REQUIRE(projection->batch);
+    REQUIRE(projection->batch->accounts.size() == 2);
+    CHECK(projection->batch->accounts.front().externalId ==
+          QStringLiteral("product-inline-1"));
+    CHECK(projection->batch->balances.front().balance.minorUnits == 125050);
+    REQUIRE(projection->batch->transactions.size() == 1);
+    CHECK(projection->batch->transactions.front().amount.minorUnits == -5000);
+    CHECK(projection->batch->transactions.front().accountExternalId ==
+          QStringLiteral("product-inline-1"));
+    CHECK(projection->batch->transactions.front().bankCategory ==
+          QStringLiteral("Cafes"));
+}
+
+TEST_CASE("Alfa history capture observes only the bank page read response") {
+    using wealthtracker::app::alfa_history_capture_script;
+
+    QJSEngine engine;
+    const auto setup = engine.evaluate(QStringLiteral(R"JS(
+        var globalThis = this
+        globalThis.location = { href: 'https://web.alfabank.ru/dashboard' }
+        globalThis.URL = function(value) {
+            const text = String(value)
+            this.protocol = 'https:'
+            this.hostname = text.includes('evil.example') ? 'evil.example'
+                                                           : 'web.alfabank.ru'
+            this.port = ''
+            this.username = ''
+            this.password = ''
+            this.origin = 'https://' + this.hostname
+            this.pathname = text.includes('/api/v1/operations-history/operations')
+                ? '/api/v1/operations-history/operations' : '/dashboard'
+        }
+        globalThis.XMLHttpRequest = function() {}
+        XMLHttpRequest.prototype.open = function() {}
+        XMLHttpRequest.prototype.send = function() {}
+        globalThis.originalOpen = XMLHttpRequest.prototype.open
+        globalThis.originalSend = XMLHttpRequest.prototype.send
+        globalThis.history = { pushState: function(_, __, path) {
+            globalThis.openedPath = path
+        } }
+        globalThis.PopStateEvent = function() {}
+        globalThis.dispatchEvent = function() {}
+    )JS"));
+    REQUIRE_FALSE(setup.isError());
+
+    const auto installed = engine.evaluate(alfa_history_capture_script());
+    REQUIRE_FALSE(installed.isError());
+    CHECK(installed.toString() == QStringLiteral("waiting"));
+    CHECK(engine.evaluate(QStringLiteral("globalThis.openedPath")).toString() ==
+          QStringLiteral("/history"));
+
+    const auto ignored = engine.evaluate(QStringLiteral(R"JS((() => {
+        const request = new XMLHttpRequest()
+        request.addEventListener = function(_, callback) { this.callback = callback }
+        request.open('GET', '/api/v1/operations-history/operations')
+        request.send()
+        return request.callback === undefined &&
+               globalThis.__wealthtrackerAlfaHistory.status === 'waiting'
+    })())JS"));
+    REQUIRE_FALSE(ignored.isError());
+    CHECK(ignored.toBool());
+
+    const auto completed = engine.evaluate(QStringLiteral(R"JS((() => {
+        const request = new XMLHttpRequest()
+        request.addEventListener = function(_, callback) { this.callback = callback }
+        request.open('POST', '/api/v1/operations-history/operations')
+        request.status = 200
+        request.responseText = '{"operations":[]}'
+        request.send('{}')
+        request.callback()
+        return globalThis.__wealthtrackerAlfaHistory.status === 'ready' &&
+               XMLHttpRequest.prototype.open === globalThis.originalOpen &&
+               XMLHttpRequest.prototype.send === globalThis.originalSend
+    })())JS"));
+    REQUIRE_FALSE(completed.isError());
+    CHECK(completed.toBool());
+}
+
+TEST_CASE("Alfa projection reports post-login loading instead of waiting silently") {
+    using wealthtracker::app::AlfaProjectionStage;
+    using wealthtracker::app::parse_alfa_financial_projection;
+
+    const auto loading = parse_alfa_financial_projection(
+        QStringLiteral(
+            R"({"version":1,"stage":"dashboard-loading","authenticated":false,"accounts":[],"transactions":[]})"),
+        QDateTime::currentDateTimeUtc());
+    REQUIRE(loading);
+    CHECK(loading->stage == AlfaProjectionStage::DashboardLoading);
+    CHECK_FALSE(loading->batch);
+
+    const auto operationsLoading = parse_alfa_financial_projection(
+        QStringLiteral(
+            R"({"version":1,"stage":"operations-loading","authenticated":false,"accounts":[],"transactions":[]})"),
+        QDateTime::currentDateTimeUtc());
+    REQUIRE(operationsLoading);
+    CHECK(operationsLoading->stage == AlfaProjectionStage::OperationsLoading);
+
+    const auto operationsFailed = parse_alfa_financial_projection(
+        QStringLiteral(
+            R"({"version":1,"stage":"operations-failed","authenticated":false,"accounts":[],"transactions":[]})"),
+        QDateTime::currentDateTimeUtc());
+    REQUIRE(operationsFailed);
+    CHECK(operationsFailed->stage == AlfaProjectionStage::OperationsFailed);
+
+    const auto unknown = parse_alfa_financial_projection(
+        QStringLiteral(
+            R"({"version":1,"stage":"unknown","authenticated":false,"accounts":[],"transactions":[]})"),
+        QDateTime::currentDateTimeUtc());
+    REQUIRE_FALSE(unknown);
+
+    QFile coordinator(QStringLiteral(
+        WEALTHTRACKER_SOURCE_DIR "/src/app/alfa_login.cppm"));
+    REQUIRE(coordinator.open(QIODevice::ReadOnly));
+    const auto coordinatorSource = coordinator.readAll();
+    CHECK(coordinatorSource.contains(QByteArrayLiteral(
+        "Вход выполнен. Получаем счета из Альфа-Онлайн")));
+    CHECK(coordinatorSource.contains(QByteArrayLiteral(
+        "dashboardStateTimeoutMilliseconds = 30 * 1'000")));
+    CHECK(coordinatorSource.contains(QByteArrayLiteral(
+        "operationsStateTimeoutMilliseconds = 30 * 1'000")));
+    CHECK(coordinatorSource.contains(QByteArrayLiteral(
+        "alfa_history_capture_script()")));
 }
 
 TEST_CASE("Alfa WebView failures distinguish certificate trust without leaking URLs") {

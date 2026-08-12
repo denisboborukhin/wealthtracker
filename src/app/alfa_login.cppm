@@ -176,7 +176,8 @@ private:
     enum class Mode { Login, Synchronize };
     static constexpr qint64 loginTimeoutMilliseconds = 10 * 60 * 1'000;
     static constexpr qint64 synchronizationTimeoutMilliseconds = 90 * 1'000;
-    static constexpr qint64 projectionSettlementMilliseconds = 5 * 1'000;
+    static constexpr qint64 dashboardStateTimeoutMilliseconds = 30 * 1'000;
+    static constexpr qint64 operationsStateTimeoutMilliseconds = 30 * 1'000;
 
     void begin(const Mode mode, const QUrl& url, QString status) {
         stop(false, false);
@@ -185,7 +186,9 @@ private:
         active_ = true;
         load_succeeded_ = false;
         certificate_help_required_ = false;
-        authenticated_observed_elapsed_ = -1;
+        dashboard_observed_elapsed_ = -1;
+        history_capture_elapsed_ = -1;
+        history_capture_started_ = false;
         elapsed_.start();
         reportStatus(std::move(status));
         auto* view = static_cast<QWebView*>(webView());
@@ -244,17 +247,61 @@ private:
             fail({AlfaLoginFailureKind::Protocol, projection.error()});
             return;
         }
-        if (!projection->authenticated || !projection->batch) {
+        if (projection->stage == AlfaProjectionStage::Authentication) {
             return;
         }
-        if (authenticated_observed_elapsed_ < 0) {
-            authenticated_observed_elapsed_ = elapsed_.elapsed();
-            reportStatus(QStringLiteral(
-                "Счета найдены. Ожидаем загрузку последних операций…"));
+        if (projection->stage == AlfaProjectionStage::DashboardLoading) {
+            if (dashboard_observed_elapsed_ < 0) {
+                dashboard_observed_elapsed_ = elapsed_.elapsed();
+                reportStatus(QStringLiteral(
+                    "Вход выполнен. Получаем счета из Альфа-Онлайн…"));
+                return;
+            }
+            if (elapsed_.elapsed() - dashboard_observed_elapsed_ >
+                dashboardStateTimeoutMilliseconds) {
+                fail({AlfaLoginFailureKind::Protocol,
+                      QStringLiteral(
+                          "Вход выполнен, но Alfa Online не передал счета в ожидаемом "
+                          "формате. Возможно, интерфейс банка изменился.")});
+            }
+            return;
         }
-        if (projection->batch->transactions.isEmpty() &&
-            elapsed_.elapsed() - authenticated_observed_elapsed_ <
-                projectionSettlementMilliseconds) {
+        if (projection->stage == AlfaProjectionStage::OperationsLoading) {
+            if (!history_capture_started_) {
+                fail({AlfaLoginFailureKind::Protocol,
+                      QStringLiteral("Alfa Online вернул противоречивое состояние операций")});
+                return;
+            }
+            if (elapsed_.elapsed() - history_capture_elapsed_ >
+                operationsStateTimeoutMilliseconds) {
+                fail({AlfaLoginFailureKind::Protocol,
+                      QStringLiteral(
+                          "Альфа-Онлайн не завершил загрузку операций. Повторите "
+                          "синхронизацию.")});
+            }
+            return;
+        }
+        if (projection->stage == AlfaProjectionStage::OperationsFailed) {
+            fail({AlfaLoginFailureKind::Protocol,
+                  QStringLiteral(
+                      "Альфа-Онлайн не передал историю операций в ожидаемом формате. "
+                      "Возможно, интерфейс банка изменился.")});
+            return;
+        }
+        if (!projection->batch) {
+            fail({AlfaLoginFailureKind::Protocol,
+                  QStringLiteral("Alfa Online не передал данные счетов")});
+            return;
+        }
+        if (!history_capture_started_ && projection->batch->transactions.isEmpty()) {
+            startHistoryCapture();
+            return;
+        }
+        if (history_capture_started_ && !projection->historyCaptured) {
+            fail({AlfaLoginFailureKind::Protocol,
+                  QStringLiteral(
+                      "Страница Альфа-Онлайн была перезагружена до получения операций. "
+                      "Повторите синхронизацию.")});
             return;
         }
         auto batch = std::move(*projection->batch);
@@ -262,6 +309,37 @@ private:
         if (completed_) {
             completed_(std::move(batch));
         }
+    }
+
+    void startHistoryCapture() {
+        if (!active_ || !web_view_ || history_capture_started_) {
+            return;
+        }
+        history_capture_started_ = true;
+        history_capture_elapsed_ = elapsed_.elapsed();
+        reportStatus(QStringLiteral("Счета найдены. Загружаем последние операции…"));
+        probe_pending_ = true;
+        const auto generation = generation_;
+        const QPointer<AlfaLoginCoordinator> guard(this);
+        web_view_->runJavaScript(alfa_history_capture_script(),
+                                 [guard, generation](const QVariant& value) {
+                                     if (!guard) {
+                                         return;
+                                     }
+                                     guard->probe_pending_ = false;
+                                     if (!guard->active_ || generation != guard->generation_) {
+                                         return;
+                                     }
+                                     const auto status = value.toString();
+                                     if (status != QStringLiteral("waiting") &&
+                                         status != QStringLiteral("ready")) {
+                                         guard->fail({
+                                             AlfaLoginFailureKind::Protocol,
+                                             QStringLiteral(
+                                                 "Не удалось открыть историю операций "
+                                                 "Альфа-Онлайн")});
+                                     }
+                                 });
     }
 
     void stop(const bool invalidateGeneration, const bool clearCookies) {
@@ -272,7 +350,9 @@ private:
         probe_pending_ = false;
         active_ = false;
         load_succeeded_ = false;
-        authenticated_observed_elapsed_ = -1;
+        dashboard_observed_elapsed_ = -1;
+        history_capture_elapsed_ = -1;
+        history_capture_started_ = false;
         elapsed_.invalidate();
         if (web_view_ && (invalidateGeneration || clearCookies)) {
             web_view_->stop();
@@ -297,11 +377,13 @@ private:
     QTimer probe_timer_;
     QElapsedTimer elapsed_;
     std::uint64_t generation_ = 0;
-    qint64 authenticated_observed_elapsed_ = -1;
+    qint64 dashboard_observed_elapsed_ = -1;
+    qint64 history_capture_elapsed_ = -1;
     Mode mode_{Mode::Login};
     bool probe_pending_ = false;
     bool load_succeeded_ = false;
     bool certificate_help_required_ = false;
+    bool history_capture_started_ = false;
     bool active_ = false;
 };
 
