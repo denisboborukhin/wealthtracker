@@ -382,6 +382,8 @@ TEST_CASE("Alfa login UI projects bounded finance fields without reading cookies
     CHECK(script.contains(QStringLiteral("document?.scripts")));
     CHECK(script.contains(QStringLiteral("layout.allProducts")));
     CHECK(script.contains(QStringLiteral("layout.capitalAccounts")));
+    CHECK(script.contains(QStringLiteral("certificate-required")));
+    CHECK(script.contains(QStringLiteral("alfa.bank")));
     CHECK(script.contains(QStringLiteral("balanceMinor")));
     CHECK(script.contains(QStringLiteral("internalTransfer")));
     CHECK_FALSE(script.contains(QStringLiteral("document.cookie"), Qt::CaseInsensitive));
@@ -580,6 +582,13 @@ TEST_CASE("Alfa projection reports post-login loading instead of waiting silentl
     CHECK(loading->stage == AlfaProjectionStage::DashboardLoading);
     CHECK_FALSE(loading->batch);
 
+    const auto certificateRequired = parse_alfa_financial_projection(
+        QStringLiteral(
+            R"({"version":1,"stage":"certificate-required","authenticated":false,"accounts":[],"transactions":[]})"),
+        QDateTime::currentDateTimeUtc());
+    REQUIRE(certificateRequired);
+    CHECK(certificateRequired->stage == AlfaProjectionStage::CertificateRequired);
+
     const auto operationsLoading = parse_alfa_financial_projection(
         QStringLiteral(
             R"({"version":1,"stage":"operations-loading","authenticated":false,"accounts":[],"transactions":[]})"),
@@ -612,6 +621,48 @@ TEST_CASE("Alfa projection reports post-login loading instead of waiting silentl
         "operationsStateTimeoutMilliseconds = 30 * 1'000")));
     CHECK(coordinatorSource.contains(QByteArrayLiteral(
         "alfa_history_capture_script()")));
+    CHECK(coordinatorSource.contains(QByteArrayLiteral(
+        "Альфа-Онлайн открыл страницу установки российских")));
+    CHECK(coordinatorSource.contains(QByteArrayLiteral(
+        "certificate_help_required_ = true")));
+}
+
+TEST_CASE("Alfa projection recognizes the bank certificate landing page") {
+    using wealthtracker::app::AlfaProjectionStage;
+    using wealthtracker::app::alfa_financial_projection_script;
+    using wealthtracker::app::parse_alfa_financial_projection;
+
+    QJSEngine engine;
+    const auto setup = engine.evaluate(QStringLiteral(R"JS(
+        var globalThis = this
+        globalThis.location = { href: 'https://web.alfabank.ru/' }
+        globalThis.URL = function(value) {
+            const text = String(value)
+            const certificate = text.includes('alfa.bank/cert')
+            this.protocol = 'https:'
+            this.hostname = certificate ? 'alfa.bank' : 'web.alfabank.ru'
+            this.port = ''
+            this.username = ''
+            this.password = ''
+            this.origin = 'https://' + this.hostname
+            this.pathname = certificate ? '/cert' : '/'
+        }
+        globalThis.document = {
+            scripts: [],
+            forms: [],
+            links: [{ href: 'https://alfa.bank/cert' },
+                    { href: 'https://web.alfabank.ru/' }]
+        }
+    )JS"));
+    REQUIRE_FALSE(setup.isError());
+
+    const auto evaluated = engine.evaluate(alfa_financial_projection_script());
+    REQUIRE_FALSE(evaluated.isError());
+    const auto projection = parse_alfa_financial_projection(
+        evaluated.toString(), QDateTime::currentDateTimeUtc());
+    REQUIRE(projection);
+    CHECK(projection->stage == AlfaProjectionStage::CertificateRequired);
+    CHECK_FALSE(projection->batch);
 }
 
 TEST_CASE("Alfa WebView failures distinguish certificate trust without leaking URLs") {
@@ -653,8 +704,8 @@ TEST_CASE("Alfa certificate help uses only the official bank instructions") {
 
     const auto helpUrl = alfa_certificate_instructions_url();
     CHECK(helpUrl.scheme() == QStringLiteral("https"));
-    CHECK(helpUrl.host() == QStringLiteral("alfabank.ru"));
-    CHECK(helpUrl.path() == QStringLiteral("/cert/"));
+    CHECK(helpUrl.host() == QStringLiteral("alfa.bank"));
+    CHECK(helpUrl.path() == QStringLiteral("/cert"));
     CHECK(helpUrl.query().isEmpty());
 
     QFile page(QStringLiteral(

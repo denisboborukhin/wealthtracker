@@ -41,7 +41,7 @@ struct AlfaLoadFailure {
 };
 
 [[nodiscard]] QUrl alfa_certificate_instructions_url() {
-    return QUrl{QStringLiteral("https://alfabank.ru/cert/")};
+    return QUrl{QStringLiteral("https://alfa.bank/cert")};
 }
 
 [[nodiscard]] AlfaLoadFailure
@@ -248,6 +248,16 @@ private:
             return;
         }
         if (projection->stage == AlfaProjectionStage::Authentication) {
+            return;
+        }
+        if (projection->stage == AlfaProjectionStage::CertificateRequired) {
+            certificate_help_required_ = true;
+            load_succeeded_ = false;
+            reportStatus(QStringLiteral(
+                "Альфа-Онлайн открыл страницу установки российских "
+                "сертификатов. Установите сертификаты по официальной "
+                "инструкции банка, перезапустите WealthTracker и повторите вход. "
+                "Проверка TLS не отключена."));
             return;
         }
         if (projection->stage == AlfaProjectionStage::DashboardLoading) {

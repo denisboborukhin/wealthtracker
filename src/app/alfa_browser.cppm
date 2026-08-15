@@ -18,6 +18,7 @@ export namespace wealthtracker::app {
 
 enum class AlfaProjectionStage {
     Authentication,
+    CertificateRequired,
     DashboardLoading,
     OperationsLoading,
     OperationsFailed,
@@ -113,6 +114,26 @@ struct AlfaFinancialProjection {
     if (pageUrl.protocol !== 'https:' || pageUrl.hostname !== 'web.alfabank.ru' ||
         (pageUrl.port !== '' && pageUrl.port !== '443') ||
         pageUrl.username !== '' || pageUrl.password !== '') return JSON.stringify(result)
+
+    const pageLinks = globalThis.document?.links
+      ? Array.from(globalThis.document.links).slice(0, 8) : []
+    const certificateLink = pageLinks.some(element => {
+      try {
+        const url = new URL(String(element.href ?? ''), pageUrl.origin)
+        return url.protocol === 'https:' && url.hostname === 'alfa.bank' &&
+               (url.port === '' || url.port === '443') &&
+               (url.pathname === '/cert' || url.pathname === '/cert/') &&
+               url.username === '' && url.password === ''
+      } catch (ignored) { return false }
+    })
+    const pageScripts = globalThis.document?.scripts
+      ? Array.from(globalThis.document.scripts) : []
+    const pageForms = globalThis.document?.forms?.length ?? 0
+    if (pageUrl.pathname === '/' && certificateLink && pageScripts.length === 0 &&
+        pageForms === 0) {
+      result.stage = 'certificate-required'
+      return JSON.stringify(result)
+    }
 
     result.stage = 'dashboard-loading'
     const roots = []
@@ -438,6 +459,8 @@ parse_alfa_financial_projection(const QString& projection, const QDateTime& obse
     AlfaProjectionStage stage{};
     if (stageText == QStringLiteral("authentication")) {
         stage = AlfaProjectionStage::Authentication;
+    } else if (stageText == QStringLiteral("certificate-required")) {
+        stage = AlfaProjectionStage::CertificateRequired;
     } else if (stageText == QStringLiteral("dashboard-loading")) {
         stage = AlfaProjectionStage::DashboardLoading;
     } else if (stageText == QStringLiteral("operations-loading")) {

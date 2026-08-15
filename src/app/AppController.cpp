@@ -2471,7 +2471,7 @@ bool AppController::openAlfaCertificateInstructions() {
     if (!opened) {
         alfa_login_status_ = QStringLiteral(
             "Не удалось открыть инструкцию. Откройте вручную: "
-            "https://alfabank.ru/cert/");
+            "https://alfa.bank/cert");
         emit alfaConnectionChanged();
     }
     return opened;
