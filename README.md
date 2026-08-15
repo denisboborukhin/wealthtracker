@@ -16,12 +16,13 @@ The interface starts empty; demonstration data is opt-in.
 | --- | --- |
 | Retail T-Bank | Embedded official login; accounts, balances, and operations through a native read-only connector |
 | Retail Alfa-Bank | Embedded official login; bounded account, balance, and recent-operation snapshots from Alfa Online |
+| Retail VTB | Embedded official login; bounded account, balance, and 90-day operation snapshots from VTB Online |
 | Alfa-Bank B2C API | Accounts and operations with an already-issued integration token |
 | T-Bank Business | Accounts and statements with a T-API token |
 | Modulbank | Accounts and operations, including the public sandbox |
 | T-Invest | Validates a user-created read-only token and lists accessible accounts |
 | External ZenPlugins bundle | Optional compatibility host for a separately reviewed and built bundle |
-| Retail Sber, VTB | Visible adapter slots; no built-in connector |
+| Retail Sber | Visible adapter slot; no built-in connector |
 
 Retail T-Bank uses undocumented web endpoints and may stop working after a
 bank-side change. The application accepts the session only after the bank
@@ -41,6 +42,12 @@ Online uses Russian TLS certificates; on systems that do not trust the Russian
 Trusted Root CA, the connection dialog links to
 [Alfa-Bank's official installation instructions](https://alfa.bank/cert).
 WealthTracker never installs a root certificate or disables TLS verification.
+
+Retail VTB keeps authentication inside the official VTB Online page. The app
+does not read cookies, login fields, headers, or web storage. It invokes the
+authenticated page's own HTTP client for three fixed read-only routes and
+accepts only a bounded projection of accounts, balances, and recent operations.
+This frontend interface is undocumented and fails closed if VTB changes it.
 
 External JavaScript plugins are not sandboxed. They run as the current user and
 can access local files and the network. WealthTracker does not distribute
@@ -67,7 +74,7 @@ Keep `build/tooling` activated while Conan builds dependencies; its recipes
 invoke CMake and Ninja by name. Windows commands and release checks are in
 [Building](docs/building.md).
 
-Node.js is not required for the built-in T-Bank or Alfa-Bank connections.
+Node.js is not required for the built-in T-Bank, Alfa-Bank, or VTB connections.
 Install Node.js 18 or newer only if you choose to run an external JavaScript
 plugin.
 
@@ -78,8 +85,8 @@ plugin.
 - Qt Quick/QML receives models and commands, not credentials or bank-session
   projections.
 - Official tokens and the T-Bank API session use macOS Keychain or Windows
-  Credential Manager. Alfa Online's browser session stays inside the operating
-  system WebView and is removed when the connection is deleted.
+  Credential Manager. Alfa Online and VTB Online browser sessions stay inside
+  the operating-system WebView and are removed when a connection is deleted.
 - Built-in network connectors use exact HTTPS origins, bounded responses, and
   read-only methods.
 - Active login and synchronization work is cancelled when data is hidden or a

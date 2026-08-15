@@ -2,8 +2,9 @@
 
 All built-in connectors expose financial data to WealthTracker as read-only.
 API tokens and the retail T-Bank session use separate entries in macOS Keychain
-or Windows Credential Manager. Alfa Online keeps its browser session inside the
-operating-system WebView; WealthTracker does not extract it. Synchronized
+or Windows Credential Manager. Alfa Online and VTB Online keep their browser
+sessions inside the operating-system WebView; WealthTracker does not extract
+them. Synchronized
 financial records currently remain in memory and disappear when the app exits.
 
 ## Support matrix
@@ -12,12 +13,13 @@ financial records currently remain in memory and disappear when the app exits.
 | --- | --- | --- | --- | --- |
 | Retail T-Bank | Yes | Yes | Yes | Embedded official login |
 | Retail Alfa-Bank | Yes | Yes | Recent snapshot | Embedded official login |
+| Retail VTB | Yes | Yes | Last 90 days | Embedded official login |
 | Alfa-Bank B2C API | Yes | Yes | Yes | Issued integration token |
 | T-Bank Business | Yes | Yes | Yes | T-API token |
 | Modulbank | Yes | Yes | Yes | API token or public sandbox token |
 | T-Invest | Access check | No | No | User-created read-only token |
 | External ZenPlugins bundle | Plugin-dependent | Plugin-dependent | Plugin-dependent | Plugin-defined |
-| Retail Sber, VTB | No | No | No | Adapter not implemented |
+| Retail Sber | No | No | No | Adapter not implemented |
 
 Bank operations are normalized locally. Dashboard totals include RUB values
 only; foreign-currency accounts stay visible without an implicit conversion.
@@ -123,6 +125,46 @@ requests, extract cookies, replay private headers, or call write endpoints. The
 separate **Альфа-Банк API** row remains the supported option for users who
 already have an issued B2C integration token.
 
+## Retail VTB
+
+Open **Подключения → ВТБ → Войти** and complete the official VTB Online
+login inside the dialog. The bank page owns the phone number, password, SMS
+code, TLS connection, and browser session. WealthTracker disables local storage
+and file access and does not read cookies, form fields, authorization headers,
+or browser storage.
+
+After login, a fixed expression checks the exact `https://online.vtb.ru`
+origin and requests the bank frontend's exported `./HttpClient`. Only `GET` is
+used, and only for these paths:
+
+- `/msa/api-gw/private/portfolio/portfolio-main-page/portfolios/active`
+- `/msa/api-gw/private/portfolio/portfolio-balances/financial/summary`
+- `/msa/api-gw/private/history-hub/history-hub-homer/v1/history/byUser`
+
+The last request covers the previous 90 days. Raw responses stay inside the bank
+page. The expression returns only account identifiers, names, types, currencies,
+masked numbers and balances, plus operation identifiers, accounts, dates,
+amounts, descriptions, merchants, categories, MCCs, and internal-transfer
+markers. Each bank response and the final projection are limited to 8 MiB; C++
+also limits the projection to 256 accounts and 20,000 operations and validates
+exact integer minor units, dates, currencies, identifiers, and account ownership.
+
+VTB operation codes and parent categories used by the current frontend for
+transfers between a user's own accounts are normalized as **Внутренний
+перевод**. They do not contribute to income, spending, savings rate, or
+spending-category totals.
+
+The browser session remains in the system WebView for six-hour refreshes while
+auto-update is enabled. Disconnecting deletes that WebView session. A 401/403
+response marks the connection expired; an unknown origin, route contract,
+module shape, or response schema stops synchronization instead of broadening
+access.
+
+VTB does not publish this retail frontend contract as a supported API. A
+bank-side frontend change can break synchronization. WealthTracker does not
+fall back to password APIs, cookie export, certificate bypasses, redirects to
+lookalike origins, or write requests.
+
 ## Token-based APIs
 
 For each connection, obtain a token from the corresponding bank or registered
@@ -177,8 +219,8 @@ repository or distributed with WealthTracker.
 
 ## Unsupported retail banks
 
-Retail Sber and VTB rows describe planned phone-and-code adapters. They remain
-unavailable until a maintainable, reviewable implementation exists. ZenPlugins
-does not currently contain a Russian Alfa-Bank retail connector; similarly
+The retail Sber row remains unavailable until a maintainable, reviewable
+implementation exists. ZenPlugins does not currently contain a Russian
+Alfa-Bank retail connector; similarly
 named `alfabank-by`, `alfabank-ua`, and `altabanka-rs` plugins target other
 countries or banks.

@@ -2,8 +2,8 @@
 
 ## Assets and trust
 
-The sensitive assets are bank tokens, the retail T-Bank API session, the Alfa
-Online browser session, external plugin state, and normalized financial
+The sensitive assets are bank tokens, the retail T-Bank API session, Alfa
+Online and VTB Online browser sessions, external plugin state, and normalized financial
 records. The local operating system, the running application binary, and each
 bank's own login page are trusted.
 User-selected JavaScript plugins are trusted only when the user has reviewed
@@ -18,8 +18,9 @@ so token and API-session connections that require it fail closed there.
 Credentials are loaded for request construction and temporary byte arrays are
 cleared immediately afterward. They are not exposed as QML properties or
 included in status text. Removing a connection deletes its credential entry.
-Alfa Online is different: the system WebView owns its browser cookie store and
-WealthTracker never extracts or copies cookie values into application memory.
+Alfa Online and VTB Online are different: the system WebView owns each browser
+session, and WealthTracker never extracts or copies cookie values into
+application memory.
 
 The desktop controller currently retains normalized financial data only in
 memory. The SQLCipher and Argon2id components are independently tested building
@@ -30,7 +31,7 @@ the privacy screen as database encryption or memory protection.
 
 - Exact HTTPS hosts are declared by each connector.
 - Redirects are manual or rejected.
-- Only documented read methods, or the isolated retail T-Bank read paths, are
+- Only documented read methods or isolated, fixed retail read paths are
   represented in connector APIs.
 - Responses, record counts, pagination, cursors, and concurrent requests are
   bounded.
@@ -95,6 +96,32 @@ dashboard refreshes and is cleared when the connection is removed. A redirect
 to `private.auth.alfabank.ru` during synchronization invalidates the connection.
 The page-state schema is undocumented, so missing or changed data fails closed
 without switching to direct password requests, cookie export, or write calls.
+
+## Retail VTB login
+
+The official VTB Online page runs in a coordinator-owned system WebView with
+local storage and file access disabled. Standard operating-system TLS and cookie
+policy remain in force. The app validates the exact `https://online.vtb.ru`
+origin and rejects credentials embedded in its URL.
+
+A fixed expression obtains only the bank frontend's exported `./HttpClient` and
+invokes three exact GET paths for active products, balances, and history. It
+does not inspect cookies, login fields, headers, request bodies, resource timing,
+DOM contents, or browser storage. A redirect to another origin is not treated as
+an authenticated VTB page.
+
+Each response is checked for its expected top-level shape and an 8 MiB limit
+before it is retained page-locally. A separate allowlist projection converts
+only bounded account and operation fields. C++ revalidates an 8 MiB result,
+256-account and 20,000-operation limits, exact minor units, dates, currencies,
+duplicates, and operation ownership. Raw response objects and browser-session
+material never cross the WebView boundary.
+
+The WebView session is reused for automatic refresh and cleared on disconnect.
+Authentication errors expire the connection; missing frontend exports or schema
+changes stop with a compatibility error. The private frontend contract is
+undocumented and never expands to new hosts, routes, methods, cookie export, or
+direct credential requests at runtime.
 
 ## External plugin process
 

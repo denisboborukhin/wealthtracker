@@ -16,7 +16,7 @@ Headers are retained only where Qt `moc` or a platform ABI requires them.
 - `ui`: QML pages and reusable visual components.
 
 The QML root receives one explicit `app` property. It has no database handle,
-credential object, token, T-Bank session value, or Alfa cookie value. List
+credential object, token, T-Bank session value, or retail-bank cookie value. List
 delegates declare their roles explicitly so runtime binding errors are caught
 by QML lint.
 
@@ -37,6 +37,8 @@ has separate login and synchronization coordinators so WebView callbacks,
 network replies, timers, cancellation, and session erasure have one owner.
 Retail Alfa-Bank has one WebView coordinator for both login and snapshot
 refresh, so its browser-owned session never crosses into the C++ network stack.
+Retail VTB follows the same session boundary and uses the authenticated page's
+own read client rather than exporting session material.
 
 The current desktop controller does not persist normalized financial batches.
 The `storage` module is tested independently and is intended for that later
@@ -88,6 +90,27 @@ page, and a dashboard that is still loading. If no supported account state
 appears within 30 seconds after the dashboard is reached, or the operations
 response does not complete within 30 seconds, it reports an explicit
 compatibility error.
+
+## Retail VTB
+
+1. A coordinator opens `https://online.vtb.ru` in a native Qt WebView with
+   local storage and file access disabled.
+2. The official page owns phone/SMS authentication and the browser session.
+3. A fixed expression verifies the exact origin, obtains the current bank
+   frontend's exported `./HttpClient`, and invokes three exact GET routes for
+   active products, financial balances, and 90 days of history.
+4. Raw responses remain page-local. A second fixed expression maps only bounded
+   account and operation fields, associates child cards with their parent
+   accounts, and marks VTB's own-account transfer codes as internal transfers.
+5. `VtbRetailClient` validates the 8 MiB projection, record limits, exact money,
+   identifiers, dates, currencies, duplicates, and account ownership.
+6. The browser-owned session is reused for periodic reloads and deleted when the
+   user disconnects VTB.
+
+No login field, cookie, authorization header, request body, or browser-storage
+value crosses into C++ or QML. The frontend module and routes are undocumented;
+missing exports, authentication failure, unexpected origins, and response drift
+all fail closed without adding new hosts or methods.
 
 ## External JavaScript plugins
 
