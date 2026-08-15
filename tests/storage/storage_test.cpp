@@ -6,6 +6,7 @@
 #include <expected>
 #include <filesystem>
 #include <optional>
+#include <random>
 #include <string>
 #include <utility>
 
@@ -22,8 +23,10 @@ public:
     TemporaryDatabase() {
         const auto suffix =
             std::chrono::steady_clock::now().time_since_epoch().count();
+        std::random_device entropy;
         path_ = std::filesystem::temp_directory_path() /
-                ("wealthtracker-storage-test-" + std::to_string(suffix) + ".sqlite");
+                ("wealthtracker-storage-test-" + std::to_string(suffix) + "-" +
+                 std::to_string(entropy()) + "-" + std::to_string(entropy()) + ".sqlite");
     }
 
     ~TemporaryDatabase() {
