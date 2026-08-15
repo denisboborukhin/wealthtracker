@@ -64,26 +64,30 @@ without expanding the permitted host or introducing write requests.
 
 1. A coordinator opens the official Alfa Online page in a native Qt WebView.
 2. The bank page owns phone/SMS authentication and its browser session.
-3. A fixed expression checks the exact Alfa Online origin and converts known
+3. A fixed expression checks the exact Alfa Online origin. If the bank serves
+   its static certificate-installation landing page instead of the application,
+   the coordinator pauses data probing and exposes the certificate-help action.
+4. The expression converts known
    global or inline dashboard bootstrap state (`initialState` or `runApp`
    `appState`) into bounded account and balance fields.
-4. After accounts are available, a one-shot observer follows the bank's normal
+5. After accounts are available, a one-shot observer follows the bank's normal
    `/history` route and accepts only the successful same-origin
    `/api/v1/operations-history/operations` response. It neither constructs nor
    modifies the bank page's request and restores the browser API immediately.
-5. `AlfaRetailClient` validates bounds, exact amounts, identifiers, dates,
+6. `AlfaRetailClient` validates bounds, exact amounts, identifiers, dates,
    currencies, duplicates, and account ownership before producing a
    `NormalizedBatch`.
-6. The WebView session stays browser-owned for periodic dashboard reloads and
+7. The WebView session stays browser-owned for periodic dashboard reloads and
    is deleted when the user disconnects the bank.
 
 No cookie, password, OTP, authorization header, or raw page-state object is
 passed through QML or persisted by WealthTracker. The projection is an
 undocumented compatibility boundary and fails closed when either schema changes.
-The coordinator distinguishes the authentication page from a dashboard that is
-still loading. If no supported account state appears within 30 seconds after
-the dashboard is reached, or the operations response does not complete within
-30 seconds, it reports an explicit compatibility error.
+The coordinator distinguishes authentication, the bank's certificate landing
+page, and a dashboard that is still loading. If no supported account state
+appears within 30 seconds after the dashboard is reached, or the operations
+response does not complete within 30 seconds, it reports an explicit
+compatibility error.
 
 ## External JavaScript plugins
 

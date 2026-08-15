@@ -39,7 +39,7 @@ session for six-hour refreshes while auto-update is enabled.
 This interface is undocumented and can break after a bank-side change. Alfa
 Online uses Russian TLS certificates; on systems that do not trust the Russian
 Trusted Root CA, the connection dialog links to
-[Alfa-Bank's official installation instructions](https://alfabank.ru/cert/).
+[Alfa-Bank's official installation instructions](https://alfa.bank/cert).
 WealthTracker never installs a root certificate or disables TLS verification.
 
 External JavaScript plugins are not sandboxed. They run as the current user and

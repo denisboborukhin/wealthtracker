@@ -68,11 +68,16 @@ Alfa Online uses certificates rooted at the Russian Trusted Root CA. A default
 macOS installation may not trust that root, in which case the WebView blocks the
 page before login. WealthTracker identifies the certificate failure and shows
 **Как установить сертификаты**, which opens
-[Alfa-Bank's official instructions](https://alfabank.ru/cert/). Installing a
+[Alfa-Bank's official instructions](https://alfa.bank/cert). Installing a
 system trust anchor is an explicit operating-system security decision: the app
 does not download or install the certificate, accept the failed certificate,
 or disable TLS checks. After following the official instructions, restart
 WealthTracker and retry the connection.
+
+Alfa may complete phone/SMS authentication and then replace the dashboard with
+its static certificate-installation page. WealthTracker recognizes that exact
+same-origin page without reading its displayed text and reports the certificate
+requirement immediately instead of mislabeling it as an account-schema failure.
 
 Alfa Online does not expose a public retail account API comparable to its
 partner B2C product. The built-in connector therefore keeps the authenticated
