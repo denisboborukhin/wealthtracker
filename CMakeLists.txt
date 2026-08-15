@@ -148,6 +148,8 @@ target_sources(
             src/app/tbank_login.cppm
             src/app/alfa_browser.cppm
             src/app/alfa_login.cppm
+            src/app/vtb_browser.cppm
+            src/app/vtb_login.cppm
     PRIVATE
         include/app/AppController.hpp
         include/app/FinanceModels.hpp
@@ -302,6 +304,7 @@ if(BUILD_TESTING)
         tests/app/test_main.cpp
         tests/app/finance_models_test.cpp
         tests/app/bank_connections_test.cpp
+        tests/app/vtb_connection_test.cpp
         tests/app/ui_contract_test.cpp
     )
     target_link_libraries(app_tests PRIVATE app Catch2::Catch2)

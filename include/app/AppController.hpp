@@ -84,6 +84,15 @@ class AppController final : public QObject {
                NOTIFY alfaConnectionChanged)
     Q_PROPERTY(QUrl alfaLoginUrl READ alfaLoginUrl CONSTANT)
     Q_PROPERTY(QWindow* alfaWebView READ alfaWebView NOTIFY alfaConnectionChanged)
+    Q_PROPERTY(bool vtbConnected READ vtbConnected NOTIFY vtbConnectionChanged)
+    Q_PROPERTY(bool vtbLoginActive READ vtbLoginActive NOTIFY vtbConnectionChanged)
+    Q_PROPERTY(bool vtbSyncRunning READ vtbSyncRunning NOTIFY vtbConnectionChanged)
+    Q_PROPERTY(bool vtbAutoUpdate READ vtbAutoUpdate NOTIFY vtbConnectionChanged)
+    Q_PROPERTY(QString vtbLastSync READ vtbLastSync NOTIFY vtbConnectionChanged)
+    Q_PROPERTY(QString vtbNextSync READ vtbNextSync NOTIFY vtbConnectionChanged)
+    Q_PROPERTY(QString vtbLoginStatus READ vtbLoginStatus NOTIFY vtbConnectionChanged)
+    Q_PROPERTY(QUrl vtbLoginUrl READ vtbLoginUrl CONSTANT)
+    Q_PROPERTY(QWindow* vtbWebView READ vtbWebView NOTIFY vtbConnectionChanged)
 
 public:
     explicit AppController(QObject* parent = nullptr);
@@ -140,6 +149,15 @@ public:
     [[nodiscard]] bool alfaCertificateHelpRequired() const noexcept;
     [[nodiscard]] QUrl alfaLoginUrl() const;
     [[nodiscard]] QWindow* alfaWebView();
+    [[nodiscard]] bool vtbConnected() const noexcept;
+    [[nodiscard]] bool vtbLoginActive() const noexcept;
+    [[nodiscard]] bool vtbSyncRunning() const noexcept;
+    [[nodiscard]] bool vtbAutoUpdate() const;
+    [[nodiscard]] QString vtbLastSync() const;
+    [[nodiscard]] QString vtbNextSync() const;
+    [[nodiscard]] QString vtbLoginStatus() const;
+    [[nodiscard]] QUrl vtbLoginUrl() const;
+    [[nodiscard]] QWindow* vtbWebView();
 
     Q_INVOKABLE void loadDemoData();
     Q_INVOKABLE void clearDemoData();
@@ -176,6 +194,13 @@ public:
     Q_INVOKABLE bool synchronizeAlfa();
     Q_INVOKABLE void setAlfaAutoUpdate(bool enabled);
     Q_INVOKABLE void disconnectAlfa();
+    Q_INVOKABLE bool prepareVtbConnection();
+    Q_INVOKABLE void beginVtbLogin();
+    Q_INVOKABLE void reloadVtbLoginPage();
+    Q_INVOKABLE void cancelVtbLogin();
+    Q_INVOKABLE bool synchronizeVtb();
+    Q_INVOKABLE void setVtbAutoUpdate(bool enabled);
+    Q_INVOKABLE void disconnectVtb();
 
 signals:
     void dashboardChanged();
@@ -188,6 +213,7 @@ signals:
     void zenPluginChanged();
     void tbankConnectionChanged();
     void alfaConnectionChanged();
+    void vtbConnectionChanged();
 
 private:
     AccountModel accounts_;
@@ -212,6 +238,9 @@ private:
     bool alfa_connected_ = false;
     bool alfa_login_active_ = false;
     QString alfa_login_status_;
+    bool vtb_connected_ = false;
+    bool vtb_login_active_ = false;
+    QString vtb_login_status_;
     QString live_net_worth_ = QStringLiteral("0 ₽");
     QString live_monthly_income_ = QStringLiteral("0 ₽");
     QString live_monthly_spending_ = QStringLiteral("0 ₽");
@@ -231,6 +260,8 @@ private:
     void acceptTBankSession(QByteArray session);
     void refreshAlfaAutoUpdateSchedule();
     void scheduleAlfaAutoUpdateAfter(const QDateTime& from);
+    void refreshVtbAutoUpdateSchedule();
+    void scheduleVtbAutoUpdateAfter(const QDateTime& from);
     void rebuildBankModels();
 };
 

@@ -259,7 +259,7 @@ TEST_CASE("new installations start with empty data and optional demo mode") {
     CHECK(controller.accounts()->rowCount() == 0);
 }
 
-TEST_CASE("T-Bank and Alfa are built in while other retail banks remain adapter slots") {
+TEST_CASE("T-Bank Alfa and VTB are built in while Sber remains an adapter slot") {
     auto credentials = std::make_unique<MemoryCredentialBackend>();
     wealthtracker::app::AppController controller(std::move(credentials),
                                                   nullptr);
@@ -299,21 +299,18 @@ TEST_CASE("T-Bank and Alfa are built in while other retail banks remain adapter 
     CHECK(controller.connectionMessage().contains(QStringLiteral("системный WebView")));
     CHECK(controller.connectionMessage().contains(QStringLiteral("не читает её cookies")));
 
-    for (const auto& connectorId :
-         {QStringLiteral("sber-retail"), QStringLiteral("vtb-retail")}) {
-        CHECK_FALSE(connectionValue(controller.bankConnections(), connectorId,
-                                    wealthtracker::app::ConnectionModel::
-                                        AvailableRole)
-                        .toBool());
-        CHECK(connectionValue(controller.bankConnections(), connectorId,
-                              wealthtracker::app::ConnectionModel::MethodRole)
-                  .toString()
-                  .contains(QStringLiteral("Телефон + код")));
-        CHECK(connectionValue(controller.bankConnections(), connectorId,
-                              wealthtracker::app::ConnectionModel::StatusRole)
-                  .toString()
-                  .contains(QStringLiteral("адаптер")));
-    }
+    const auto sber = QStringLiteral("sber-retail");
+    CHECK_FALSE(connectionValue(controller.bankConnections(), sber,
+                                wealthtracker::app::ConnectionModel::AvailableRole)
+                    .toBool());
+    CHECK(connectionValue(controller.bankConnections(), sber,
+                          wealthtracker::app::ConnectionModel::MethodRole)
+              .toString()
+              .contains(QStringLiteral("Телефон + код")));
+    CHECK(connectionValue(controller.bankConnections(), sber,
+                          wealthtracker::app::ConnectionModel::StatusRole)
+              .toString()
+              .contains(QStringLiteral("адаптер")));
 }
 
 TEST_CASE("T-Bank login UI embeds a coordinator-owned native WebView") {
@@ -371,7 +368,7 @@ TEST_CASE("Alfa login UI projects bounded finance fields without reading cookies
     CHECK(source.contains(QByteArrayLiteral("page.app.beginAlfaLogin()")));
     CHECK(source.contains(QByteArrayLiteral("page.app.alfaWebView")));
     CHECK(source.contains(QByteArrayLiteral(
-        "Т-Банк и Альфа-Банк используют встроенные локальные коннекторы")));
+        "Т-Банк, Альфа-Банк и ВТБ используют встроенные локальные коннекторы")));
     CHECK_FALSE(source.contains(QByteArrayLiteral(
         "Для Альфа-Банка, Сбера и ВТБ нужен")));
 

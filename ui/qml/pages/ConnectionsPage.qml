@@ -24,6 +24,8 @@ Item {
             page.app.prepareTBankConnection()
         else if (connectorId === "alfa-retail")
             page.app.prepareAlfaConnection()
+        else if (connectorId === "vtb-retail")
+            page.app.prepareVtbConnection()
     }
 
     PlatformDialogs.FileDialog {
@@ -61,70 +63,97 @@ Item {
             connectorId === "tbank-retail"
         readonly property bool builtinAlfa:
             connectorId === "alfa-retail"
+        readonly property bool builtinVtb:
+            connectorId === "vtb-retail"
         readonly property bool builtinRetail:
-            builtinTBank || builtinAlfa
+            builtinTBank || builtinAlfa || builtinVtb
         readonly property bool localPlugin:
             connectorId === "zenplugins-local"
         readonly property bool effectiveConnected:
             builtinTBank ? page.app.tbankConnected
-                         : builtinAlfa ? page.app.alfaConnected : connected
+                         : builtinAlfa ? page.app.alfaConnected
+                         : builtinVtb ? page.app.vtbConnected : connected
         readonly property bool retailLoginActive:
             builtinTBank ? page.app.tbankLoginActive
-                         : builtinAlfa && page.app.alfaLoginActive
+                         : builtinAlfa ? page.app.alfaLoginActive
+                         : builtinVtb && page.app.vtbLoginActive
         readonly property bool retailSyncRunning:
             builtinTBank ? page.app.tbankSyncRunning
-                         : builtinAlfa && page.app.alfaSyncRunning
+                         : builtinAlfa ? page.app.alfaSyncRunning
+                         : builtinVtb && page.app.vtbSyncRunning
         readonly property bool retailAutoUpdate:
-            builtinTBank ? page.app.tbankAutoUpdate : page.app.alfaAutoUpdate
+            builtinTBank ? page.app.tbankAutoUpdate
+                         : builtinAlfa ? page.app.alfaAutoUpdate
+                         : builtinVtb && page.app.vtbAutoUpdate
         readonly property string retailLastSync:
-            builtinTBank ? page.app.tbankLastSync : page.app.alfaLastSync
+            builtinTBank ? page.app.tbankLastSync
+                         : builtinAlfa ? page.app.alfaLastSync
+                         : builtinVtb ? page.app.vtbLastSync : ""
         readonly property string retailNextSync:
-            builtinTBank ? page.app.tbankNextSync : page.app.alfaNextSync
+            builtinTBank ? page.app.tbankNextSync
+                         : builtinAlfa ? page.app.alfaNextSync
+                         : builtinVtb ? page.app.vtbNextSync : ""
         readonly property string retailLoginStatus:
-            builtinTBank ? page.app.tbankLoginStatus : page.app.alfaLoginStatus
+            builtinTBank ? page.app.tbankLoginStatus
+                         : builtinAlfa ? page.app.alfaLoginStatus
+                         : builtinVtb ? page.app.vtbLoginStatus : ""
         readonly property var retailWebView:
-            builtinTBank ? page.app.tbankWebView : page.app.alfaWebView
+            builtinTBank ? page.app.tbankWebView
+                         : builtinAlfa ? page.app.alfaWebView
+                         : builtinVtb ? page.app.vtbWebView : null
 
         function beginRetailLogin() {
             if (builtinTBank)
                 page.app.beginTBankLogin()
-            else
+            else if (builtinAlfa)
                 page.app.beginAlfaLogin()
+            else
+                page.app.beginVtbLogin()
         }
 
         function reloadRetailLogin() {
             if (builtinTBank)
                 page.app.reloadTBankLoginPage()
-            else
+            else if (builtinAlfa)
                 page.app.reloadAlfaLoginPage()
+            else
+                page.app.reloadVtbLoginPage()
         }
 
         function cancelRetailLogin() {
             if (builtinTBank)
                 page.app.cancelTBankLogin()
-            else
+            else if (builtinAlfa)
                 page.app.cancelAlfaLogin()
+            else
+                page.app.cancelVtbLogin()
         }
 
         function synchronizeRetail() {
             if (builtinTBank)
                 page.app.synchronizeTBank()
-            else
+            else if (builtinAlfa)
                 page.app.synchronizeAlfa()
+            else
+                page.app.synchronizeVtb()
         }
 
         function setRetailAutoUpdate(enabled) {
             if (builtinTBank)
                 page.app.setTBankAutoUpdate(enabled)
-            else
+            else if (builtinAlfa)
                 page.app.setAlfaAutoUpdate(enabled)
+            else
+                page.app.setVtbAutoUpdate(enabled)
         }
 
         function disconnectRetail() {
             if (builtinTBank)
                 page.app.disconnectTBank()
-            else
+            else if (builtinAlfa)
                 page.app.disconnectAlfa()
+            else
+                page.app.disconnectVtb()
         }
 
         function pluginPreferences() {
@@ -888,7 +917,7 @@ Item {
 
         Text {
             Layout.fillWidth: true
-            text: qsTr("Т-Банк и Альфа-Банк используют встроенные локальные коннекторы. Для Сбера и ВТБ нужен отдельный проверяемый адаптер.")
+            text: qsTr("Т-Банк, Альфа-Банк и ВТБ используют встроенные локальные коннекторы. Для Сбера нужен отдельный проверяемый адаптер.")
             color: Theme.textMuted
             font.pixelSize: 11
             wrapMode: Text.WordWrap
