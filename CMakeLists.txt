@@ -141,6 +141,7 @@ target_sources(
         FILE_SET CXX_MODULES
         TYPE CXX_MODULES
         FILES
+            src/app/transfer_matching.cppm
             src/app/bank_sync.cppm
             src/app/zen_plugin_runner.cppm
             src/app/tbank_auth.cppm
@@ -303,6 +304,7 @@ if(BUILD_TESTING)
     add_executable(app_tests
         tests/app/test_main.cpp
         tests/app/finance_models_test.cpp
+        tests/app/transfer_matching_test.cpp
         tests/app/bank_connections_test.cpp
         tests/app/vtb_connection_test.cpp
         tests/app/ui_contract_test.cpp
