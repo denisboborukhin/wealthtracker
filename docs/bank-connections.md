@@ -141,7 +141,9 @@ used, and only for these paths:
 - `/msa/api-gw/private/portfolio/portfolio-balances/financial/summary`
 - `/msa/api-gw/private/history-hub/history-hub-homer/v1/history/byUser`
 
-The last request covers the previous 90 days. Raw responses stay inside the bank
+The last request covers the previous 90 days using VTB's current `dd.MM.yyyy`
+date contract. A portfolio response that is still loading is retried at most
+twice, matching the current bank frontend. Raw responses stay inside the bank
 page. The expression returns only account identifiers, names, types, currencies,
 masked numbers and balances, plus operation identifiers, accounts, dates,
 amounts, descriptions, merchants, categories, MCCs, and internal-transfer
@@ -158,7 +160,8 @@ The browser session remains in the system WebView for six-hour refreshes while
 auto-update is enabled. Disconnecting deletes that WebView session. A 401/403
 response marks the connection expired; an unknown origin, route contract,
 module shape, or response schema stops synchronization instead of broadening
-access.
+access. Compatibility errors include only a fixed stage code such as `VTB-H1`;
+the code contains no account, operation, balance, cookie, or response value.
 
 VTB does not publish this retail frontend contract as a supported API. A
 bank-side frontend change can break synchronization. WealthTracker does not

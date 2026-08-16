@@ -98,7 +98,8 @@ compatibility error.
 2. The official page owns phone/SMS authentication and the browser session.
 3. A fixed expression verifies the exact origin, obtains the current bank
    frontend's exported `./HttpClient`, and invokes three exact GET routes for
-   active products, financial balances, and 90 days of history.
+   active products, financial balances, and 90 days of history. It performs at
+   most two delayed portfolio retries while VTB reports `loadStatus: LOADING`.
 4. Raw responses remain page-local. A second fixed expression maps only bounded
    account and operation fields, associates child cards with their parent
    accounts, and marks VTB's own-account transfer codes as internal transfers.
