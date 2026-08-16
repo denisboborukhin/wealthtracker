@@ -162,6 +162,7 @@ TEST_CASE("VTB synchronization follows the current portfolio and history contrac
         globalThis.crypto = { randomUUID: function() { return 'request-id' } }
         globalThis.vtbRequests = []
         globalThis.vtbPortfolioReads = 0
+        globalThis.vtbBalanceStatus = 404
         const client = {
             get: function(path, options) {
                 globalThis.vtbRequests.push({ path: path, options: options || {} })
@@ -178,7 +179,7 @@ TEST_CASE("VTB synchronization follows the current portfolio and history contrac
                     } })
                 }
                 if (path.indexOf('/financial/summary') !== -1)
-                    return Promise.reject({ response: { status: 404 } })
+                    return Promise.reject({ response: { status: globalThis.vtbBalanceStatus } })
                 return Promise.resolve({ data: { operations: [] } })
             }
         }
@@ -220,6 +221,19 @@ TEST_CASE("VTB synchronization follows the current portfolio and history contrac
     CHECK(parsed->stage == VtbProjectionStage::Ready);
     REQUIRE(parsed->batch);
     CHECK(parsed->batch->accounts.size() == 1);
+
+    const auto restarted = engine.evaluate(QStringLiteral(
+        "delete globalThis.__wealthtrackerVtbSync; "
+        "globalThis.vtbPortfolioReads = 0; globalThis.vtbBalanceStatus = 401;"));
+    REQUIRE_FALSE(restarted.isError());
+    REQUIRE_FALSE(engine.evaluate(vtb_sync_start_script()).isError());
+    for (int index = 0; index < 64; ++index) {
+        QCoreApplication::processEvents();
+        (void)engine.evaluate(QStringLiteral("0"));
+    }
+    CHECK(engine.evaluate(QStringLiteral(
+              "globalThis.__wealthtrackerVtbSync.status === 'authentication'"))
+              .toBool());
 }
 
 TEST_CASE("VTB projection maps child cards and bank transfer markers") {

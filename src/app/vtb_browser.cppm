@@ -172,7 +172,7 @@ struct VtbFinancialProjection {
     if (state.status === 'running' || state.status === 'waiting') return JSON.stringify(result)
     if (state.status !== 'ready') {
       result.stage = 'frontend-changed'
-      result.diagnostic = ['VTB-P1', 'VTB-P2', 'VTB-B1', 'VTB-H1', 'VTB-R1']
+      result.diagnostic = ['VTB-P1', 'VTB-P2', 'VTB-H1', 'VTB-R1']
         .includes(state.reason) ? state.reason : 'VTB-X1'
       return JSON.stringify(result)
     }
@@ -400,9 +400,8 @@ parse_vtb_financial_projection(const QString& projection, const QDateTime& obser
     const auto diagnostic = object.value(QStringLiteral("diagnostic")).toString();
     static const QSet<QString> supportedDiagnostics{
         QStringLiteral("VTB-P1"), QStringLiteral("VTB-P2"),
-        QStringLiteral("VTB-B1"), QStringLiteral("VTB-H1"),
-        QStringLiteral("VTB-R1"), QStringLiteral("VTB-A1"),
-        QStringLiteral("VTB-X1")};
+        QStringLiteral("VTB-H1"), QStringLiteral("VTB-R1"),
+        QStringLiteral("VTB-A1"), QStringLiteral("VTB-X1")};
     if (!diagnostic.isEmpty() && !supportedDiagnostics.contains(diagnostic)) {
         return std::unexpected(
             QStringLiteral("Код совместимости встроенной страницы ВТБ неизвестен"));
