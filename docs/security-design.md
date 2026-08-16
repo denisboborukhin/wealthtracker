@@ -81,12 +81,13 @@ bounded to 64 elements, 8 MiB each, and 16 MiB total; external scripts, rendered
 DOM, fields, and storage are not read. Only the `initialState` object or
 `runApp` `appState` JSON is considered for accounts and balances.
 
-For history, a one-shot observer follows the bank's normal `/history` route and
-accepts only a 2xx JSON response, no larger than 8 MiB, from the exact same-origin
-`/api/v1/operations-history/operations` path. It does not inspect or alter the
-request and restores the browser API after the response. The projection returns
-an allowlist of fields rather than raw page or response state, then releases its
-temporary response reference. C++ enforces an
+For history, a short-lived observer follows the bank's normal `/history` route
+and accepts only 2xx JSON responses from the exact same-origin
+`/api/v1/operations-history/operations` path. It does not inspect or alter a
+request and restores the browser API after a quiet interval. At most 16
+responses and 8 MiB of combined response text are retained page-locally. The
+projection returns an allowlist of fields rather than raw page or response
+state, then releases its temporary response references. C++ enforces an
 8 MiB result limit, 256-account and 20,000-operation limits, exact integer
 amounts, bounded text, valid currencies and dates, and account ownership for
 each operation. QML receives only the native window and textual status.
@@ -105,10 +106,12 @@ policy remain in force. The app validates the exact `https://online.vtb.ru`
 origin and rejects credentials embedded in its URL.
 
 A fixed expression obtains only the bank frontend's exported `./HttpClient` and
-invokes three exact GET paths for active products, balances, and history. It
+invokes three exact GET paths for active products, an optional balance
+supplement, and history. A non-authentication failure of the optional supplement
+does not discard balances embedded in a valid active portfolio. The expression
 does not inspect cookies, login fields, headers, request bodies, resource timing,
-DOM contents, or browser storage. A redirect to another origin is not treated as
-an authenticated VTB page.
+DOM contents, or browser storage. A redirect to another origin is not treated
+as an authenticated VTB page.
 
 Each response is checked for its expected top-level shape and an 8 MiB limit
 before it is retained page-locally. A separate allowlist projection converts

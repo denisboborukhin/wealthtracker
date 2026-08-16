@@ -39,10 +39,10 @@ implements payments, transfers, card management, or trading.
 Retail Alfa-Bank uses the official Alfa Online phone/SMS page. Its login is
 browser-session based: WealthTracker does not read cookie values, headers,
 login fields, or web storage. A fixed page expression reads the bank's known
-dashboard bootstrap state for accounts and a one-shot observer accepts only the
-bank history page's exact same-origin operations response. Only bounded account,
-balance, and operation fields reach C++. The system WebView retains the browser
-session for six-hour refreshes while auto-update is enabled.
+dashboard bootstrap state for accounts. A short-lived bounded observer accepts
+only the bank history page's exact same-origin operations responses. Only
+bounded account, balance, and operation fields reach C++. The system WebView
+retains the browser session for six-hour refreshes while auto-update is enabled.
 This interface is undocumented and can break after a bank-side change. Alfa
 Online uses Russian TLS certificates; on systems that do not trust the Russian
 Trusted Root CA, the connection dialog links to
@@ -51,9 +51,11 @@ WealthTracker never installs a root certificate or disables TLS verification.
 
 Retail VTB keeps authentication inside the official VTB Online page. The app
 does not read cookies, login fields, headers, or web storage. It invokes the
-authenticated page's own HTTP client for three fixed read-only routes and
-accepts only a bounded projection of accounts, balances, and recent operations.
-This frontend interface is undocumented and fails closed if VTB changes it.
+authenticated page's own HTTP client for three fixed read-only routes. The
+balance-summary route is an optional supplement; products and embedded balances
+remain usable when VTB does not enable it for a profile. Only a bounded
+projection of accounts, balances, and recent operations is accepted. This
+frontend interface is undocumented and fails closed if VTB changes it.
 
 External JavaScript plugins are not sandboxed. They run as the current user and
 can access local files and the network. WealthTracker does not distribute

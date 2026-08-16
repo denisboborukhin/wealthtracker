@@ -105,11 +105,11 @@ partner B2C product. The built-in connector therefore keeps the authenticated
 page in the operating-system WebView and runs a fixed projection expression.
 The expression reads only known global state or the JSON argument of the bank's
 inline `window.runApp({ appState: ... })`/`initialState` dashboard bootstrap for
-accounts and balances. It then installs a one-shot observer while Alfa's normal
-`/history` page loads. The observer accepts only a successful response from the
-exact same-origin `/api/v1/operations-history/operations` path, never changes
-the request, and restores the browser API after that response. The resulting
-projection contains only these bounded fields:
+accounts and balances. It then installs a short-lived observer while Alfa's
+normal `/history` page loads. The observer accepts only successful responses
+from the exact same-origin `/api/v1/operations-history/operations` path, never
+changes a request, and restores the browser API after the response stream is
+quiet. The resulting projection contains only these bounded fields:
 
 - at most 256 account identifiers, names, types, currencies, masked numbers,
   and balances;
@@ -119,11 +119,12 @@ projection contains only these bounded fields:
 
 It does not read cookie values, authorization headers, form fields, request
 bodies, local storage, rendered text, or arbitrary DOM elements. Inline script
-scanning is limited by count and size; history capture requires 2xx JSON and is
-limited to 8 MiB. Raw bootstrap and response objects never leave the bank page.
-C++ limits the returned projection to 8 MiB, validates exact integer minor units
-and ISO dates, rejects malformed accounts, and skips malformed or duplicate
-operations with a visible warning count. Internal transfers do not contribute
+scanning is limited by count and size. History capture requires 2xx JSON, stores
+at most 16 responses, and limits their combined text to 8 MiB. Raw bootstrap
+and response objects never leave the bank page. C++ limits the returned
+projection to 8 MiB, validates exact integer minor units and ISO dates, rejects
+malformed accounts, and skips malformed or duplicate operations with a visible
+warning count. Internal transfers do not contribute
 to income, spending, savings, or category totals.
 
 After Alfa redirects back to its dashboard, the dialog shows **Вход выполнен.
@@ -162,10 +163,13 @@ used, and only for these paths:
 
 The last request covers the previous 90 days using VTB's current `dd.MM.yyyy`
 date contract. A portfolio response that is still loading is retried at most
-twice, matching the current bank frontend. Raw responses stay inside the bank
-page. The expression returns only account identifiers, names, types, currencies,
-masked numbers and balances, plus operation identifiers, accounts, dates,
-amounts, descriptions, merchants, categories, MCCs, and internal-transfer
+twice, matching the current bank frontend. The financial-summary route is an
+optional balance supplement in VTB's frontend; a missing or unavailable
+supplement does not discard products and balances already present in the active
+portfolio. Authentication errors remain blocking. Raw responses stay inside
+the bank page. The expression returns only account identifiers, names, types,
+currencies, masked numbers and balances, plus operation identifiers, accounts,
+dates, amounts, descriptions, merchants, categories, MCCs, and internal-transfer
 markers. Each bank response and the final projection are limited to 8 MiB; C++
 also limits the projection to 256 accounts and 20,000 operations and validates
 exact integer minor units, dates, currencies, identifiers, and account ownership.
