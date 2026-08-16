@@ -192,7 +192,6 @@ bool connectionState(QAbstractItemModel* model, const QString& connectorId) {
     }
     return false;
 }
-
 QVariant connectionValue(QAbstractItemModel* model, const QString& connectorId,
                          const int role) {
     using wealthtracker::app::ConnectionModel;
@@ -249,6 +248,11 @@ TEST_CASE("new installations start with empty data and optional demo mode") {
     CHECK(controller.categories()->rowCount() == 0);
     CHECK(controller.holdings()->rowCount() == 0);
     CHECK(controller.netWorth() == QStringLiteral("0 ₽"));
+    const auto today = QDate::currentDate();
+    CHECK(controller.reportingFrom() ==
+          today.addMonths(-1).addDays(1).toString(QStringLiteral("dd.MM.yyyy")));
+    CHECK(controller.reportingTo() ==
+          today.toString(QStringLiteral("dd.MM.yyyy")));
 
     controller.loadDemoData();
     CHECK(controller.demoMode());
@@ -742,8 +746,9 @@ TEST_CASE("T-Bank synchronization publishes balances and excludes internal trans
     CHECK(observedNetwork->maximumActiveOperationRequests == 1);
     CHECK(controller.accounts()->rowCount() == 2);
     CHECK(controller.transactions()->rowCount() == 4);
-    CHECK(controller.monthlyIncome() == QStringLiteral("1 000 ₽"));
-    CHECK(controller.monthlySpending() == QStringLiteral("200 ₽"));
+    CHECK(controller.reportIncome() == QStringLiteral("1 000 ₽"));
+    CHECK(controller.reportSpending() == QStringLiteral("200 ₽"));
+    CHECK(controller.savings() == QStringLiteral("800 ₽"));
     CHECK(controller.categories()->rowCount() == 1);
     CHECK(controller.categories()
               ->data(controller.categories()->index(0, 0),
@@ -765,6 +770,23 @@ TEST_CASE("T-Bank synchronization publishes balances and excludes internal trans
     }
     CHECK(transferRows == 2);
     CHECK(controller.syncStatus().contains(QStringLiteral("пропущено записей 1")));
+
+    CHECK_FALSE(controller.setReportingPeriod(
+        QStringLiteral("31.02.2026"), QStringLiteral("01.03.2026")));
+    CHECK_FALSE(controller.reportingPeriodError().isEmpty());
+    CHECK(controller.transactions()->rowCount() == 4);
+
+    REQUIRE(controller.setReportingPeriod(
+        QStringLiteral("01.01.2020"), QStringLiteral("31.01.2020")));
+    CHECK(controller.reportingPeriodError().isEmpty());
+    CHECK(controller.transactions()->rowCount() == 0);
+    CHECK(controller.reportIncome() == QStringLiteral("0 ₽"));
+    CHECK(controller.reportSpending() == QStringLiteral("0 ₽"));
+    CHECK(controller.savings() == QStringLiteral("0 ₽"));
+
+    controller.resetReportingPeriod();
+    CHECK(controller.transactions()->rowCount() == 4);
+    CHECK(controller.reportIncome() == QStringLiteral("1 000 ₽"));
 }
 
 TEST_CASE("T-Bank network failures do not read a closed TLS reply") {
@@ -886,6 +908,8 @@ TEST_CASE("application runs a selected local bundle through the embedded host") 
     auto* stored = credentials.get();
     wealthtracker::app::AppController controller(std::move(credentials),
                                                   nullptr);
+    REQUIRE(controller.setReportingPeriod(
+        QStringLiteral("01.01.2020"), QStringLiteral("31.12.2030")));
     const auto baselineCredentialCount = stored->values.size();
     const auto fixture = QStringLiteral(
         WEALTHTRACKER_SOURCE_DIR

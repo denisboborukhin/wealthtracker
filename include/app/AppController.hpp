@@ -43,9 +43,15 @@ class AppController final : public QObject {
     Q_PROPERTY(QAbstractItemModel* bankConnections READ bankConnections CONSTANT)
     Q_PROPERTY(QVariantList netWorthSeries READ netWorthSeries NOTIFY dashboardChanged)
     Q_PROPERTY(QString netWorth READ netWorth NOTIFY dashboardChanged)
-    Q_PROPERTY(QString monthlyIncome READ monthlyIncome NOTIFY dashboardChanged)
-    Q_PROPERTY(QString monthlySpending READ monthlySpending NOTIFY dashboardChanged)
-    Q_PROPERTY(QString savingsRate READ savingsRate NOTIFY dashboardChanged)
+    Q_PROPERTY(QString reportIncome READ reportIncome NOTIFY dashboardChanged)
+    Q_PROPERTY(QString reportSpending READ reportSpending NOTIFY dashboardChanged)
+    Q_PROPERTY(QString savings READ savings NOTIFY dashboardChanged)
+    Q_PROPERTY(QString reportingFrom READ reportingFrom NOTIFY reportingPeriodChanged)
+    Q_PROPERTY(QString reportingTo READ reportingTo NOTIFY reportingPeriodChanged)
+    Q_PROPERTY(QString reportingPeriodLabel READ reportingPeriodLabel
+               NOTIFY reportingPeriodChanged)
+    Q_PROPERTY(QString reportingPeriodError READ reportingPeriodError
+               NOTIFY reportingPeriodChanged)
     Q_PROPERTY(QString portfolioValue READ portfolioValue NOTIFY dashboardChanged)
     Q_PROPERTY(QString importStatus READ importStatus NOTIFY importStatusChanged)
     Q_PROPERTY(QString syncStatus READ syncStatus NOTIFY syncStatusChanged)
@@ -109,9 +115,13 @@ public:
     [[nodiscard]] QAbstractItemModel* bankConnections() noexcept;
     [[nodiscard]] QVariantList netWorthSeries() const;
     [[nodiscard]] QString netWorth() const;
-    [[nodiscard]] QString monthlyIncome() const;
-    [[nodiscard]] QString monthlySpending() const;
-    [[nodiscard]] QString savingsRate() const;
+    [[nodiscard]] QString reportIncome() const;
+    [[nodiscard]] QString reportSpending() const;
+    [[nodiscard]] QString savings() const;
+    [[nodiscard]] QString reportingFrom() const;
+    [[nodiscard]] QString reportingTo() const;
+    [[nodiscard]] QString reportingPeriodLabel() const;
+    [[nodiscard]] QString reportingPeriodError() const;
     [[nodiscard]] QString portfolioValue() const;
     [[nodiscard]] QString importStatus() const;
     [[nodiscard]] QString syncStatus() const;
@@ -161,6 +171,8 @@ public:
 
     Q_INVOKABLE void loadDemoData();
     Q_INVOKABLE void clearDemoData();
+    Q_INVOKABLE bool setReportingPeriod(const QString& from, const QString& to);
+    Q_INVOKABLE void resetReportingPeriod();
     Q_INVOKABLE void lock();
     Q_INVOKABLE bool unlock();
     Q_INVOKABLE void previewImport(const QUrl& source);
@@ -204,6 +216,7 @@ public:
 
 signals:
     void dashboardChanged();
+    void reportingPeriodChanged();
     void importStatusChanged();
     void syncStatusChanged();
     void lockedChanged();
@@ -242,9 +255,12 @@ private:
     bool vtb_login_active_ = false;
     QString vtb_login_status_;
     QString live_net_worth_ = QStringLiteral("0 ₽");
-    QString live_monthly_income_ = QStringLiteral("0 ₽");
-    QString live_monthly_spending_ = QStringLiteral("0 ₽");
-    QString live_savings_rate_ = QStringLiteral("—");
+    QString live_report_income_ = QStringLiteral("0 ₽");
+    QString live_report_spending_ = QStringLiteral("0 ₽");
+    QString live_savings_ = QStringLiteral("0 ₽");
+    QDate reporting_from_;
+    QDate reporting_to_;
+    QString reporting_period_error_;
     bool locked_ = false;
     bool demo_mode_ = false;
     bool investment_connected_ = false;

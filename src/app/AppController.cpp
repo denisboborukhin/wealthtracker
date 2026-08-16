@@ -33,7 +33,9 @@ import wt.connectors;
 import wt.alfa_login;
 import wt.bank_sync;
 import wt.platform;
+import wt.reporting;
 import wt.tbank_login;
+import wt.transfer_matching;
 import wt.vtb_login;
 import wt.zen_plugin_runner;
 
@@ -452,6 +454,9 @@ AppController::AppController(std::unique_ptr<CredentialBackend> credentials,
       bank_connections_(this),
       private_(std::make_unique<AppControllerPrivate>(std::move(credentials),
                                                       std::move(network))) {
+    const auto defaultPeriod = defaultReportingPeriod(QDate::currentDate());
+    reporting_from_ = defaultPeriod.from;
+    reporting_to_ = defaultPeriod.to;
     private_->tbank_login = std::make_unique<TBankLoginCoordinator>(
         [this](QString status) {
             tbank_login_status_ = std::move(status);
@@ -750,16 +755,32 @@ QString AppController::netWorth() const {
     return demo_mode_ ? QStringLiteral("4 826 450 ₽") : live_net_worth_;
 }
 
-QString AppController::monthlyIncome() const {
-    return demo_mode_ ? QStringLiteral("284 000 ₽") : live_monthly_income_;
+QString AppController::reportIncome() const {
+    return demo_mode_ ? QStringLiteral("284 000 ₽") : live_report_income_;
 }
 
-QString AppController::monthlySpending() const {
-    return demo_mode_ ? QStringLiteral("146 830 ₽") : live_monthly_spending_;
+QString AppController::reportSpending() const {
+    return demo_mode_ ? QStringLiteral("146 830 ₽") : live_report_spending_;
 }
 
-QString AppController::savingsRate() const {
-    return demo_mode_ ? QStringLiteral("48,3%") : live_savings_rate_;
+QString AppController::savings() const {
+    return demo_mode_ ? QStringLiteral("137 170 ₽") : live_savings_;
+}
+
+QString AppController::reportingFrom() const {
+    return reportingInputDate(reporting_from_);
+}
+
+QString AppController::reportingTo() const {
+    return reportingInputDate(reporting_to_);
+}
+
+QString AppController::reportingPeriodLabel() const {
+    return wealthtracker::app::reportingPeriodLabel({reporting_from_, reporting_to_});
+}
+
+QString AppController::reportingPeriodError() const {
+    return reporting_period_error_;
 }
 
 QString AppController::portfolioValue() const {
@@ -1248,6 +1269,40 @@ void AppController::loadDemoData() {
     emit demoModeChanged();
 }
 
+bool AppController::setReportingPeriod(const QString& from, const QString& to) {
+    const auto parsed = parseReportingPeriod(from, to);
+    if (!parsed) {
+        reporting_period_error_ = parsed.error();
+        emit reportingPeriodChanged();
+        return false;
+    }
+    if (demo_mode_) {
+        reporting_period_error_ = QStringLiteral("Отключите демо-данные, чтобы изменить период");
+        emit reportingPeriodChanged();
+        return false;
+    }
+    reporting_period_error_.clear();
+    reporting_from_ = parsed->from;
+    reporting_to_ = parsed->to;
+    rebuildBankModels();
+    emit reportingPeriodChanged();
+    return true;
+}
+
+void AppController::resetReportingPeriod() {
+    if (demo_mode_) {
+        reporting_period_error_ = QStringLiteral("Отключите демо-данные, чтобы изменить период");
+        emit reportingPeriodChanged();
+        return;
+    }
+    const auto period = defaultReportingPeriod(QDate::currentDate());
+    reporting_period_error_.clear();
+    reporting_from_ = period.from;
+    reporting_to_ = period.to;
+    rebuildBankModels();
+    emit reportingPeriodChanged();
+}
+
 void AppController::clearDemoData() {
     if (!private_->bank_batches.isEmpty()) {
         rebuildBankModels();
@@ -1265,9 +1320,9 @@ void AppController::clearDemoData() {
     holdings_.replace({});
     net_worth_series_.clear();
     live_net_worth_ = QStringLiteral("0 ₽");
-    live_monthly_income_ = QStringLiteral("0 ₽");
-    live_monthly_spending_ = QStringLiteral("0 ₽");
-    live_savings_rate_ = QStringLiteral("—");
+    live_report_income_ = QStringLiteral("0 ₽");
+    live_report_spending_ = QStringLiteral("0 ₽");
+    live_savings_ = QStringLiteral("0 ₽");
     import_status_ = QStringLiteral("Нет импортированных выписок");
     sync_status_ = QStringLiteral("Нет синхронизированных подключений");
     emit dashboardChanged();
@@ -1697,18 +1752,25 @@ void AppController::rebuildBankModels() {
         TransactionRow row;
         QDateTime sortTime;
     };
+    struct SourceTransaction {
+        QString institution;
+        const wealthtracker::connectors::NormalizedTransaction* transaction{};
+    };
 
     QVector<AccountRow> accountRows;
+    QVector<OwnedTransaction> ownedTransactions;
+    QVector<SourceTransaction> sourceTransactions;
     QVector<DatedTransaction> transactionRows;
     QHash<QString, std::int64_t> categorySpending;
     std::int64_t rubNetWorth = 0;
-    std::int64_t monthlyIncome = 0;
-    std::int64_t monthlySpending = 0;
+    std::int64_t reportIncome = 0;
+    std::int64_t reportSpending = 0;
     bool totalsValid = true;
     const auto today = QDate::currentDate();
+    const ReportingPeriod reportingPeriod{reporting_from_, reporting_to_};
 
-    for (auto bank = private_->bank_batches.cbegin();
-         bank != private_->bank_batches.cend(); ++bank) {
+    for (auto bank = private_->bank_batches.cbegin(); bank != private_->bank_batches.cend();
+         ++bank) {
         const auto configuration = bankConfiguration(bank.key());
         auto institution =
             configuration ? configuration->institution : retailBankInstitution(bank.key());
@@ -1722,13 +1784,11 @@ void AppController::rebuildBankModels() {
         for (const auto& snapshot : bank->balances) {
             balances.insert(snapshot.accountExternalId, snapshot.balance);
             if (snapshot.balance.currency == QStringLiteral("RUB")) {
-                totalsValid &=
-                    checkedAdd(rubNetWorth, snapshot.balance.minorUnits);
+                totalsValid &= checkedAdd(rubNetWorth, snapshot.balance.minorUnits);
             }
         }
         for (const auto& account : bank->accounts) {
-            const auto balance = balances.value(
-                account.externalId, Money{0, account.currency});
+            const auto balance = balances.value(account.externalId, Money{0, account.currency});
             accountRows.push_back({
                 account.name,
                 institution,
@@ -1739,63 +1799,76 @@ void AppController::rebuildBankModels() {
             });
         }
         for (const auto& transaction : bank->transactions) {
-            auto title = transaction.merchant.trimmed();
-            if (title.isEmpty()) {
-                title = transaction.description.trimmed();
-            }
-            if (title.isEmpty()) {
-                title = QStringLiteral("Операция");
-            }
-            auto subtitle = transaction.description.trimmed();
-            if (subtitle.isEmpty() || subtitle == title) {
-                subtitle = institution;
-            }
-            const bool internalTransfer =
-                transaction.kind ==
-                wealthtracker::connectors::NormalizedTransactionKind::InternalTransfer;
-            const auto category = internalTransfer ? QStringLiteral("Внутренний перевод")
-                                  : transaction.bankCategory.trimmed().isEmpty()
-                                      ? QStringLiteral("Без категории")
-                                      : transaction.bankCategory.trimmed();
-            const auto sortTime = transaction.occurredAt.value_or(
-                QDateTime(transaction.postingDate, QTime(0, 0),
-                          QTimeZone::UTC));
-            const auto dateText = transaction.postingDate == today
+            sourceTransactions.push_back({institution, &transaction});
+            ownedTransactions.push_back(
+                {bank.key(), transaction.accountExternalId, transaction.externalId,
+                 transaction.postingDate, transaction.occurredAt, transaction.amount.minorUnits,
+                 transaction.amount.currency,
+                 transaction.kind ==
+                     wealthtracker::connectors::NormalizedTransactionKind::InternalTransfer});
+        }
+    }
+
+    const auto transferIndexes = findOwnAccountTransfers(std::span<const OwnedTransaction>{
+        ownedTransactions.constData(), static_cast<std::size_t>(ownedTransactions.size())});
+    for (qsizetype index = 0; index < sourceTransactions.size(); ++index) {
+        const auto& source = sourceTransactions.at(index);
+        const auto& transaction = *source.transaction;
+        if (!reportingPeriod.contains(transaction.postingDate)) {
+            continue;
+        }
+        auto title = transaction.merchant.trimmed();
+        if (title.isEmpty()) {
+            title = transaction.description.trimmed();
+        }
+        if (title.isEmpty()) {
+            title = QStringLiteral("Операция");
+        }
+        auto subtitle = transaction.description.trimmed();
+        if (subtitle.isEmpty() || subtitle == title) {
+            subtitle = source.institution;
+        }
+        const bool internalTransfer = transferIndexes.contains(index);
+        const auto category = internalTransfer ? QStringLiteral("Внутренний перевод")
+                              : transaction.bankCategory.trimmed().isEmpty()
+                                  ? QStringLiteral("Без категории")
+                                  : transaction.bankCategory.trimmed();
+        const auto sortTime = transaction.occurredAt.value_or(
+            QDateTime(transaction.postingDate, QTime(0, 0), QTimeZone::UTC));
+        const auto dateText =
+            transaction.postingDate == today
                 ? QStringLiteral("Сегодня")
                 : QLocale(QLocale::Russian, QLocale::Russia)
-                      .toString(transaction.postingDate,
-                                QStringLiteral("d MMMM"));
-            transactionRows.push_back({
-                {title, subtitle, category, signedMoney(transaction.amount), dateText,
-                 transaction.amount.minorUnits >= 0, internalTransfer},
-                sortTime,
-            });
+                      .toString(transaction.postingDate, QStringLiteral("d MMMM"));
+        transactionRows.push_back({
+            {title, subtitle, category, signedMoney(transaction.amount), dateText,
+             transaction.amount.minorUnits >= 0, internalTransfer},
+            sortTime,
+        });
 
-            if (transaction.amount.currency != QStringLiteral("RUB") ||
-                transaction.postingDate.year() != today.year() ||
-                transaction.postingDate.month() != today.month() || internalTransfer) {
-                continue;
-            }
-            if (transaction.amount.minorUnits >= 0) {
-                totalsValid &=
-                    checkedAdd(monthlyIncome,
-                               transaction.amount.minorUnits);
-            } else {
-                const auto spending = -transaction.amount.minorUnits;
-                totalsValid &= checkedAdd(monthlySpending, spending);
-                auto categoryTotal = categorySpending.value(category);
-                if (checkedAdd(categoryTotal, spending)) {
-                    categorySpending.insert(category, categoryTotal);
-                } else {
-                    totalsValid = false;
-                }
-            }
+        if (transaction.amount.currency != QStringLiteral("RUB") || internalTransfer) {
+            continue;
+        }
+        if (transaction.amount.minorUnits >= 0) {
+            totalsValid &= checkedAdd(reportIncome, transaction.amount.minorUnits);
+            continue;
+        }
+        if (transaction.amount.minorUnits == std::numeric_limits<std::int64_t>::min()) {
+            totalsValid = false;
+            continue;
+        }
+        const auto spending = -transaction.amount.minorUnits;
+        totalsValid &= checkedAdd(reportSpending, spending);
+        auto categoryTotal = categorySpending.value(category);
+        if (checkedAdd(categoryTotal, spending)) {
+            categorySpending.insert(category, categoryTotal);
+        } else {
+            totalsValid = false;
         }
     }
 
     std::sort(transactionRows.begin(), transactionRows.end(),
-              [](const DatedTransaction& left,
-                 const DatedTransaction& right) {
+              [](const DatedTransaction& left, const DatedTransaction& right) {
                   return left.sortTime > right.sortTime;
               });
     QVector<TransactionRow> sortedTransactions;
@@ -1806,29 +1879,24 @@ void AppController::rebuildBankModels() {
 
     QVector<std::pair<QString, std::int64_t>> sortedCategories;
     sortedCategories.reserve(categorySpending.size());
-    for (auto category = categorySpending.cbegin();
-         category != categorySpending.cend(); ++category) {
+    for (auto category = categorySpending.cbegin(); category != categorySpending.cend();
+         ++category) {
         sortedCategories.emplace_back(category.key(), category.value());
     }
     std::sort(sortedCategories.begin(), sortedCategories.end(),
-              [](const auto& left, const auto& right) {
-                  return left.second > right.second;
-              });
-    static const QStringList categoryColors{
-        QStringLiteral("#2563EB"), QStringLiteral("#7C3AED"),
-        QStringLiteral("#059669"), QStringLiteral("#D97706"),
-        QStringLiteral("#64748B")};
+              [](const auto& left, const auto& right) { return left.second > right.second; });
+    static const QStringList categoryColors{QStringLiteral("#2563EB"), QStringLiteral("#7C3AED"),
+                                            QStringLiteral("#059669"), QStringLiteral("#D97706"),
+                                            QStringLiteral("#64748B")};
     QVector<CategoryRow> categoryRows;
     categoryRows.reserve(sortedCategories.size());
     for (qsizetype index = 0; index < sortedCategories.size(); ++index) {
         const auto& [name, amount] = sortedCategories.at(index);
-        const auto share = monthlySpending > 0
-            ? static_cast<double>(amount) /
-                  static_cast<double>(monthlySpending)
-            : 0.0;
-        categoryRows.push_back(
-            {name, QStringLiteral("%1 ₽").arg(formatMinorUnits(amount)),
-             share, categoryColors.at(index % categoryColors.size())});
+        const auto share = reportSpending > 0
+                               ? static_cast<double>(amount) / static_cast<double>(reportSpending)
+                               : 0.0;
+        categoryRows.push_back({name, QStringLiteral("%1 ₽").arg(formatMinorUnits(amount)), share,
+                                categoryColors.at(index % categoryColors.size())});
     }
 
     accounts_.replace(std::move(accountRows));
@@ -1836,26 +1904,16 @@ void AppController::rebuildBankModels() {
     categories_.replace(std::move(categoryRows));
     holdings_.replace({});
     net_worth_series_.clear();
-    live_net_worth_ = totalsValid
-        ? QStringLiteral("%1 ₽").arg(formatMinorUnits(rubNetWorth))
-        : QStringLiteral("—");
-    live_monthly_income_ = totalsValid
-        ? QStringLiteral("%1 ₽").arg(formatMinorUnits(monthlyIncome))
-        : QStringLiteral("—");
-    live_monthly_spending_ = totalsValid
-        ? QStringLiteral("%1 ₽").arg(formatMinorUnits(monthlySpending))
-        : QStringLiteral("—");
-    if (totalsValid && monthlyIncome > 0) {
-        auto percentage = QString::number(
-            (static_cast<long double>(monthlyIncome - monthlySpending) *
-             100.0L) /
-                static_cast<long double>(monthlyIncome),
-            'f', 1);
-        percentage.replace(QLatin1Char('.'), QLatin1Char(','));
-        live_savings_rate_ = percentage + QLatin1Char('%');
-    } else {
-        live_savings_rate_ = QStringLiteral("—");
-    }
+    live_net_worth_ = totalsValid ? QStringLiteral("%1 ₽").arg(formatMinorUnits(rubNetWorth))
+                                  : QStringLiteral("—");
+    live_report_income_ = totalsValid ? QStringLiteral("%1 ₽").arg(formatMinorUnits(reportIncome))
+                                      : QStringLiteral("—");
+    live_report_spending_ = totalsValid
+                                ? QStringLiteral("%1 ₽").arg(formatMinorUnits(reportSpending))
+                                : QStringLiteral("—");
+    live_savings_ =
+        totalsValid ? QStringLiteral("%1 ₽").arg(formatMinorUnits(reportIncome - reportSpending))
+                    : QStringLiteral("—");
     const bool demoChanged = demo_mode_;
     demo_mode_ = false;
     emit dashboardChanged();
