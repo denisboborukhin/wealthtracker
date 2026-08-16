@@ -118,6 +118,14 @@ private:
     static constexpr qint64 synchronizationTimeoutMilliseconds = 90 * 1'000;
     static constexpr qint64 loadingStateTimeoutMilliseconds = 30 * 1'000;
 
+    [[nodiscard]] static QString compatibilityMessage(QString message,
+                                                      const QString& diagnostic) {
+        if (!diagnostic.isEmpty()) {
+            message += QStringLiteral(" Код совместимости: %1.").arg(diagnostic);
+        }
+        return message;
+    }
+
     void begin(const Mode mode, const QUrl& url, QString status) {
         stop(false, false);
         ++generation_;
@@ -223,21 +231,23 @@ private:
                 loadingStateTimeoutMilliseconds) {
                 fail({VtbLoginFailureKind::Protocol,
                       QStringLiteral(
-                          "Вход выполнен, но ВТБ Онлайн не вернул данны в "
+                          "Вход выполнен, но ВТБ Онлайн не вернул данные в "
                           "ожидаемом формате. Возможно, интерфейс банка изменился.")});
             }
             return;
         }
         if (projection->stage == VtbProjectionStage::FrontendChanged) {
             fail({VtbLoginFailureKind::Protocol,
-                  QStringLiteral(
-                      "ВТБ Онлайн не передал счета и операции в ожидаемом "
-                      "формате. Возможно, интерфейс банка изменился.")});
+                  compatibilityMessage(
+                      QStringLiteral(
+                          "ВТБ Онлайн не передал счета и операции в ожидаемом "
+                          "формате. Возможно, интерфейс банка изменился."),
+                      projection->diagnostic)});
             return;
         }
         if (!projection->batch) {
             fail({VtbLoginFailureKind::Protocol,
-                  QStringLiteral("ВТБ Онлайн не передал данны счетов")});
+                  QStringLiteral("ВТБ Онлайн не передал данные счетов")});
             return;
         }
         auto batch = std::move(*projection->batch);

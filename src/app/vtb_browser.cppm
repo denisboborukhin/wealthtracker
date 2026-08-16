@@ -5,6 +5,7 @@ module;
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QJsonParseError>
+#include <QSet>
 #include <QString>
 
 #include <expected>
@@ -21,6 +22,7 @@ enum class VtbProjectionStage { Authentication, Loading, FrontendChanged, Ready 
 struct VtbFinancialProjection {
     VtbProjectionStage stage{VtbProjectionStage::Authentication};
     std::optional<wealthtracker::connectors::NormalizedBatch> batch;
+    QString diagnostic;
 };
 
 [[nodiscard]] const QString& vtb_sync_start_script() {
@@ -32,7 +34,8 @@ struct VtbFinancialProjection {
         pageUrl.username !== '' || pageUrl.password !== '') return 'wrong-origin'
     const stateKey = '__wealthtrackerVtbSync'
     const existing = globalThis[stateKey]
-    if (existing && (existing.status === 'running' || existing.status === 'ready'))
+    if (existing && (existing.status === 'running' || existing.status === 'ready' ||
+                     existing.status === 'failed'))
       return existing.status
     if (existing?.status === 'waiting' && Number(existing.retryAt) > Date.now())
       return existing.status
@@ -54,45 +57,77 @@ struct VtbFinancialProjection {
         return new TextEncoder().encode(JSON.stringify(value)).byteLength <= maximumPayloadBytes
       } catch (ignored) { return false }
     }
-    ;(async () => {
-      try {
-        const container = globalThis.mf_1488_core
+    const frontendFailure = code => { throw { kind: 'frontend', code: code } }
+    const delay = milliseconds => new Promise(resolve => setTimeout(resolve, milliseconds))
+    const historyDate = value => {
+      const day = String(value.getDate()).padStart(2, '0')
+      const month = String(value.getMonth() + 1).padStart(2, '0')
+      return `${day}.${month}.${value.getFullYear()}`
+    }
+    const readPortfolio = (client, attempt = 0) => client.get(
+      '/msa/api-gw/private/portfolio/portfolio-main-page/portfolios/active',
+      { params: { requestProductTypes: 'CARD,ACCOUNT,SAVING,LOAN,METAL,WALLET' } })
+      .then(response => {
+        const portfolio = unwrap(response)
+        if (!validPayload(portfolio)) frontendFailure('VTB-P1')
+        if (portfolio.loadStatus === 'LOADING') {
+          if (attempt >= 2) frontendFailure('VTB-P2')
+          return delay(5000).then(() => readPortfolio(client, attempt + 1))
+        }
+        const portfolioData = portfolio.portfolio ?? portfolio
+        if (!validPayload(portfolioData)) frontendFailure('VTB-P1')
+        return portfolioData
+      })
+    let client
+    let portfolio
+    let balances
+    const container = globalThis.mf_1488_core
+    Promise.resolve()
+      .then(() => {
         if (!container || typeof container.get !== 'function') throw { kind: 'not-ready' }
-        const factory = await container.get('./HttpClient')
+        return container.get('./HttpClient')
+      })
+      .then(factory => {
         if (typeof factory !== 'function') throw { kind: 'not-ready' }
         const exposed = factory()
-        const client = exposed?.http
+        client = exposed?.http
         if (!client || typeof client.get !== 'function') throw { kind: 'not-ready' }
-
-        const portfolioResponse = await client.get(
-          '/msa/api-gw/private/portfolio/portfolio-main-page/portfolios/active',
-          { params: { requestProductTypes: 'CARD,ACCOUNT,SAVING,LOAN,METAL,WALLET' } })
-        const balanceResponse = await client.get(
+        return readPortfolio(client)
+      })
+      .then(value => {
+        portfolio = value
+        return client.get(
           '/msa/api-gw/private/portfolio/portfolio-balances/financial/summary')
+      })
+      .then(response => {
+        balances = unwrap(response)
+        if (!validPayload(balances)) frontendFailure('VTB-B1')
         const dateTo = new Date()
         const dateFrom = new Date(dateTo.getTime() - 90 * 24 * 60 * 60 * 1000)
-        const requestId = globalThis.crypto?.randomUUID?.() ??
-          `wt-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 14)}`
-        const historyResponse = await client.get(
+        const requestId = globalThis.crypto &&
+          typeof globalThis.crypto.randomUUID === 'function'
+            ? globalThis.crypto.randomUUID()
+            : `wt-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 14)}`
+        return client.get(
           '/msa/api-gw/private/history-hub/history-hub-homer/v1/history/byUser', {
-            params: { dateFrom: dateFrom.toISOString(), dateTo: dateTo.toISOString() },
+            params: { dateFrom: historyDate(dateFrom), dateTo: historyDate(dateTo) },
             headers: {
               'x-request-id': requestId,
               'x-initiator-service': 'web_history_page',
               'x-smart-update-request': false
             }
           })
-        const portfolio = unwrap(portfolioResponse)
-        const balances = unwrap(balanceResponse)
-        const history = unwrap(historyResponse)
-        const portfolioData = portfolio?.portfolio ?? portfolio
-        if (!validPayload(portfolioData) || !validPayload(balances) || !validPayload(history) ||
-            !Array.isArray(history?.operations)) throw { kind: 'frontend' }
-        state.portfolio = portfolioData
+      })
+      .then(response => {
+        const history = unwrap(response)
+        if (!validPayload(history) || !Array.isArray(history.operations))
+          frontendFailure('VTB-H1')
+        state.portfolio = portfolio
         state.balances = balances
         state.history = history
         state.status = 'ready'
-      } catch (error) {
+      })
+      .catch(error => {
         delete state.portfolio
         delete state.balances
         delete state.history
@@ -105,10 +140,9 @@ struct VtbFinancialProjection {
           state.retryAt = Date.now() + 500
         } else {
           state.status = 'failed'
-          state.reason = error?.kind === 'frontend' ? 'frontend-contract' : 'read-failed'
+          state.reason = error?.kind === 'frontend' ? error.code : 'VTB-R1'
         }
-      }
-    })()
+      })
     return state.status
   } catch (ignored) { return 'wrong-origin' }
 })())VTB");
@@ -118,7 +152,7 @@ struct VtbFinancialProjection {
 [[nodiscard]] const QString& vtb_financial_projection_script() {
     static const QString script = QStringLiteral(R"VTB((() => {
   const result = { version: 1, stage: 'authentication', authenticated: false,
-                   accounts: [], transactions: [] }
+                   diagnostic: '', accounts: [], transactions: [] }
   try {
     const pageUrl = new URL(globalThis.location.href)
     if (pageUrl.protocol !== 'https:' || pageUrl.hostname !== 'online.vtb.ru' ||
@@ -131,6 +165,8 @@ struct VtbFinancialProjection {
     if (state.status === 'running' || state.status === 'waiting') return JSON.stringify(result)
     if (state.status !== 'ready') {
       result.stage = 'frontend-changed'
+      result.diagnostic = ['VTB-P1', 'VTB-P2', 'VTB-B1', 'VTB-H1', 'VTB-R1']
+        .includes(state.reason) ? state.reason : 'VTB-X1'
       return JSON.stringify(result)
     }
 
@@ -240,6 +276,7 @@ struct VtbFinancialProjection {
       for (const item of values(group)) addAccount(item, fallback)
     if (result.accounts.length === 0) {
       result.stage = 'frontend-changed'
+      result.diagnostic = 'VTB-A1'
       return JSON.stringify(result)
     }
 
@@ -307,6 +344,7 @@ struct VtbFinancialProjection {
     }
   } catch (ignored) {
     result.stage = result.authenticated ? 'frontend-changed' : 'authentication'
+    if (result.authenticated) result.diagnostic = 'VTB-X1'
   }
   return JSON.stringify(result)
 })())VTB");
@@ -352,14 +390,28 @@ parse_vtb_financial_projection(const QString& projection, const QDateTime& obser
         return std::unexpected(
             QStringLiteral("Состояние встроенной страницы ВТБ противоречиво"));
     }
+    const auto diagnostic = object.value(QStringLiteral("diagnostic")).toString();
+    static const QSet<QString> supportedDiagnostics{
+        QStringLiteral("VTB-P1"), QStringLiteral("VTB-P2"),
+        QStringLiteral("VTB-B1"), QStringLiteral("VTB-H1"),
+        QStringLiteral("VTB-R1"), QStringLiteral("VTB-A1"),
+        QStringLiteral("VTB-X1")};
+    if (!diagnostic.isEmpty() && !supportedDiagnostics.contains(diagnostic)) {
+        return std::unexpected(
+            QStringLiteral("Код совместимости встроенной страницы ВТБ неизвестен"));
+    }
+    if (stage == VtbProjectionStage::Ready && !diagnostic.isEmpty()) {
+        return std::unexpected(
+            QStringLiteral("Готовый ответ встроенной страницы ВТБ противоречив"));
+    }
     if (stage != VtbProjectionStage::Ready) {
-        return VtbFinancialProjection{stage, std::nullopt};
+        return VtbFinancialProjection{stage, std::nullopt, diagnostic};
     }
     auto batch = wealthtracker::connectors::VtbRetailClient::parseProjection(encoded, observedAt);
     if (!batch) {
         return std::unexpected(batch.error().message);
     }
-    return VtbFinancialProjection{VtbProjectionStage::Ready, std::move(*batch)};
+    return VtbFinancialProjection{VtbProjectionStage::Ready, std::move(*batch), {}};
 }
 
 } // namespace wealthtracker::app

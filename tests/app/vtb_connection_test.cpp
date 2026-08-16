@@ -4,10 +4,12 @@
 #include <catch2/catch_test_macros.hpp>
 
 #include <QAbstractItemModel>
+#include <QCoreApplication>
 #include <QDateTime>
 #include <QFile>
 #include <QHash>
 #include <QJSEngine>
+#include <QRegularExpression>
 #include <QSettings>
 #include <QString>
 #include <QVariant>
@@ -120,7 +122,7 @@ TEST_CASE("VTB synchronization uses only exact read routes through the bank clie
     CHECK(start.contains(QStringLiteral(
         "/msa/api-gw/private/history-hub/history-hub-homer/v1/history/byUser")));
     CHECK(start.contains(QStringLiteral("client.get")));
-    CHECK(start.count(QStringLiteral("await client.get")) == 3);
+    CHECK(start.count(QStringLiteral("client.get(")) == 3);
     CHECK_FALSE(start.contains(QStringLiteral("client.post")));
     CHECK_FALSE(start.contains(QStringLiteral("fetch("), Qt::CaseInsensitive));
     CHECK_FALSE(start.contains(QStringLiteral("XMLHttpRequest"), Qt::CaseInsensitive));
@@ -136,6 +138,88 @@ TEST_CASE("VTB synchronization uses only exact read routes through the bank clie
     CHECK(projection.contains(QStringLiteral("cardProductId")));
     CHECK(projection.contains(QStringLiteral("internalTransfer")));
     CHECK(projection.contains(QStringLiteral("balanceMinor")));
+}
+
+TEST_CASE("VTB synchronization follows the current portfolio and history contracts") {
+    using wealthtracker::app::VtbProjectionStage;
+    using wealthtracker::app::parse_vtb_financial_projection;
+    using wealthtracker::app::vtb_financial_projection_script;
+    using wealthtracker::app::vtb_sync_start_script;
+
+    QJSEngine engine;
+    const auto setup = engine.evaluate(QStringLiteral(R"JS(
+        var globalThis = this
+        globalThis.location = { href: 'https://online.vtb.ru/home' }
+        globalThis.URL = function() {
+            return { protocol: 'https:', hostname: 'online.vtb.ru', port: '',
+                     username: '', password: '', origin: 'https://online.vtb.ru',
+                     pathname: '/home' }
+        }
+        globalThis.TextEncoder = function() {
+            this.encode = function(value) { return { byteLength: String(value).length } }
+        }
+        globalThis.setTimeout = function(callback) { callback(); return 1 }
+        globalThis.crypto = { randomUUID: function() { return 'request-id' } }
+        globalThis.vtbRequests = []
+        globalThis.vtbPortfolioReads = 0
+        const client = {
+            get: function(path, options) {
+                globalThis.vtbRequests.push({ path: path, options: options || {} })
+                if (path.indexOf('/portfolios/active') !== -1) {
+                    globalThis.vtbPortfolioReads += 1
+                    if (globalThis.vtbPortfolioReads === 1)
+                        return Promise.resolve({ data: { loadStatus: 'LOADING' } })
+                    return Promise.resolve({ data: {
+                        loadStatus: 'READY', cards: {}, deposits: {}, loans: {},
+                        metalAccounts: {}, wallets: {}, accounts: {
+                            current: { publicId: 'account-1', name: 'Счёт',
+                                       balance: { sum: 100, currency: 'RUB' } }
+                        }
+                    } })
+                }
+                if (path.indexOf('/financial/summary') !== -1)
+                    return Promise.resolve({ data: { balanceResponse: [] } })
+                return Promise.resolve({ data: { operations: [] } })
+            }
+        }
+        globalThis.mf_1488_core = {
+            get: function() { return Promise.resolve(function() { return { http: client } }) }
+        }
+    )JS"));
+    REQUIRE_FALSE(setup.isError());
+
+    const auto started = engine.evaluate(vtb_sync_start_script());
+    INFO((started.toString() + QStringLiteral(" at line ") +
+          started.property(QStringLiteral("lineNumber")).toString())
+             .toStdString());
+    REQUIRE_FALSE(started.isError());
+    for (int index = 0; index < 64; ++index) {
+        QCoreApplication::processEvents();
+        (void)engine.evaluate(QStringLiteral("0"));
+    }
+
+    INFO(engine.evaluate(QStringLiteral(
+             "JSON.stringify(globalThis.__wealthtrackerVtbSync)"))
+             .toString()
+             .toStdString());
+    CHECK(engine.evaluate(QStringLiteral("globalThis.vtbPortfolioReads")).toInt() == 2);
+    CHECK(engine.evaluate(QStringLiteral(
+              "globalThis.vtbRequests[3].options.params.dateFrom"))
+              .toString()
+              .contains(QRegularExpression(QStringLiteral(R"(^\d{2}\.\d{2}\.\d{4}$)"))));
+    CHECK(engine.evaluate(QStringLiteral(
+              "globalThis.vtbRequests[3].options.params.dateTo"))
+              .toString()
+              .contains(QRegularExpression(QStringLiteral(R"(^\d{2}\.\d{2}\.\d{4}$)"))));
+
+    const auto evaluated = engine.evaluate(vtb_financial_projection_script());
+    REQUIRE_FALSE(evaluated.isError());
+    const auto parsed = parse_vtb_financial_projection(
+        evaluated.toString(), QDateTime::currentDateTimeUtc());
+    REQUIRE(parsed);
+    CHECK(parsed->stage == VtbProjectionStage::Ready);
+    REQUIRE(parsed->batch);
+    CHECK(parsed->batch->accounts.size() == 1);
 }
 
 TEST_CASE("VTB projection maps child cards and bank transfer markers") {
@@ -232,10 +316,17 @@ TEST_CASE("VTB projection reports authentication, loading, and frontend drift") 
 
     const auto drift = parse_vtb_financial_projection(
         QStringLiteral(
-            R"({"version":1,"stage":"frontend-changed","authenticated":true,"accounts":[],"transactions":[]})"),
+            R"({"version":1,"stage":"frontend-changed","authenticated":true,"diagnostic":"VTB-H1","accounts":[],"transactions":[]})"),
         observedAt);
     REQUIRE(drift);
     CHECK(drift->stage == VtbProjectionStage::FrontendChanged);
+    CHECK(drift->diagnostic == QStringLiteral("VTB-H1"));
+
+    const auto unsafeDiagnostic = parse_vtb_financial_projection(
+        QStringLiteral(
+            R"({"version":1,"stage":"frontend-changed","authenticated":true,"diagnostic":"account-40817810000000000001","accounts":[],"transactions":[]})"),
+        observedAt);
+    REQUIRE_FALSE(unsafeDiagnostic);
 
     const auto unknown = parse_vtb_financial_projection(
         QStringLiteral(
