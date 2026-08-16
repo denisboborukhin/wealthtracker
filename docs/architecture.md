@@ -11,8 +11,9 @@ Headers are retained only where Qt `moc` or a platform ABI requires them.
 - `platform`: secure buffers, key wrapping, and operating-system credentials.
 - `connectors`: file parsing, network policy, bank clients, normalization, and
   deduplication.
-- `app`: synchronization coordinators, the external-plugin runner, retail-bank
-  WebView lifecycles, models, and QML commands.
+- `app`: synchronization coordinators, reporting periods, cross-bank transfer
+  matching, the external-plugin runner, retail-bank WebView lifecycles, models,
+  and QML commands.
 - `ui`: QML pages and reusable visual components.
 
 The QML root receives one explicit `app` property. It has no database handle,
@@ -29,7 +30,17 @@ Built-in synchronization is:
 3. Clear the temporary credential bytes.
 4. Parse a bounded response into `NormalizedBatch`.
 5. Follow bounded pagination with at most four requests in flight.
-6. Project validated records into in-memory Qt models.
+6. Pair exact opposite operations across connected banks as own-account
+   transfers, while preserving explicit connector markers.
+7. Filter operations to the selected inclusive reporting period and project
+   the records and RUB cash-flow totals into in-memory Qt models.
+
+The default reporting period is the latest month through the current date.
+Current balances and net worth are not filtered by that period. Cross-bank
+matching is deterministic and one-to-one: it requires another connector, the
+same currency, an exact opposite amount, and at most three days between the two
+operations. Matching transfers remain visible but are excluded from income,
+spending, savings, and spending-category totals.
 
 Each connector has at most one coordinator. Removing a connection or enabling
 the privacy screen aborts its replies and discards pending work. Retail T-Bank

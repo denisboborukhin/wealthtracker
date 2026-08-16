@@ -24,6 +24,25 @@ financial records currently remain in memory and disappear when the app exits.
 Bank operations are normalized locally. Dashboard totals include RUB values
 only; foreign-currency accounts stay visible without an implicit conversion.
 
+## Local cash-flow reporting
+
+Income, spending, savings, categories, and the operations list use the selected
+inclusive date range. The default range is the latest month through today.
+Savings are an amount in rubles: RUB income minus RUB spending. The current
+release filters the operations already returned by connected banks; selecting
+an older period does not make a bank expose history beyond the connector limits
+shown above.
+
+A bank's explicit own-account transfer marker is always honored. WealthTracker
+also pairs an outgoing operation with one incoming operation from another
+connected bank when currency and absolute amount match exactly and their
+posting times are no more than three days apart. The closest deterministic
+one-to-one match wins. Both operations remain visible under **Внутренний
+перевод**, but neither affects income, spending, savings, or spending-category
+totals. Same-bank operations without a bank marker are not inferred, which
+avoids guessing when only one side of a transfer was loaded. Highly ambiguous
+batches are also left unclassified instead of making an unsafe guess.
+
 ## Retail T-Bank
 
 Open **Подключения → Т-Банк → Войти** and complete the official page inside
@@ -52,7 +71,7 @@ bank connection. `NO_DATA_FOUND` means an empty history, not a failed account.
 Malformed individual operations are skipped with a visible count while valid
 accounts, balances, and operations are retained. Operations marked `isInner`
 by T-Bank appear under **Внутренний перевод** and do not contribute to income,
-spending, savings rate, or spending-category totals.
+spending, savings, or spending-category totals.
 
 These retail endpoints are undocumented and unsupported by T-Bank as a public
 API. A bank-side change can break login or synchronization. WealthTracker does
@@ -105,7 +124,7 @@ limited to 8 MiB. Raw bootstrap and response objects never leave the bank page.
 C++ limits the returned projection to 8 MiB, validates exact integer minor units
 and ISO dates, rejects malformed accounts, and skips malformed or duplicate
 operations with a visible warning count. Internal transfers do not contribute
-to income, spending, savings rate, or category totals.
+to income, spending, savings, or category totals.
 
 After Alfa redirects back to its dashboard, the dialog shows **Вход выполнен.
 Получаем счета из Альфа-Онлайн…**. If the bank no longer exposes a supported
@@ -153,7 +172,7 @@ exact integer minor units, dates, currencies, identifiers, and account ownership
 
 VTB operation codes and parent categories used by the current frontend for
 transfers between a user's own accounts are normalized as **Внутренний
-перевод**. They do not contribute to income, spending, savings rate, or
+перевод**. They do not contribute to income, spending, savings, or
 spending-category totals.
 
 The browser session remains in the system WebView for six-hour refreshes while
