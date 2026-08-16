@@ -98,10 +98,17 @@ struct VtbFinancialProjection {
         portfolio = value
         return client.get(
           '/msa/api-gw/private/portfolio/portfolio-balances/financial/summary')
+          .then(response => {
+            const supplement = unwrap(response)
+            balances = validPayload(supplement) ? supplement : { balanceResponse: [] }
+          })
+          .catch(error => {
+            const status = Number(error?.response?.status ?? error?.status)
+            if (status === 401 || status === 403) throw error
+            balances = { balanceResponse: [] }
+          })
       })
-      .then(response => {
-        balances = unwrap(response)
-        if (!validPayload(balances)) frontendFailure('VTB-B1')
+      .then(() => {
         const dateTo = new Date()
         const dateFrom = new Date(dateTo.getTime() - 90 * 24 * 60 * 60 * 1000)
         const requestId = globalThis.crypto &&

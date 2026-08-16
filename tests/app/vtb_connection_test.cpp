@@ -178,7 +178,7 @@ TEST_CASE("VTB synchronization follows the current portfolio and history contrac
                     } })
                 }
                 if (path.indexOf('/financial/summary') !== -1)
-                    return Promise.resolve({ data: { balanceResponse: [] } })
+                    return Promise.reject({ response: { status: 404 } })
                 return Promise.resolve({ data: { operations: [] } })
             }
         }
