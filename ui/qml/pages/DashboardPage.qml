@@ -12,8 +12,8 @@ Flickable {
     readonly property real recentOperationsPreferredHeight: Math.max(
         recentOperationsMinimumHeight,
         height - Theme.pageMargin * 2 - dashboardHeader.implicitHeight
-        - metricGrid.implicitHeight - summaryGrid.implicitHeight
-        - content.spacing * 3)
+        - reportingPeriodCard.implicitHeight - metricGrid.implicitHeight
+        - summaryGrid.implicitHeight - content.spacing * 4)
 
     contentWidth: width
     contentHeight: Math.max(height, content.implicitHeight + Theme.pageMargin * 2)
@@ -65,10 +65,107 @@ Flickable {
             }
         }
 
+        SectionCard {
+            id: reportingPeriodCard
+            Layout.fillWidth: true
+            Layout.minimumWidth: 0
+            implicitHeight: reportingPeriodLayout.implicitHeight + 24
+
+            ColumnLayout {
+                id: reportingPeriodLayout
+                anchors {
+                    left: parent.left
+                    right: parent.right
+                    verticalCenter: parent.verticalCenter
+                    leftMargin: 14
+                    rightMargin: 14
+                }
+                spacing: 7
+
+                RowLayout {
+                    Layout.fillWidth: true
+                    spacing: 8
+
+                    Text {
+                        text: qsTr("Период")
+                        color: Theme.text
+                        font.pixelSize: 12
+                        font.weight: Font.Medium
+                    }
+                    TextField {
+                        id: reportingFromField
+                        Layout.preferredWidth: 116
+                        Layout.preferredHeight: 36
+                        text: page.app.reportingFrom
+                        placeholderText: qsTr("ДД.ММ.ГГГГ")
+                        maximumLength: 10
+                        selectByMouse: true
+                        enabled: !page.app.demoMode
+                        onAccepted: page.app.setReportingPeriod(
+                                        reportingFromField.text,
+                                        reportingToField.text)
+                        background: Rectangle {
+                            color: Theme.surface
+                            border.color: reportingFromField.activeFocus
+                                          ? Theme.primary : Theme.borderStrong
+                            radius: 7
+                        }
+                    }
+                    Text {
+                        text: "—"
+                        color: Theme.textMuted
+                        font.pixelSize: 12
+                    }
+                    TextField {
+                        id: reportingToField
+                        Layout.preferredWidth: 116
+                        Layout.preferredHeight: 36
+                        text: page.app.reportingTo
+                        placeholderText: qsTr("ДД.ММ.ГГГГ")
+                        maximumLength: 10
+                        selectByMouse: true
+                        enabled: !page.app.demoMode
+                        onAccepted: page.app.setReportingPeriod(
+                                        reportingFromField.text,
+                                        reportingToField.text)
+                        background: Rectangle {
+                            color: Theme.surface
+                            border.color: reportingToField.activeFocus
+                                          ? Theme.primary : Theme.borderStrong
+                            radius: 7
+                        }
+                    }
+                    ActionButton {
+                        text: qsTr("Применить")
+                        primary: true
+                        enabled: !page.app.demoMode
+                        onClicked: page.app.setReportingPeriod(
+                                       reportingFromField.text,
+                                       reportingToField.text)
+                    }
+                    ActionButton {
+                        text: qsTr("Последний месяц")
+                        enabled: !page.app.demoMode
+                        onClicked: page.app.resetReportingPeriod()
+                    }
+                    Item { Layout.fillWidth: true }
+                }
+
+                Text {
+                    Layout.fillWidth: true
+                    visible: page.app.reportingPeriodError.length > 0
+                    text: page.app.reportingPeriodError
+                    color: Theme.negative
+                    font.pixelSize: 11
+                    wrapMode: Text.WordWrap
+                }
+            }
+        }
+
         GridLayout {
             id: metricGrid
             Layout.fillWidth: true
-            columns: width > 900 ? 4 : 2
+            columns: page.width > 900 ? 4 : 2
             columnSpacing: 12
             rowSpacing: 12
 
@@ -83,25 +180,22 @@ Flickable {
             MetricCard {
                 Layout.fillWidth: true
                 title: qsTr("Доходы")
-                value: page.app.monthlyIncome
-                hint: page.app.demoMode ? qsTr("+12,5% к июню")
-                                   : qsTr("Текущий месяц")
+                value: page.app.reportIncome
+                hint: qsTr("За выбранный период")
                 accent: Theme.positive
             }
             MetricCard {
                 Layout.fillWidth: true
                 title: qsTr("Расходы")
-                value: page.app.monthlySpending
-                hint: page.app.demoMode ? qsTr("−6,8% к июню")
-                                   : qsTr("Текущий месяц")
+                value: page.app.reportSpending
+                hint: qsTr("За выбранный период")
                 accent: Theme.textMuted
             }
             MetricCard {
                 Layout.fillWidth: true
                 title: qsTr("Сбережения")
-                value: page.app.savingsRate
-                hint: page.app.demoMode ? qsTr("Цель 40%")
-                                   : qsTr("Доходы минус расходы")
+                value: page.app.savings
+                hint: qsTr("Доходы минус расходы")
                 accent: Theme.warning
             }
         }
@@ -109,7 +203,7 @@ Flickable {
         GridLayout {
             id: summaryGrid
             Layout.fillWidth: true
-            columns: width > 860 ? 2 : 1
+            columns: page.width > 860 ? 2 : 1
             columnSpacing: 12
             rowSpacing: 12
 
@@ -170,6 +264,11 @@ Flickable {
                         color: Theme.text
                         font.pixelSize: 14
                         font.weight: Font.DemiBold
+                    }
+                    Text {
+                        text: page.app.reportingPeriodLabel
+                        color: Theme.textMuted
+                        font.pixelSize: 11
                     }
 
                     Item {
@@ -276,7 +375,7 @@ Flickable {
                     Layout.preferredHeight: 48
                     Text {
                         Layout.fillWidth: true
-                        text: qsTr("Последние операции")
+                        text: qsTr("Операции за период")
                         color: Theme.text
                         font.pixelSize: 14
                         font.weight: Font.DemiBold

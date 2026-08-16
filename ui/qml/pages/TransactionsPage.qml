@@ -25,7 +25,7 @@ Item {
                     font.weight: Font.DemiBold
                 }
                 Text {
-                    text: qsTr("Все счета · сначала новые")
+                    text: qsTr("Все счета · ") + page.app.reportingPeriodLabel
                     color: Theme.textMuted
                     font.pixelSize: 12
                 }

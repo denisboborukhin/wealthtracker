@@ -17,6 +17,7 @@ ApplicationWindow {
     title: "WealthTracker"
     color: Theme.background
     property alias currentPage: navigation.currentIndex
+    readonly property real navigationWidth: 204
 
     readonly property var navigationItems: [
         { "title": qsTr("Обзор") },
@@ -29,13 +30,17 @@ ApplicationWindow {
         { "title": qsTr("Настройки") }
     ]
 
-    RowLayout {
+    Item {
         anchors.fill: parent
-        spacing: 0
 
         Rectangle {
-            Layout.fillHeight: true
-            Layout.preferredWidth: 204
+            id: navigationRail
+            anchors {
+                left: parent.left
+                top: parent.top
+                bottom: parent.bottom
+            }
+            width: window.navigationWidth
             color: Theme.surface
 
             ColumnLayout {
@@ -108,8 +113,12 @@ ApplicationWindow {
 
         StackLayout {
             id: navigation
-            Layout.fillWidth: true
-            Layout.fillHeight: true
+            anchors {
+                left: navigationRail.right
+                right: parent.right
+                top: parent.top
+                bottom: parent.bottom
+            }
             currentIndex: 0
 
             DashboardPage { app: window.app }

@@ -17,7 +17,11 @@ Item {
             Layout.fillWidth: true
             spacing: 4
             Text { text: qsTr("Категории"); color: Theme.text; font.pixelSize: 26; font.weight: Font.DemiBold }
-            Text { text: qsTr("Распределение расходов по категориям банка"); color: Theme.textMuted; font.pixelSize: 12 }
+            Text {
+                text: qsTr("Расходы · ") + page.app.reportingPeriodLabel
+                color: Theme.textMuted
+                font.pixelSize: 12
+            }
         }
 
         SectionCard {
