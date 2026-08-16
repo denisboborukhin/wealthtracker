@@ -43,7 +43,10 @@ struct AlfaFinancialProjection {
     if (existing && (existing.status === 'waiting' || existing.status === 'ready'))
       return existing.status
 
-    const state = globalThis[stateKey] = { status: 'waiting' }
+    const state = globalThis[stateKey] = {
+      status: 'waiting', payload: { responses: [] }, capturedCharacters: 0,
+      settleGeneration: 0
+    }
     const prototype = globalThis.XMLHttpRequest?.prototype
     if (!prototype || typeof prototype.open !== 'function' ||
         typeof prototype.send !== 'function') {
@@ -53,6 +56,9 @@ struct AlfaFinancialProjection {
     const nativeOpen = prototype.open
     const nativeSend = prototype.send
     const endpoint = '/api/v1/operations-history/operations'
+    const maximumCapturedCharacters = 8 * 1024 * 1024
+    const maximumResponses = 16
+    const settleDelayMilliseconds = 1200
     const matchesEndpoint = value => {
       try {
         const url = new URL(String(value ?? ''), pageUrl.origin)
@@ -74,19 +80,30 @@ struct AlfaFinancialProjection {
           if (state.status !== 'waiting') return
           if (this.status < 200 || this.status >= 300 ||
               typeof this.responseText !== 'string' ||
-              this.responseText.length > 8 * 1024 * 1024) {
+              state.capturedCharacters + this.responseText.length >
+                maximumCapturedCharacters ||
+              state.payload.responses.length >= maximumResponses) {
             state.status = 'failed'
             restore()
             return
           }
           try {
             const payload = JSON.parse(this.responseText)
-            if (!payload || typeof payload !== 'object' ||
-                !Array.isArray(payload.operations)) throw new Error('invalid response')
-            state.payload = payload
-            state.status = 'ready'
-          } catch (ignored) { state.status = 'failed' }
-          restore()
+            const operations = payload?.operations ?? payload?.data?.operations
+            if (!payload || typeof payload !== 'object' || !Array.isArray(operations))
+              throw new Error('invalid response')
+            state.capturedCharacters += this.responseText.length
+            state.payload.responses.push(payload)
+            const generation = ++state.settleGeneration
+            setTimeout(() => {
+              if (state.status !== 'waiting' || generation !== state.settleGeneration) return
+              state.status = 'ready'
+              restore()
+            }, settleDelayMilliseconds)
+          } catch (ignored) {
+            state.status = 'failed'
+            restore()
+          }
         }, { once: true })
       }
       return nativeSend.call(this, body)
@@ -210,7 +227,7 @@ struct AlfaFinancialProjection {
       if (raw && typeof raw === 'object' && raw.amount && typeof raw.amount === 'object')
         raw = raw.amount
       const numeric = raw && typeof raw === 'object'
-        ? raw.value ?? raw.amount ?? raw.balance : raw
+        ? raw.value ?? raw.sum ?? raw.amount ?? raw.balance : raw
       const divisor = raw && typeof raw === 'object' ? Number(raw.minorUnits ?? 1) : 1
       const number = Number(String(numeric ?? '').replace(',', '.'))
       if (!Number.isFinite(number) || !Number.isFinite(divisor) || divisor <= 0) return null
@@ -259,7 +276,8 @@ struct AlfaFinancialProjection {
     const addAccount = (item, fallbackKind) => {
       if (!item || typeof item !== 'object' || result.accounts.length >= 256) return
       const card = Array.isArray(item.cards) && item.cards.length > 0 ? item.cards[0] : null
-      const id = text(item.id ?? item.accountId ?? item.number ?? item.accountNumber)
+      const id = text(item.id ?? item.accountId ?? item.productId ?? item.publicId ??
+                      item.number ?? item.accountNumber)
       const amount = money(item.amount ?? item.balance ?? item.moneyAmount ??
                            item.accountBalance ?? item.currentBalance)
       const code = amount?.currency || currency(item.currency ?? item.currencyCode)
@@ -277,7 +295,13 @@ struct AlfaFinancialProjection {
       })
       registerAlias(id, id)
       registerAlias(item.accountId ?? item.number ?? item.accountNumber, id)
+      registerAlias(item.productId ?? item.publicId, id)
       registerAlias(item.maskedNumber ?? card?.number, id)
+      if (Array.isArray(item.cards))
+        for (const child of item.cards) {
+          registerAlias(child?.id ?? child?.cardId ?? child?.productId, id)
+          registerAlias(child?.number ?? child?.maskedNumber, id)
+        }
     }
     const lineItems = line => Array.isArray(line?.items) ? line.items : []
     const lineText = line => {
@@ -316,6 +340,7 @@ struct AlfaFinancialProjection {
       })
       registerAlias(id, id)
       registerAlias(item.properties?.action?.id, id)
+      registerAlias(item.properties?.action?.productId, id)
       registerAlias(masked, id)
       registerRouteAliases(item.content?.deeplink, id)
     }
@@ -347,7 +372,8 @@ struct AlfaFinancialProjection {
 
     const operationKey = /(operation|transaction|history|statement|recent|activity)/i
     const dateValue = value => {
-      if (value && typeof value === 'object') value = value.milliseconds ?? value.value
+      if (value && typeof value === 'object')
+        value = value.milliseconds ?? value.epochMillis ?? value.timestamp ?? value.value
       if (typeof value === 'number' || /^\d{10,13}$/.test(text(value))) {
         const number = Number(value)
         const date = new Date(number < 100000000000 ? number * 1000 : number)
@@ -359,13 +385,19 @@ struct AlfaFinancialProjection {
     const seenTransactions = new Set()
     const addTransaction = item => {
       if (!item || typeof item !== 'object' || result.transactions.length >= 20000) return
-      const amount = money(item.accountAmount ?? item.amount ?? item.moneyAmount ??
-                           item.transactionAmount ?? item.sum)
-      const date = dateValue(item.operationTime ?? item.debitingTime ?? item.occurredAt ??
-                             item.postingDate ?? item.date ?? item.dateTime ?? item.createdAt)
+      const amount = money(item.accountAmount ?? item.operationAmount ?? item.amount ??
+                           item.moneyAmount ?? item.transactionAmount ??
+                           item.amountInAccountCurrency ?? item.sum)
+      const date = dateValue(item.operationTime ?? item.operationDate ??
+                             item.transactionDate ?? item.debitingTime ?? item.occurredAt ??
+                             item.authorizationDate ?? item.postingDate ?? item.date ??
+                             item.dateTime ?? item.createdAt)
       if (!amount || !date) return
-      const candidates = [item.accountId, item.accountExternalId, item.accountNumber,
-                          item.account?.id, item.account?.number, item.clickReference]
+      const candidates = [item.accountId, item.accountExternalId, item.accountProductId,
+                          item.accountNumber, item.productId, item.cardId, item.cardNumber,
+                          item.account?.id, item.account?.productId, item.account?.number,
+                          item.product?.id, item.card?.id, item.card?.number,
+                          item.clickReference]
       if (Array.isArray(item.actions))
         for (const action of item.actions)
           candidates.push(action?.accountNumber, action?.referenceId)
@@ -385,11 +417,14 @@ struct AlfaFinancialProjection {
       const category = text(item.category?.name ?? item.category ??
                             item.spendingCategory?.name ?? item.operationCategory?.name)
       const id = text(item.id ?? item.operationId ?? item.transactionId ?? item.reference)
-      const direction = text(item.direction).toLowerCase()
+      const direction = text(item.direction ?? item.operationDirection ??
+                             item.operationType ?? item.type).toLowerCase()
       let signedMinor = amount.minor
-      if (/debit|expense|outcome|outgoing|spend|расход/.test(direction) &&
+      if ((item.isDebit === true || item.debet === true ||
+           /debit|expense|outcome|outgoing|spend|purchase|payment|расход|покуп|оплат/.test(direction)) &&
           !signedMinor.startsWith('-')) signedMinor = `-${signedMinor}`
-      else if (/credit|income|incoming|доход/.test(direction) &&
+      else if ((item.isDebit === false || item.debet === false ||
+                /credit|income|incoming|top.?up|deposit|доход|пополн/.test(direction)) &&
                signedMinor.startsWith('-')) signedMinor = signedMinor.slice(1)
       const identity = `${accountId}\n${id || `${date.toISOString()}|${signedMinor}|${description}`}`
       if (seenTransactions.has(identity)) return

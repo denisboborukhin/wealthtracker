@@ -477,6 +477,18 @@ TEST_CASE("Alfa projection reads the current inline runApp state after hydration
                 amount: { value: 5000, minorUnits: 100, currency: 'RUR' },
                 title: 'Coffee', category: { name: 'Cafes' },
                 actions: [{ accountNumber: 'account-number-1' }]
+            }, {
+                operationId: 'top-up-reference-1',
+                operationDate: '2026-08-12T09:15:00Z',
+                operationType: 'INCOME', productId: 'product-inline-2',
+                transactionAmount: { sum: 1500.25, currency: 'RUR' },
+                title: 'Пополнение'
+            }, {
+                operationId: 'purchase-reference-2',
+                transactionDate: '2026-08-13T10:30:00Z',
+                operationDirection: 'EXPENSE', cardId: 'product-inline-1',
+                operationAmount: { sum: 199.5, currency: 'RUR' },
+                title: 'Покупка'
             }]
         } }
     )JS"));
@@ -498,12 +510,16 @@ TEST_CASE("Alfa projection reads the current inline runApp state after hydration
     CHECK(projection->batch->accounts.front().externalId ==
           QStringLiteral("product-inline-1"));
     CHECK(projection->batch->balances.front().balance.minorUnits == 125050);
-    REQUIRE(projection->batch->transactions.size() == 1);
+    REQUIRE(projection->batch->transactions.size() == 3);
     CHECK(projection->batch->transactions.front().amount.minorUnits == -5000);
     CHECK(projection->batch->transactions.front().accountExternalId ==
           QStringLiteral("product-inline-1"));
     CHECK(projection->batch->transactions.front().bankCategory ==
           QStringLiteral("Cafes"));
+    CHECK(projection->batch->transactions.at(1).amount.minorUnits == 150025);
+    CHECK(projection->batch->transactions.at(1).accountExternalId ==
+          QStringLiteral("product-inline-2"));
+    CHECK(projection->batch->transactions.at(2).amount.minorUnits == -19950);
 }
 
 TEST_CASE("Alfa history capture observes only the bank page read response") {
@@ -528,6 +544,11 @@ TEST_CASE("Alfa history capture observes only the bank page read response") {
         globalThis.XMLHttpRequest = function() {}
         XMLHttpRequest.prototype.open = function() {}
         XMLHttpRequest.prototype.send = function() {}
+        globalThis.pendingTimers = []
+        globalThis.setTimeout = function(callback) {
+            globalThis.pendingTimers.push(callback)
+            return globalThis.pendingTimers.length
+        }
         globalThis.originalOpen = XMLHttpRequest.prototype.open
         globalThis.originalSend = XMLHttpRequest.prototype.send
         globalThis.history = { pushState: function(_, __, path) {
@@ -555,15 +576,33 @@ TEST_CASE("Alfa history capture observes only the bank page read response") {
     REQUIRE_FALSE(ignored.isError());
     CHECK(ignored.toBool());
 
+    const auto firstPage = engine.evaluate(QStringLiteral(R"JS((() => {
+        const request = new XMLHttpRequest()
+        request.addEventListener = function(_, callback) { this.callback = callback }
+        request.open('POST', '/api/v1/operations-history/operations')
+        request.status = 200
+        request.responseText = '{"operations":[{"id":"first"}]}'
+        request.send('{}')
+        request.callback()
+        return globalThis.__wealthtrackerAlfaHistory.status === 'waiting' &&
+               globalThis.__wealthtrackerAlfaHistory.payload.responses.length === 1 &&
+               XMLHttpRequest.prototype.open !== globalThis.originalOpen
+    })())JS"));
+    REQUIRE_FALSE(firstPage.isError());
+    CHECK(firstPage.toBool());
+
     const auto completed = engine.evaluate(QStringLiteral(R"JS((() => {
         const request = new XMLHttpRequest()
         request.addEventListener = function(_, callback) { this.callback = callback }
         request.open('POST', '/api/v1/operations-history/operations')
         request.status = 200
-        request.responseText = '{"operations":[]}'
+        request.responseText = '{"operations":[{"id":"second"}]}'
         request.send('{}')
         request.callback()
+        while (globalThis.pendingTimers.length)
+            globalThis.pendingTimers.shift()()
         return globalThis.__wealthtrackerAlfaHistory.status === 'ready' &&
+               globalThis.__wealthtrackerAlfaHistory.payload.responses.length === 2 &&
                XMLHttpRequest.prototype.open === globalThis.originalOpen &&
                XMLHttpRequest.prototype.send === globalThis.originalSend
     })())JS"));
