@@ -522,7 +522,7 @@ TEST_CASE("Alfa projection reads the current inline runApp state after hydration
     CHECK(projection->batch->transactions.at(2).amount.minorUnits == -19950);
 }
 
-TEST_CASE("Alfa history capture observes only the bank page read response") {
+TEST_CASE("Alfa history capture expands only the bank page operation limit") {
     using wealthtracker::app::alfa_history_capture_script;
 
     QJSEngine engine;
@@ -543,7 +543,7 @@ TEST_CASE("Alfa history capture observes only the bank page read response") {
         }
         globalThis.XMLHttpRequest = function() {}
         XMLHttpRequest.prototype.open = function() {}
-        XMLHttpRequest.prototype.send = function() {}
+        XMLHttpRequest.prototype.send = function(body) { this.nativeBody = body }
         globalThis.pendingTimers = []
         globalThis.setTimeout = function(callback) {
             globalThis.pendingTimers.push(callback)
@@ -582,10 +582,14 @@ TEST_CASE("Alfa history capture observes only the bank page read response") {
         request.open('POST', '/api/v1/operations-history/operations')
         request.status = 200
         request.responseText = '{"operations":[{"id":"first"}]}'
-        request.send('{}')
+        request.send('{"page":0,"pageSize":6,"filters":{"size":6},"request":{"pagination":{"size":"6"}}}')
         request.callback()
+        const sentBody = JSON.parse(request.nativeBody)
         return globalThis.__wealthtrackerAlfaHistory.status === 'waiting' &&
                globalThis.__wealthtrackerAlfaHistory.payload.responses.length === 1 &&
+               sentBody.page === 0 && sentBody.pageSize === 100 &&
+               sentBody.filters.size === 6 &&
+               sentBody.request.pagination.size === '100' &&
                XMLHttpRequest.prototype.open !== globalThis.originalOpen
     })())JS"));
     REQUIRE_FALSE(firstPage.isError());

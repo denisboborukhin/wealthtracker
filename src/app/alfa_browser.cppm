@@ -58,6 +58,8 @@ struct AlfaFinancialProjection {
     const endpoint = '/api/v1/operations-history/operations'
     const maximumCapturedCharacters = 8 * 1024 * 1024
     const maximumResponses = 16
+    const requestedOperationsPerResponse = 100
+    const maximumRequestCharacters = 64 * 1024
     const settleDelayMilliseconds = 1200
     const matchesEndpoint = value => {
       try {
@@ -68,6 +70,42 @@ struct AlfaFinancialProjection {
     const restore = () => {
       if (prototype.open === wrappedOpen) prototype.open = nativeOpen
       if (prototype.send === wrappedSend) prototype.send = nativeSend
+    }
+    const expandPageLimit = body => {
+      if (typeof body !== 'string' || body.length > maximumRequestCharacters) return body
+      try {
+        const payload = JSON.parse(body)
+        if (!payload || typeof payload !== 'object' || Array.isArray(payload)) return body
+        const limitKeys = new Set([
+          'limit', 'pagesize', 'pagelimit', 'itemsperpage', 'operationslimit',
+          'operationsperpage'
+        ])
+        const containerKeys = new Set([
+          'pagination', 'paging', 'pagerequest', 'pageable'
+        ])
+        const normalizedKey = value => String(value).replace(/[-_]/g, '').toLowerCase()
+        let changed = false
+        const expand = (value, allowSize, depth) => {
+          if (!value || typeof value !== 'object' || Array.isArray(value) || depth > 4) return
+          for (const [key, current] of Object.entries(value)) {
+            const normalized = normalizedKey(key)
+            const isLimit = limitKeys.has(normalized) || (allowSize && normalized === 'size')
+            const numeric = Number(current)
+            if (isLimit && Number.isInteger(numeric) && numeric > 0 &&
+                numeric < requestedOperationsPerResponse) {
+              value[key] = typeof current === 'string'
+                ? String(requestedOperationsPerResponse) : requestedOperationsPerResponse
+              changed = true
+            } else if (current && typeof current === 'object') {
+              expand(current, containerKeys.has(normalized), depth + 1)
+            }
+          }
+        }
+        expand(payload, true, 0)
+        if (!changed) return body
+        const expanded = JSON.stringify(payload)
+        return expanded.length <= maximumRequestCharacters ? expanded : body
+      } catch (ignored) { return body }
     }
     function wrappedOpen(method, url, ...rest) {
       this.__wealthtrackerAlfaHistoryRequest =
@@ -106,7 +144,8 @@ struct AlfaFinancialProjection {
           }
         }, { once: true })
       }
-      return nativeSend.call(this, body)
+      return nativeSend.call(
+        this, this.__wealthtrackerAlfaHistoryRequest ? expandPageLimit(body) : body)
     }
     prototype.open = wrappedOpen
     prototype.send = wrappedSend
