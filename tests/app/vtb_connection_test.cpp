@@ -149,11 +149,11 @@ TEST_CASE("VTB synchronization follows the current portfolio and history contrac
     QJSEngine engine;
     const auto setup = engine.evaluate(QStringLiteral(R"JS(
         var globalThis = this
-        globalThis.location = { href: 'https://online.vtb.ru/home' }
+        globalThis.location = { href: 'https://online.vtb.ru/login?post-auth=true' }
         globalThis.URL = function() {
             return { protocol: 'https:', hostname: 'online.vtb.ru', port: '',
                      username: '', password: '', origin: 'https://online.vtb.ru',
-                     pathname: '/home' }
+                     pathname: '/login' }
         }
         globalThis.TextEncoder = function() {
             this.encode = function(value) { return { byteLength: String(value).length } }

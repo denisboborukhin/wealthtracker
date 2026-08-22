@@ -39,10 +39,6 @@ struct VtbFinancialProjection {
       return existing.status
     if (existing?.status === 'waiting' && Number(existing.retryAt) > Date.now())
       return existing.status
-    if (pageUrl.pathname.startsWith('/login') || pageUrl.pathname.startsWith('/dko/auth')) {
-      globalThis[stateKey] = { status: 'authentication' }
-      return 'authentication'
-    }
     if (existing?.status === 'authentication' && Number(existing.retryAt) > Date.now())
       return existing.status
 
