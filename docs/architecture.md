@@ -114,7 +114,8 @@ compatibility error.
    history. It performs at most two delayed portfolio retries while VTB reports
    `loadStatus: LOADING`. An unavailable supplement does not invalidate an
    otherwise valid active portfolio; authentication failures still stop the
-   synchronization.
+   synchronization. The authenticated client response, not the SPA pathname,
+   determines whether the post-login browser session is ready.
 4. Raw responses remain page-local. A second fixed expression maps only bounded
    account and operation fields, associates child cards with their parent
    accounts, and marks VTB's own-account transfer codes as internal transfers.

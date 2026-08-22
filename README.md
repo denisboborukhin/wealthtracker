@@ -4,11 +4,11 @@ WealthTracker is an open-source C++23 desktop application for viewing accounts,
 balances, operations, spending categories, and cash-flow statistics locally.
 The interface starts empty; demonstration data is opt-in.
 
-Income, spending, savings, categories, and the operations list use a selected
-inclusive date range. The default is the latest month. Savings are shown as the
-RUB amount left after spending. Matching opposite operations between two
-connected banks are kept in the history as own-account transfers but excluded
-from income, spending, savings, and category totals.
+Income, spending, savings, categories, and the operations list use an inclusive
+date range selected from calendar controls. The default is the latest month.
+Savings are shown as the RUB amount left after spending. Matching opposite
+operations between two connected banks are kept in the history as own-account
+transfers but excluded from income, spending, savings, and category totals.
 
 > **Status:** technical preview. Bank results currently live in memory and are
 > lost when the application exits. File import is a validated preview, and the

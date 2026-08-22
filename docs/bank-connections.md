@@ -26,12 +26,12 @@ only; foreign-currency accounts stay visible without an implicit conversion.
 
 ## Local cash-flow reporting
 
-Income, spending, savings, categories, and the operations list use the selected
-inclusive date range. The default range is the latest month through today.
-Savings are an amount in rubles: RUB income minus RUB spending. The current
-release filters the operations already returned by connected banks; selecting
-an older period does not make a bank expose history beyond the connector limits
-shown above.
+Income, spending, savings, categories, and the operations list use the inclusive
+date range selected with the two calendar controls. The default range is the
+latest month through today. Savings are an amount in rubles: RUB income minus
+RUB spending. The current release filters the operations already returned by
+connected banks; selecting an older period does not make a bank expose history
+beyond the connector limits shown above.
 
 A bank's explicit own-account transfer marker is always honored. WealthTracker
 also pairs an outgoing operation with one incoming operation from another
@@ -181,10 +181,13 @@ spending-category totals.
 
 The browser session remains in the system WebView for six-hour refreshes while
 auto-update is enabled. Disconnecting deletes that WebView session. A 401/403
-response marks the connection expired; an unknown origin, route contract,
-module shape, or response schema stops synchronization instead of broadening
-access. Compatibility errors include only a fixed stage code such as `VTB-H1`;
-the code contains no account, operation, balance, cookie, or response value.
+response from the page-owned read client marks the connection expired. The SPA
+pathname is not used as an authentication signal because presentation routing
+can remain unchanged after the session transition. An unknown origin, route
+contract, module shape, or response schema stops synchronization instead of
+broadening access. Compatibility errors include only a fixed stage code such as
+`VTB-H1`; the code contains no account, operation, balance, cookie, or response
+value.
 
 VTB does not publish this retail frontend contract as a supported API. A
 bank-side frontend change can break synchronization. WealthTracker does not

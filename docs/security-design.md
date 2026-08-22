@@ -126,6 +126,11 @@ changes stop with a compatibility error. The private frontend contract is
 undocumented and never expands to new hosts, routes, methods, cookie export, or
 direct credential requests at runtime.
 
+A login pathname can remain stale after MFA. WealthTracker therefore does not
+infer authentication from that presentation route. It verifies the exact origin
+and lets 401/403 from the page-owned, allowlisted read client mark the session
+as unauthenticated; no session value is extracted or copied.
+
 ## External plugin process
 
 The compatibility host is copied to an owner-only temporary file. Node.js
