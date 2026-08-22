@@ -83,16 +83,19 @@ DOM, fields, and storage are not read. Only the `initialState` object or
 
 For history, a short-lived observer follows the bank's normal `/history` route
 and accepts only 2xx JSON responses from the exact same-origin
-`/api/v1/operations-history/operations` path. It does not inspect or alter a
-request and restores the browser API after a quiet interval. The coordinator
-always starts this route after it has accounts; dashboard preview operations are
-not trusted as evidence that history is complete. At most 16 responses and
-8 MiB of combined response text are retained page-locally. The
-projection returns an allowlist of fields rather than raw page or response
-state, then releases its temporary response references. C++ enforces an
-8 MiB result limit, 256-account and 20,000-operation limits, exact integer
-amounts, bounded text, valid currencies and dates, and account ownership for
-each operation. QML receives only the native window and textual status.
+`/api/v1/operations-history/operations` path. For that POST only, it may parse a
+JSON request body of at most 64 KiB and raise an existing top-level or named
+pagination page-size field to 100. Unrelated `size` fields, filters, page
+position, headers, method, host, and path are unchanged. The body and its values
+remain page-local. The observer restores the browser API after a quiet interval.
+The coordinator always starts this route after it has accounts; dashboard
+preview operations are not trusted as evidence that history is complete. At
+most 16 responses and 8 MiB of combined response text are retained page-locally.
+The projection returns an allowlist of fields rather than raw page or response
+state, then releases its temporary response references. C++ enforces an 8 MiB
+result limit, 256-account and 20,000-operation limits, exact integer amounts,
+bounded text, valid currencies and dates, and account ownership for each
+operation. QML receives only the native window and textual status.
 
 The browser session remains in the operating-system WebView for automatic
 dashboard refreshes and is cleared when the connection is removed. A redirect
@@ -109,7 +112,9 @@ origin and rejects credentials embedded in its URL.
 
 A fixed expression obtains only the bank frontend's exported `./HttpClient` and
 invokes three exact GET paths for active products, an optional balance
-supplement, and history. A non-authentication failure of the optional supplement
+supplement, and history. The history route is called sequentially for three
+non-overlapping windows no longer than the bank frontend's 31-day limit. A
+non-authentication failure of the optional supplement
 does not discard balances embedded in a valid active portfolio. The expression
 does not inspect cookies, login fields, headers, request bodies, resource timing,
 DOM contents, or browser storage. A redirect to another origin is not treated

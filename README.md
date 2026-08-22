@@ -40,11 +40,12 @@ Retail Alfa-Bank uses the official Alfa Online phone/SMS page. Its login is
 browser-session based: WealthTracker does not read cookie values, headers,
 login fields, or web storage. A fixed page expression reads the bank's known
 dashboard bootstrap state for accounts. A short-lived bounded observer accepts
-only the bank history page's exact same-origin operations responses. The
-dedicated history page is always opened after accounts are found; its short
-dashboard preview is never treated as complete history. Only bounded account,
-balance, and operation fields reach C++. The system WebView retains the browser
-session for six-hour refreshes while auto-update is enabled.
+only the bank history page's exact same-origin operations responses and raises
+an existing page-size field to at most 100 records. The dedicated history page
+is always opened after accounts are found; its short dashboard preview is never
+treated as complete history. Only bounded account, balance, and operation fields
+reach C++. The system WebView retains the browser session for six-hour refreshes
+while auto-update is enabled.
 This interface is undocumented and can break after a bank-side change. Alfa
 Online uses Russian TLS certificates; on systems that do not trust the Russian
 Trusted Root CA, the connection dialog links to
@@ -53,13 +54,15 @@ WealthTracker never installs a root certificate or disables TLS verification.
 
 Retail VTB keeps authentication inside the official VTB Online page. The app
 does not read cookies, login fields, headers, or web storage. It invokes the
-authenticated page's own HTTP client for three fixed read-only routes. The
-balance-summary route is an optional supplement; products and embedded balances
-remain usable when VTB does not enable it for a profile. Only a bounded
-projection of accounts, balances, and recent operations is accepted. A temporary
-history-service failure preserves validated accounts and balances and is shown as
-a partial synchronization; authentication and schema failures still stop the
-sync. This frontend interface is undocumented and can break after a bank change.
+authenticated page's own HTTP client for three fixed read-only routes. History
+is split into three sequential windows because VTB limits each request to 31
+days. The balance-summary route is an optional supplement; products and embedded
+balances remain usable when VTB does not enable it for a profile. Only a bounded
+projection of accounts, balances, and recent operations is accepted. A
+temporary history-service failure preserves validated accounts and balances and
+is shown as a partial synchronization; authentication and schema failures still
+stop the sync. This frontend interface is undocumented and can break after a
+bank change.
 
 External JavaScript plugins are not sandboxed. They run as the current user and
 can access local files and the network. WealthTracker does not distribute

@@ -85,10 +85,12 @@ without expanding the permitted host or introducing write requests.
    `appState`) into bounded account and balance fields.
 5. After accounts are available, a short-lived bounded observer follows the
    bank's normal `/history` route and accepts only successful same-origin
-   `/api/v1/operations-history/operations` responses. It neither constructs nor
-   modifies the bank page's requests and restores the browser API after a quiet
-   interval. This happens even when the dashboard bootstrap contains a small
-   recent-operation preview; that preview is not a completion signal.
+   `/api/v1/operations-history/operations` responses. On that POST only, it
+   raises an existing bounded JSON page-size field to 100 without changing the
+   page position, filters, headers, host, path, or method. It does not construct
+   a second request and restores the browser API after a quiet interval. This
+   happens even when the dashboard bootstrap contains a small recent-operation
+   preview; that preview is not a completion signal.
 6. `AlfaRetailClient` validates bounds, exact amounts, identifiers, dates,
    currencies, duplicates, and account ownership before producing a
    `NormalizedBatch`.
@@ -111,8 +113,9 @@ compatibility error.
 2. The official page owns phone/SMS authentication and the browser session.
 3. A fixed expression verifies the exact origin, obtains the current bank
    frontend's exported `./HttpClient`, and invokes three exact GET routes for
-   active products, an optional financial-balance supplement, and 90 days of
-   history. It performs at most two delayed portfolio retries while VTB reports
+   active products, an optional financial-balance supplement, and approximately
+   90 days of history in three sequential windows of at most 31 days. It performs
+   at most two delayed portfolio retries while VTB reports
    `loadStatus: LOADING`. An unavailable supplement does not invalidate an
    otherwise valid active portfolio; authentication failures still stop the
    synchronization. The authenticated client response, not the SPA pathname,

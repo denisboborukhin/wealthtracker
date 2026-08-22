@@ -107,13 +107,15 @@ The expression reads only known global state or the JSON argument of the bank's
 inline `window.runApp({ appState: ... })`/`initialState` dashboard bootstrap for
 accounts and balances. It then installs a short-lived observer while Alfa's
 normal `/history` page loads. The observer accepts only successful responses
-from the exact same-origin `/api/v1/operations-history/operations` path, never
-changes a request, and restores the browser API after the response stream is
-quiet. The history page is opened after every successful account projection,
-even if the dashboard bootstrap already contains a small recent-operation
-preview. That preview is merged and deduplicated but is never treated as proof
-that history loading is complete. The resulting projection contains only these
-bounded fields:
+from the exact same-origin `/api/v1/operations-history/operations` path. For
+that POST only, it parses a bounded JSON body and raises an existing top-level
+or pagination page-size field to 100; it does not create a new request, inspect
+headers, change filters or pagination position, or export the body. It restores
+the browser API after the response stream is quiet. The history page is opened
+after every successful account projection, even if the dashboard bootstrap
+already contains a small recent-operation preview. That preview is merged and
+deduplicated but is never treated as proof that history loading is complete.
+The resulting projection contains only these bounded fields:
 
 - at most 256 account identifiers, names, types, currencies, masked numbers,
   and balances;
@@ -121,11 +123,12 @@ bounded fields:
   merchant, category, MCC, and internal-transfer state;
 - a version and authenticated flag.
 
-It does not read cookie values, authorization headers, form fields, request
-bodies, local storage, rendered text, or arbitrary DOM elements. Inline script
-scanning is limited by count and size. History capture requires 2xx JSON, stores
-at most 16 responses, and limits their combined text to 8 MiB. Raw bootstrap
-and response objects never leave the bank page. C++ limits the returned
+It does not read cookie values, authorization headers, form fields, local
+storage, rendered text, or arbitrary DOM elements. The bounded pagination-body
+rewrite stays inside the bank page. Inline script scanning is limited by count
+and size. History capture requires 2xx JSON, stores at most 16 responses, and
+limits their combined text to 8 MiB. Raw bootstrap, request, and response objects
+never leave the bank page. C++ limits the returned
 projection to 8 MiB, validates exact integer minor units and ISO dates, rejects
 malformed accounts, and skips malformed or duplicate operations with a visible
 warning count. Internal transfers do not contribute
@@ -165,7 +168,8 @@ used, and only for these paths:
 - `/msa/api-gw/private/portfolio/portfolio-balances/financial/summary`
 - `/msa/api-gw/private/history-hub/history-hub-homer/v1/history/byUser`
 
-The last request covers the previous 90 days using VTB's current `dd.MM.yyyy`
+History covers approximately the previous 90 days as three sequential requests,
+each spanning no more than VTB's current 31-day limit and using its `dd.MM.yyyy`
 date contract. A portfolio response that is still loading is retried at most
 twice, matching the current bank frontend. The financial-summary route is an
 optional balance supplement in VTB's frontend; a missing or unavailable
