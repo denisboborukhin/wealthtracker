@@ -44,6 +44,9 @@ struct VtbFinancialProjection {
 
     const state = globalThis[stateKey] = { status: 'running', requestStage: 'module' }
     const maximumPayloadBytes = 8 * 1024 * 1024
+    const historyWindowDays = 31
+    const historyPageCount = 3
+    const millisecondsPerDay = 24 * 60 * 60 * 1000
     const unwrap = response => response && typeof response === 'object' &&
       Object.prototype.hasOwnProperty.call(response, 'data') ? response.data : response
     const validPayload = value => {
@@ -113,32 +116,47 @@ struct VtbFinancialProjection {
       .then(() => {
         state.requestStage = 'history'
         const dateTo = new Date()
-        const dateFrom = new Date(dateTo.getTime() - 90 * 24 * 60 * 60 * 1000)
-        const requestId = globalThis.crypto &&
-          typeof globalThis.crypto.randomUUID === 'function'
-            ? globalThis.crypto.randomUUID()
-            : `wt-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 14)}`
-        return Promise.resolve()
-          .then(() => client.get(
+        const operations = []
+        const readHistoryPage = page => {
+          const dateFrom = new Date(
+            dateTo.getTime() - historyWindowDays * (page + 1) * millisecondsPerDay)
+          const pageDateTo = page === 0 ? dateTo : new Date(
+            dateTo.getTime() - (historyWindowDays * page + 1) * millisecondsPerDay)
+          const requestId = globalThis.crypto &&
+            typeof globalThis.crypto.randomUUID === 'function'
+              ? globalThis.crypto.randomUUID()
+              : `wt-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 14)}`
+          return client.get(
             '/msa/api-gw/private/history-hub/history-hub-homer/v1/history/byUser', {
-              params: { dateFrom: historyDate(dateFrom), dateTo: historyDate(dateTo) },
+              params: {
+                dateFrom: historyDate(dateFrom), dateTo: historyDate(pageDateTo)
+              },
               headers: {
                 'x-request-id': requestId,
                 'x-initiator-service': 'web_history_page',
                 'x-smart-update-request': false
               }
-            }))
-          .then(response => {
+            })
+            .then(response => {
             const history = unwrap(response)
             if (!validPayload(history) || !Array.isArray(history.operations))
               frontendFailure('VTB-H1')
-            state.history = history
+            operations.push(...history.operations)
+            if (!validPayload({ operations })) frontendFailure('VTB-H1')
+          })
+        }
+        let sequence = Promise.resolve()
+        for (let page = 0; page < historyPageCount; ++page)
+          sequence = sequence.then(() => readHistoryPage(page))
+        return sequence
+          .then(() => {
+            state.history = { operations }
             state.historyComplete = true
           })
           .catch(error => {
             const status = httpStatus(error)
             if (status === 401 || status === 403 || error?.kind === 'frontend') throw error
-            state.history = { operations: [] }
+            state.history = { operations }
             state.historyComplete = false
           })
       })

@@ -5,11 +5,11 @@
 
 #include <QAbstractItemModel>
 #include <QCoreApplication>
+#include <QDate>
 #include <QDateTime>
 #include <QFile>
 #include <QHash>
 #include <QJSEngine>
-#include <QRegularExpression>
 #include <QSettings>
 #include <QString>
 #include <QVariant>
@@ -166,6 +166,7 @@ TEST_CASE("VTB synchronization follows the current portfolio and history contrac
         globalThis.vtbBalanceStatus = 404
         globalThis.vtbBalanceThrows = false
         globalThis.vtbHistoryStatus = 200
+        globalThis.vtbHistoryReads = 0
         const client = {
             get: function(path, options) {
                 globalThis.vtbRequests.push({ path: path, options: options || {} })
@@ -192,7 +193,14 @@ TEST_CASE("VTB synchronization follows the current portfolio and history contrac
                     return Promise.reject({ response: {
                         statusCode: globalThis.vtbHistoryStatus
                     } })
-                return Promise.resolve({ data: { operations: [] } })
+                globalThis.vtbHistoryReads += 1
+                return Promise.resolve({ data: { operations: [{
+                    operationId: 'history-' + globalThis.vtbHistoryReads,
+                    accountProductId: 'account-1',
+                    operationDate: '2026-08-14T12:30:00.000Z', debet: true,
+                    operationAmount: { sum: globalThis.vtbHistoryReads,
+                                       currency: 'RUB' }
+                }] } })
             }
         }
         globalThis.mf_1488_core = {
@@ -216,14 +224,26 @@ TEST_CASE("VTB synchronization follows the current portfolio and history contrac
              .toString()
              .toStdString());
     CHECK(engine.evaluate(QStringLiteral("globalThis.vtbPortfolioReads")).toInt() == 2);
-    CHECK(engine.evaluate(QStringLiteral(
-              "globalThis.vtbRequests[3].options.params.dateFrom"))
-              .toString()
-              .contains(QRegularExpression(QStringLiteral(R"(^\d{2}\.\d{2}\.\d{4}$)"))));
-    CHECK(engine.evaluate(QStringLiteral(
-              "globalThis.vtbRequests[3].options.params.dateTo"))
-              .toString()
-              .contains(QRegularExpression(QStringLiteral(R"(^\d{2}\.\d{2}\.\d{4}$)"))));
+    CHECK(engine.evaluate(QStringLiteral("globalThis.vtbHistoryReads")).toInt() == 3);
+    QVector<QDate> historyFrom;
+    QVector<QDate> historyTo;
+    for (int requestIndex = 3; requestIndex < 6; ++requestIndex) {
+        historyFrom.push_back(QDate::fromString(
+            engine.evaluate(QStringLiteral(
+                "globalThis.vtbRequests[%1].options.params.dateFrom")
+                                .arg(requestIndex)).toString(),
+            QStringLiteral("dd.MM.yyyy")));
+        historyTo.push_back(QDate::fromString(
+            engine.evaluate(QStringLiteral(
+                "globalThis.vtbRequests[%1].options.params.dateTo")
+                                .arg(requestIndex)).toString(),
+            QStringLiteral("dd.MM.yyyy")));
+        REQUIRE(historyFrom.back().isValid());
+        REQUIRE(historyTo.back().isValid());
+        CHECK(historyFrom.back().daysTo(historyTo.back()) <= 31);
+    }
+    CHECK(historyTo.at(1).addDays(1) == historyFrom.at(0));
+    CHECK(historyTo.at(2).addDays(1) == historyFrom.at(1));
 
     const auto evaluated = engine.evaluate(vtb_financial_projection_script());
     REQUIRE_FALSE(evaluated.isError());
@@ -233,10 +253,12 @@ TEST_CASE("VTB synchronization follows the current portfolio and history contrac
     CHECK(parsed->stage == VtbProjectionStage::Ready);
     REQUIRE(parsed->batch);
     CHECK(parsed->batch->accounts.size() == 1);
+    CHECK(parsed->batch->transactions.size() == 3);
 
     const auto restarted = engine.evaluate(QStringLiteral(
         "delete globalThis.__wealthtrackerVtbSync; "
-        "globalThis.vtbPortfolioReads = 0; globalThis.vtbBalanceStatus = 401;"));
+        "globalThis.vtbPortfolioReads = 0; globalThis.vtbBalanceStatus = 401; "
+        "globalThis.vtbHistoryReads = 0;"));
     REQUIRE_FALSE(restarted.isError());
     REQUIRE_FALSE(engine.evaluate(vtb_sync_start_script()).isError());
     for (int index = 0; index < 64; ++index) {
@@ -250,7 +272,7 @@ TEST_CASE("VTB synchronization follows the current portfolio and history contrac
     const auto partialRestart = engine.evaluate(QStringLiteral(
         "delete globalThis.__wealthtrackerVtbSync; "
         "globalThis.vtbPortfolioReads = 0; globalThis.vtbBalanceStatus = 404; "
-        "globalThis.vtbHistoryStatus = 503;"));
+        "globalThis.vtbHistoryStatus = 503; globalThis.vtbHistoryReads = 0;"));
     REQUIRE_FALSE(partialRestart.isError());
     REQUIRE_FALSE(engine.evaluate(vtb_sync_start_script()).isError());
     for (int index = 0; index < 64; ++index) {
@@ -278,7 +300,7 @@ TEST_CASE("VTB synchronization follows the current portfolio and history contrac
     const auto throwingSupplementRestart = engine.evaluate(QStringLiteral(
         "delete globalThis.__wealthtrackerVtbSync; "
         "globalThis.vtbPortfolioReads = 0; globalThis.vtbBalanceThrows = true; "
-        "globalThis.vtbHistoryStatus = 200;"));
+        "globalThis.vtbHistoryStatus = 200; globalThis.vtbHistoryReads = 0;"));
     REQUIRE_FALSE(throwingSupplementRestart.isError());
     REQUIRE_FALSE(engine.evaluate(vtb_sync_start_script()).isError());
     for (int index = 0; index < 64; ++index) {
@@ -286,13 +308,15 @@ TEST_CASE("VTB synchronization follows the current portfolio and history contrac
         (void)engine.evaluate(QStringLiteral("0"));
     }
     CHECK(engine.evaluate(QStringLiteral(
-              "globalThis.__wealthtrackerVtbSync.status === 'ready'"))
+              "globalThis.__wealthtrackerVtbSync.status === 'ready' && "
+              "globalThis.vtbHistoryReads === 3"))
               .toBool());
 
     const auto failedPortfolioRestart = engine.evaluate(QStringLiteral(
         "delete globalThis.__wealthtrackerVtbSync; "
         "globalThis.vtbPortfolioReads = 0; globalThis.vtbPortfolioStatus = 503; "
-        "globalThis.vtbBalanceThrows = false; globalThis.vtbHistoryStatus = 200;"));
+        "globalThis.vtbBalanceThrows = false; globalThis.vtbHistoryStatus = 200; "
+        "globalThis.vtbHistoryReads = 0;"));
     REQUIRE_FALSE(failedPortfolioRestart.isError());
     REQUIRE_FALSE(engine.evaluate(vtb_sync_start_script()).isError());
     for (int index = 0; index < 64; ++index) {
