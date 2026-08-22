@@ -83,6 +83,12 @@ classify_alfa_load_failure(const QUrl& failedUrl, const QString& errorString) {
         false};
 }
 
+[[nodiscard]] bool should_start_alfa_history_capture(
+    const bool historyCaptureStarted, const qsizetype dashboardOperationCount) noexcept {
+    (void)dashboardOperationCount;
+    return !historyCaptureStarted;
+}
+
 class AlfaLoginCoordinator final : public QObject {
 public:
     using StatusChanged = std::function<void(QString)>;
@@ -303,7 +309,8 @@ private:
                   QStringLiteral("Alfa Online не передал данные счетов")});
             return;
         }
-        if (!history_capture_started_ && projection->batch->transactions.isEmpty()) {
+        if (should_start_alfa_history_capture(
+                history_capture_started_, projection->batch->transactions.size())) {
             startHistoryCapture();
             return;
         }

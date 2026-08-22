@@ -613,6 +613,10 @@ TEST_CASE("Alfa history capture observes only the bank page read response") {
 TEST_CASE("Alfa projection reports post-login loading instead of waiting silently") {
     using wealthtracker::app::AlfaProjectionStage;
     using wealthtracker::app::parse_alfa_financial_projection;
+    using wealthtracker::app::should_start_alfa_history_capture;
+
+    CHECK(should_start_alfa_history_capture(false, 6));
+    CHECK_FALSE(should_start_alfa_history_capture(true, 6));
 
     const auto loading = parse_alfa_financial_projection(
         QStringLiteral(
@@ -661,6 +665,8 @@ TEST_CASE("Alfa projection reports post-login loading instead of waiting silentl
         "operationsStateTimeoutMilliseconds = 30 * 1'000")));
     CHECK(coordinatorSource.contains(QByteArrayLiteral(
         "alfa_history_capture_script()")));
+    CHECK_FALSE(coordinatorSource.contains(QByteArrayLiteral(
+        "projection->batch->transactions.isEmpty()")));
     CHECK(coordinatorSource.contains(QByteArrayLiteral(
         "Альфа-Онлайн открыл страницу установки российских")));
     CHECK(coordinatorSource.contains(QByteArrayLiteral(
