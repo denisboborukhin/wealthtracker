@@ -15,6 +15,24 @@ Flickable {
         - reportingPeriodCard.implicitHeight - metricGrid.implicitHeight
         - summaryGrid.implicitHeight - content.spacing * 4)
 
+    function applyReportingFrom(value) {
+        const selected = reportingFromPicker.parsedDate(value)
+        const currentTo = reportingToPicker.parsedDate(page.app.reportingTo)
+        page.app.setReportingPeriod(value,
+                                    selected !== null && currentTo !== null
+                                    && selected > currentTo
+                                    ? value : page.app.reportingTo)
+    }
+
+    function applyReportingTo(value) {
+        const selected = reportingToPicker.parsedDate(value)
+        const currentFrom = reportingFromPicker.parsedDate(page.app.reportingFrom)
+        page.app.setReportingPeriod(selected !== null && currentFrom !== null
+                                    && selected < currentFrom
+                                    ? value : page.app.reportingFrom,
+                                    value)
+    }
+
     contentWidth: width
     contentHeight: Math.max(height, content.implicitHeight + Theme.pageMargin * 2)
     flickableDirection: Flickable.VerticalFlick
@@ -82,73 +100,54 @@ Flickable {
                 }
                 spacing: 7
 
-                RowLayout {
+                GridLayout {
                     Layout.fillWidth: true
-                    spacing: 8
+                    columns: page.width > 760 ? 6 : 2
+                    columnSpacing: 8
+                    rowSpacing: 8
 
                     Text {
-                        text: qsTr("Период")
+                        text: qsTr("С")
                         color: Theme.text
                         font.pixelSize: 12
                         font.weight: Font.Medium
                     }
-                    TextField {
-                        id: reportingFromField
-                        Layout.preferredWidth: 116
-                        Layout.preferredHeight: 36
-                        text: page.app.reportingFrom
-                        placeholderText: qsTr("ДД.ММ.ГГГГ")
-                        maximumLength: 10
-                        selectByMouse: true
+                    DatePickerField {
+                        id: reportingFromPicker
+                        Layout.fillWidth: page.width <= 760
+                        value: page.app.reportingFrom
+                        accessibleName: qsTr("Начало периода")
                         enabled: !page.app.demoMode
-                        onAccepted: page.app.setReportingPeriod(
-                                        reportingFromField.text,
-                                        reportingToField.text)
-                        background: Rectangle {
-                            color: Theme.surface
-                            border.color: reportingFromField.activeFocus
-                                          ? Theme.primary : Theme.borderStrong
-                            radius: 7
+                        onDateSelected: function(selectedValue) {
+                            page.applyReportingFrom(selectedValue)
                         }
                     }
                     Text {
-                        text: "—"
-                        color: Theme.textMuted
+                        text: qsTr("По")
+                        color: Theme.text
                         font.pixelSize: 12
+                        font.weight: Font.Medium
                     }
-                    TextField {
-                        id: reportingToField
-                        Layout.preferredWidth: 116
-                        Layout.preferredHeight: 36
-                        text: page.app.reportingTo
-                        placeholderText: qsTr("ДД.ММ.ГГГГ")
-                        maximumLength: 10
-                        selectByMouse: true
+                    DatePickerField {
+                        id: reportingToPicker
+                        Layout.fillWidth: page.width <= 760
+                        value: page.app.reportingTo
+                        accessibleName: qsTr("Конец периода")
                         enabled: !page.app.demoMode
-                        onAccepted: page.app.setReportingPeriod(
-                                        reportingFromField.text,
-                                        reportingToField.text)
-                        background: Rectangle {
-                            color: Theme.surface
-                            border.color: reportingToField.activeFocus
-                                          ? Theme.primary : Theme.borderStrong
-                            radius: 7
+                        onDateSelected: function(selectedValue) {
+                            page.applyReportingTo(selectedValue)
                         }
                     }
                     ActionButton {
-                        text: qsTr("Применить")
-                        primary: true
-                        enabled: !page.app.demoMode
-                        onClicked: page.app.setReportingPeriod(
-                                       reportingFromField.text,
-                                       reportingToField.text)
-                    }
-                    ActionButton {
+                        Layout.columnSpan: page.width > 760 ? 1 : 2
                         text: qsTr("Последний месяц")
                         enabled: !page.app.demoMode
                         onClicked: page.app.resetReportingPeriod()
                     }
-                    Item { Layout.fillWidth: true }
+                    Item {
+                        Layout.fillWidth: true
+                        visible: page.width > 760
+                    }
                 }
 
                 Text {

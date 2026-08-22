@@ -35,8 +35,14 @@ TEST_CASE("dashboard keeps populated summaries inside responsive surfaces") {
     CHECK(source.contains(QByteArrayLiteral(
         "Layout.preferredHeight: page.recentOperationsPreferredHeight")));
     CHECK_FALSE(source.contains(QByteArrayLiteral("id: categoryRepeater")));
-    CHECK(source.contains(QByteArrayLiteral("id: reportingFromField")));
-    CHECK(source.contains(QByteArrayLiteral("id: reportingToField")));
+    CHECK(source.contains(QByteArrayLiteral("id: reportingFromPicker")));
+    CHECK(source.contains(QByteArrayLiteral("id: reportingToPicker")));
+    CHECK(source.contains(QByteArrayLiteral("DatePickerField")));
+    CHECK_FALSE(source.contains(QByteArrayLiteral("id: reportingFromField")));
+    CHECK_FALSE(source.contains(QByteArrayLiteral("id: reportingToField")));
+    CHECK_FALSE(source.contains(QByteArrayLiteral("text: qsTr(\"Применить\")")));
+    CHECK(source.contains(QByteArrayLiteral("applyReportingFrom")));
+    CHECK(source.contains(QByteArrayLiteral("applyReportingTo")));
     CHECK(source.contains(QByteArrayLiteral("setReportingPeriod")));
     CHECK(source.contains(QByteArrayLiteral("resetReportingPeriod")));
     CHECK(source.contains(QByteArrayLiteral("value: page.app.savings")));
@@ -49,6 +55,12 @@ TEST_CASE("dashboard keeps populated summaries inside responsive surfaces") {
     const auto window = readQml("Main.qml");
     CHECK(window.contains(QByteArrayLiteral("left: navigationRail.right")));
     CHECK(window.contains(QByteArrayLiteral("right: parent.right")));
+
+    const auto datePicker = readQml("components/DatePickerField.qml");
+    CHECK(datePicker.contains(QByteArrayLiteral("MonthGrid")));
+    CHECK(datePicker.contains(QByteArrayLiteral("DayOfWeekRow")));
+    CHECK(datePicker.contains(QByteArrayLiteral("Popup")));
+    CHECK(datePicker.contains(QByteArrayLiteral("signal dateSelected")));
 }
 
 TEST_CASE("privacy screen describes its scope and limitations") {

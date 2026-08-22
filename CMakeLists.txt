@@ -207,6 +207,7 @@ qt_add_qml_module(
         ui/qml/components/LineChart.qml
         ui/qml/components/SectionCard.qml
         ui/qml/components/ActionButton.qml
+        ui/qml/components/DatePickerField.qml
         ui/qml/components/StatusBadge.qml
         ui/qml/components/MinimalComboBox.qml
         ui/qml/components/MinimalSwitch.qml
