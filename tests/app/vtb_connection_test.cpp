@@ -162,12 +162,17 @@ TEST_CASE("VTB synchronization follows the current portfolio and history contrac
         globalThis.crypto = { randomUUID: function() { return 'request-id' } }
         globalThis.vtbRequests = []
         globalThis.vtbPortfolioReads = 0
+        globalThis.vtbPortfolioStatus = 200
         globalThis.vtbBalanceStatus = 404
+        globalThis.vtbBalanceThrows = false
+        globalThis.vtbHistoryStatus = 200
         const client = {
             get: function(path, options) {
                 globalThis.vtbRequests.push({ path: path, options: options || {} })
                 if (path.indexOf('/portfolios/active') !== -1) {
                     globalThis.vtbPortfolioReads += 1
+                    if (globalThis.vtbPortfolioStatus !== 200)
+                        return Promise.reject({ status: globalThis.vtbPortfolioStatus })
                     if (globalThis.vtbPortfolioReads === 1)
                         return Promise.resolve({ data: { loadStatus: 'LOADING' } })
                     return Promise.resolve({ data: {
@@ -178,8 +183,15 @@ TEST_CASE("VTB synchronization follows the current portfolio and history contrac
                         }
                     } })
                 }
-                if (path.indexOf('/financial/summary') !== -1)
-                    return Promise.reject({ response: { status: globalThis.vtbBalanceStatus } })
+                if (path.indexOf('/financial/summary') !== -1) {
+                    if (globalThis.vtbBalanceThrows)
+                        throw { message: 'supplement unavailable' }
+                    return Promise.reject({ statusCode: globalThis.vtbBalanceStatus })
+                }
+                if (globalThis.vtbHistoryStatus !== 200)
+                    return Promise.reject({ response: {
+                        statusCode: globalThis.vtbHistoryStatus
+                    } })
                 return Promise.resolve({ data: { operations: [] } })
             }
         }
@@ -233,6 +245,63 @@ TEST_CASE("VTB synchronization follows the current portfolio and history contrac
     }
     CHECK(engine.evaluate(QStringLiteral(
               "globalThis.__wealthtrackerVtbSync.status === 'authentication'"))
+              .toBool());
+
+    const auto partialRestart = engine.evaluate(QStringLiteral(
+        "delete globalThis.__wealthtrackerVtbSync; "
+        "globalThis.vtbPortfolioReads = 0; globalThis.vtbBalanceStatus = 404; "
+        "globalThis.vtbHistoryStatus = 503;"));
+    REQUIRE_FALSE(partialRestart.isError());
+    REQUIRE_FALSE(engine.evaluate(vtb_sync_start_script()).isError());
+    for (int index = 0; index < 64; ++index) {
+        QCoreApplication::processEvents();
+        (void)engine.evaluate(QStringLiteral("0"));
+    }
+    CHECK(engine.evaluate(QStringLiteral(
+              "globalThis.__wealthtrackerVtbSync.status === 'ready' && "
+              "globalThis.__wealthtrackerVtbSync.historyComplete === false"))
+              .toBool());
+    const auto partialEvaluation = engine.evaluate(vtb_financial_projection_script());
+    REQUIRE_FALSE(partialEvaluation.isError());
+    const auto partial = parse_vtb_financial_projection(
+        partialEvaluation.toString(), QDateTime::currentDateTimeUtc());
+    REQUIRE(partial);
+    CHECK(partial->stage == VtbProjectionStage::Ready);
+    CHECK(partial->diagnostic == QStringLiteral("VTB-H2"));
+    REQUIRE(partial->batch);
+    CHECK(partial->batch->accounts.size() == 1);
+    CHECK(partial->batch->transactions.isEmpty());
+    REQUIRE(partial->batch->warnings.size() == 1);
+    CHECK(partial->batch->warnings.front().code ==
+          QStringLiteral("vtb-history-unavailable"));
+
+    const auto throwingSupplementRestart = engine.evaluate(QStringLiteral(
+        "delete globalThis.__wealthtrackerVtbSync; "
+        "globalThis.vtbPortfolioReads = 0; globalThis.vtbBalanceThrows = true; "
+        "globalThis.vtbHistoryStatus = 200;"));
+    REQUIRE_FALSE(throwingSupplementRestart.isError());
+    REQUIRE_FALSE(engine.evaluate(vtb_sync_start_script()).isError());
+    for (int index = 0; index < 64; ++index) {
+        QCoreApplication::processEvents();
+        (void)engine.evaluate(QStringLiteral("0"));
+    }
+    CHECK(engine.evaluate(QStringLiteral(
+              "globalThis.__wealthtrackerVtbSync.status === 'ready'"))
+              .toBool());
+
+    const auto failedPortfolioRestart = engine.evaluate(QStringLiteral(
+        "delete globalThis.__wealthtrackerVtbSync; "
+        "globalThis.vtbPortfolioReads = 0; globalThis.vtbPortfolioStatus = 503; "
+        "globalThis.vtbBalanceThrows = false; globalThis.vtbHistoryStatus = 200;"));
+    REQUIRE_FALSE(failedPortfolioRestart.isError());
+    REQUIRE_FALSE(engine.evaluate(vtb_sync_start_script()).isError());
+    for (int index = 0; index < 64; ++index) {
+        QCoreApplication::processEvents();
+        (void)engine.evaluate(QStringLiteral("0"));
+    }
+    CHECK(engine.evaluate(QStringLiteral(
+              "globalThis.__wealthtrackerVtbSync.status === 'failed' && "
+              "globalThis.__wealthtrackerVtbSync.reason === 'VTB-P3'"))
               .toBool());
 }
 
@@ -335,6 +404,13 @@ TEST_CASE("VTB projection reports authentication, loading, and frontend drift") 
     REQUIRE(drift);
     CHECK(drift->stage == VtbProjectionStage::FrontendChanged);
     CHECK(drift->diagnostic == QStringLiteral("VTB-H1"));
+
+    const auto portfolioRequest = parse_vtb_financial_projection(
+        QStringLiteral(
+            R"({"version":1,"stage":"frontend-changed","authenticated":true,"diagnostic":"VTB-P3","accounts":[],"transactions":[]})"),
+        observedAt);
+    REQUIRE(portfolioRequest);
+    CHECK(portfolioRequest->diagnostic == QStringLiteral("VTB-P3"));
 
     const auto unsafeDiagnostic = parse_vtb_financial_projection(
         QStringLiteral(

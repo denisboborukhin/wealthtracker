@@ -544,7 +544,14 @@ AppController::AppController(std::unique_ptr<CredentialBackend> credentials,
         [this](NormalizedBatch batch) {
             const auto accountCount = batch.accounts.size();
             const auto transactionCount = batch.transactions.size();
-            const auto warningCount = batch.warnings.size();
+            const bool historyUnavailable = std::ranges::any_of(
+                batch.warnings, [](const auto& warning) {
+                    return warning.code == QStringLiteral("vtb-history-unavailable");
+                });
+            const auto warningCount = std::ranges::count_if(
+                batch.warnings, [](const auto& warning) {
+                    return warning.code != QStringLiteral("vtb-history-unavailable");
+                });
             private_->vtb_sync_running = false;
             vtb_login_active_ = false;
             vtb_connected_ = true;
@@ -557,13 +564,20 @@ AppController::AppController(std::unique_ptr<CredentialBackend> credentials,
                               settings.value(QStringLiteral("vtb/autoUpdate"), true));
             settings.setValue(QStringLiteral("vtb/lastSyncAt"),
                               completedAt.toString(Qt::ISODate));
-            vtb_login_status_ =
-                QStringLiteral("Подключено · счетов %1 · операций %2")
-                    .arg(accountCount)
-                    .arg(transactionCount);
+            vtb_login_status_ = historyUnavailable
+                ? QStringLiteral(
+                      "Подключено частично · счетов %1 · история операций временно "
+                      "недоступна")
+                      .arg(accountCount)
+                : QStringLiteral("Подключено · счетов %1 · операций %2")
+                      .arg(accountCount)
+                      .arg(transactionCount);
             sync_status_ = QStringLiteral("ВТБ: счетов %1 · операций %2")
                                .arg(accountCount)
                                .arg(transactionCount);
+            if (historyUnavailable) {
+                sync_status_ += QStringLiteral(" · история операций временно недоступна");
+            }
             if (warningCount > 0) {
                 sync_status_ +=
                     QStringLiteral(" · пропущено записей %1").arg(warningCount);
