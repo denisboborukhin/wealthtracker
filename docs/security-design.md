@@ -84,8 +84,10 @@ DOM, fields, and storage are not read. Only the `initialState` object or
 For history, a short-lived observer follows the bank's normal `/history` route
 and accepts only 2xx JSON responses from the exact same-origin
 `/api/v1/operations-history/operations` path. It does not inspect or alter a
-request and restores the browser API after a quiet interval. At most 16
-responses and 8 MiB of combined response text are retained page-locally. The
+request and restores the browser API after a quiet interval. The coordinator
+always starts this route after it has accounts; dashboard preview operations are
+not trusted as evidence that history is complete. At most 16 responses and
+8 MiB of combined response text are retained page-locally. The
 projection returns an allowlist of fields rather than raw page or response
 state, then releases its temporary response references. C++ enforces an
 8 MiB result limit, 256-account and 20,000-operation limits, exact integer
@@ -125,6 +127,14 @@ Authentication errors expire the connection; missing frontend exports or schema
 changes stop with a compatibility error. The private frontend contract is
 undocumented and never expands to new hosts, routes, methods, cookie export, or
 direct credential requests at runtime.
+
+The expression tracks only a fixed request-stage label and accepts numeric HTTP
+status from `status`, `statusCode`, `response.status`, or
+`response.statusCode`; no response text is copied into a diagnostic. A
+non-authentication transport failure of the history service returns validated
+accounts and balances as an explicitly partial batch. A malformed history
+payload still fails closed because it indicates an unknown schema rather than a
+temporary transport outage.
 
 A login pathname can remain stale after MFA. WealthTracker therefore does not
 infer authentication from that presentation route. It verifies the exact origin

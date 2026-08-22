@@ -109,7 +109,11 @@ accounts and balances. It then installs a short-lived observer while Alfa's
 normal `/history` page loads. The observer accepts only successful responses
 from the exact same-origin `/api/v1/operations-history/operations` path, never
 changes a request, and restores the browser API after the response stream is
-quiet. The resulting projection contains only these bounded fields:
+quiet. The history page is opened after every successful account projection,
+even if the dashboard bootstrap already contains a small recent-operation
+preview. That preview is merged and deduplicated but is never treated as proof
+that history loading is complete. The resulting projection contains only these
+bounded fields:
 
 - at most 256 account identifiers, names, types, currencies, masked numbers,
   and balances;
@@ -185,8 +189,11 @@ response from the page-owned read client marks the connection expired. The SPA
 pathname is not used as an authentication signal because presentation routing
 can remain unchanged after the session transition. An unknown origin, route
 contract, module shape, or response schema stops synchronization instead of
-broadening access. Compatibility errors include only a fixed stage code such as
-`VTB-H1`; the code contains no account, operation, balance, cookie, or response
+broadening access. A transport failure limited to the history request preserves
+validated accounts and balances and reports **история операций временно
+недоступна**; it does not claim that zero operations is a complete result.
+Compatibility errors include only fixed stage codes such as `VTB-P3` or
+`VTB-H1`; codes contain no account, operation, balance, cookie, or response
 value.
 
 VTB does not publish this retail frontend contract as a supported API. A

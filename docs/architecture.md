@@ -87,7 +87,8 @@ without expanding the permitted host or introducing write requests.
    bank's normal `/history` route and accepts only successful same-origin
    `/api/v1/operations-history/operations` responses. It neither constructs nor
    modifies the bank page's requests and restores the browser API after a quiet
-   interval.
+   interval. This happens even when the dashboard bootstrap contains a small
+   recent-operation preview; that preview is not a completion signal.
 6. `AlfaRetailClient` validates bounds, exact amounts, identifiers, dates,
    currencies, duplicates, and account ownership before producing a
    `NormalizedBatch`.
@@ -116,6 +117,10 @@ compatibility error.
    otherwise valid active portfolio; authentication failures still stop the
    synchronization. The authenticated client response, not the SPA pathname,
    determines whether the post-login browser session is ready.
+   The projection records a fixed, value-free request stage and accepts common
+   numeric status-code envelopes solely to distinguish 401/403. A history
+   transport failure produces a bounded partial batch with validated accounts
+   and balances; malformed history and unknown schemas remain blocking.
 4. Raw responses remain page-local. A second fixed expression maps only bounded
    account and operation fields, associates child cards with their parent
    accounts, and marks VTB's own-account transfer codes as internal transfers.
@@ -125,9 +130,11 @@ compatibility error.
    user disconnects VTB.
 
 No login field, cookie, authorization header, request body, or browser-storage
-value crosses into C++ or QML. The frontend module and routes are undocumented;
-missing exports, authentication failure, unexpected origins, and response drift
-all fail closed without adding new hosts or methods.
+value crosses into C++ or QML. The application labels partial history explicitly
+instead of reporting zero operations as a complete synchronization. The frontend
+module and routes are undocumented; missing exports, authentication failure,
+unexpected origins, and response drift all fail closed without adding new hosts
+or methods.
 
 ## External JavaScript plugins
 
