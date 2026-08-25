@@ -13,7 +13,7 @@ financial records currently remain in memory and disappear when the app exits.
 | --- | --- | --- | --- | --- |
 | Retail T-Bank | Yes | Yes | Yes | Embedded official login |
 | Retail Alfa-Bank | Yes | Yes | Recent snapshot | Embedded official login |
-| Retail VTB | Yes | Yes | Last 90 days | Embedded official login |
+| Retail VTB | Yes | Yes | Recent snapshot | Embedded official login |
 | Alfa-Bank B2C API | Yes | Yes | Yes | Issued integration token |
 | T-Bank Business | Yes | Yes | Yes | T-API token |
 | Modulbank | Yes | Yes | Yes | API token or public sandbox token |
@@ -133,6 +133,8 @@ projection to 8 MiB, validates exact integer minor units and ISO dates, rejects
 malformed accounts, and skips malformed or duplicate operations with a visible
 warning count. Internal transfers do not contribute
 to income, spending, savings, or category totals.
+Operations carrying Alfa's `cashout` marker use the source account or masked
+card from the sender object when needed and appear under **Наличные**.
 
 After Alfa redirects back to its dashboard, the dialog shows **Вход выполнен.
 Получаем счета из Альфа-Онлайн…**. If the bank no longer exposes a supported
@@ -161,18 +163,26 @@ and file access and does not read cookies, form fields, authorization headers,
 or browser storage.
 
 After login, a fixed expression checks the exact `https://online.vtb.ru`
-origin and requests the bank frontend's exported `./HttpClient`. Only `GET` is
-used, and only for these paths:
+origin and requests the bank frontend's exported `./HttpClient`. It uses that
+client only for these account and balance paths:
 
 - `/msa/api-gw/private/portfolio/portfolio-main-page/portfolios/active`
 - `/msa/api-gw/private/portfolio/portfolio-balances/financial/summary`
-- `/msa/api-gw/private/history-hub/history-hub-homer/v1/history/byUser`
 
-History covers approximately the previous 90 days as three sequential requests,
-each spanning no more than VTB's current 31-day limit and using its `dd.MM.yyyy`
-date contract. A portfolio response that is still loading is retried at most
-twice, matching the current bank frontend. The financial-summary route is an
-optional balance supplement in VTB's frontend; a missing or unavailable
+For operations, the expression temporarily observes `XMLHttpRequest`, opens the
+official `/history` screen, and accepts only successful same-origin `GET`
+responses whose exact final path component is `byUser`, `byProducts`,
+`byAccount`, or `byCard` under
+`/msa/api-gw/private/history-hub/history-hub-homer/v1/history/`. VTB's page,
+not WealthTracker, selects products, dates, request identifiers, feature headers,
+and the compatible endpoint. The observer restores the browser API after the
+bank response stream is quiet. It retains at most 16 responses and 8 MiB of
+combined operation data. This produces the recent interval loaded by VTB's
+history screen; it is not documented as a complete account statement.
+
+A portfolio response that is still loading is retried at most twice, matching
+the current bank frontend. The financial-summary route is an optional balance
+supplement in VTB's frontend; a missing or unavailable
 supplement does not discard products and balances already present in the active
 portfolio. Authentication errors remain blocking. Raw responses stay inside
 the bank page. The expression returns only account identifiers, names, types,
@@ -193,8 +203,8 @@ response from the page-owned read client marks the connection expired. The SPA
 pathname is not used as an authentication signal because presentation routing
 can remain unchanged after the session transition. An unknown origin, route
 contract, module shape, or response schema stops synchronization instead of
-broadening access. A transport failure limited to the history request preserves
-validated accounts and balances and reports **история операций временно
+broadening access. A transport failure limited to the page-owned history request
+preserves validated accounts and balances and reports **история операций временно
 недоступна**; it does not claim that zero operations is a complete result.
 Compatibility errors include only fixed stage codes such as `VTB-P3` or
 `VTB-H1`; codes contain no account, operation, balance, cookie, or response

@@ -111,14 +111,19 @@ policy remain in force. The app validates the exact `https://online.vtb.ru`
 origin and rejects credentials embedded in its URL.
 
 A fixed expression obtains only the bank frontend's exported `./HttpClient` and
-invokes three exact GET paths for active products, an optional balance
-supplement, and history. The history route is called sequentially for three
-non-overlapping windows no longer than the bank frontend's 31-day limit. A
-non-authentication failure of the optional supplement
-does not discard balances embedded in a valid active portfolio. The expression
-does not inspect cookies, login fields, headers, request bodies, resource timing,
-DOM contents, or browser storage. A redirect to another origin is not treated
-as an authenticated VTB page.
+invokes two exact GET paths for active products and an optional balance
+supplement. A non-authentication failure of the optional supplement does not
+discard balances embedded in a valid active portfolio.
+
+For history, a short-lived observer opens the official `/history` route. It
+accepts only same-origin `GET` responses from four fixed final paths under the
+exact VTB history prefix: `byUser`, `byProducts`, `byAccount`, and `byCard`.
+VTB's own page supplies query parameters and headers; the observer does not read
+or copy them, does not construct a request, and restores `XMLHttpRequest` after
+a quiet interval. At most 16 responses and 8 MiB of combined operation data are
+retained page-locally. The expression does not inspect cookies, login fields,
+headers, request bodies, resource timing, DOM contents, or browser storage. A
+redirect to another origin is not treated as an authenticated VTB page.
 
 Each response is checked for its expected top-level shape and an 8 MiB limit
 before it is retained page-locally. A separate allowlist projection converts

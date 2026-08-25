@@ -112,24 +112,28 @@ compatibility error.
    local storage and file access disabled.
 2. The official page owns phone/SMS authentication and the browser session.
 3. A fixed expression verifies the exact origin, obtains the current bank
-   frontend's exported `./HttpClient`, and invokes three exact GET routes for
-   active products, an optional financial-balance supplement, and approximately
-   90 days of history in three sequential windows of at most 31 days. It performs
-   at most two delayed portfolio retries while VTB reports
+   frontend's exported `./HttpClient`, and invokes two exact GET routes for active
+   products and an optional financial-balance supplement. It performs at most
+   two delayed portfolio retries while VTB reports
    `loadStatus: LOADING`. An unavailable supplement does not invalidate an
    otherwise valid active portfolio; authentication failures still stop the
    synchronization. The authenticated client response, not the SPA pathname,
    determines whether the post-login browser session is ready.
-   The projection records a fixed, value-free request stage and accepts common
+   The expression records a fixed, value-free request stage and accepts common
    numeric status-code envelopes solely to distinguish 401/403. A history
    transport failure produces a bounded partial batch with validated accounts
    and balances; malformed history and unknown schemas remain blocking.
-4. Raw responses remain page-local. A second fixed expression maps only bounded
+4. For history, a bounded observer opens the official `/history` route and
+   accepts only the bank page's exact same-origin GET responses for its four
+   known history variants. The page retains ownership of products, dates,
+   identifiers, headers, and endpoint selection. The observer restores the XHR
+   API after a quiet interval.
+5. Raw responses remain page-local. A second fixed expression maps only bounded
    account and operation fields, associates child cards with their parent
    accounts, and marks VTB's own-account transfer codes as internal transfers.
-5. `VtbRetailClient` validates the 8 MiB projection, record limits, exact money,
+6. `VtbRetailClient` validates the 8 MiB projection, record limits, exact money,
    identifiers, dates, currencies, duplicates, and account ownership.
-6. The browser-owned session is reused for periodic reloads and deleted when the
+7. The browser-owned session is reused for periodic reloads and deleted when the
    user disconnects VTB.
 
 No login field, cookie, authorization header, request body, or browser-storage

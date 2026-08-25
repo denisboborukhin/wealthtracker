@@ -22,7 +22,7 @@ transfers but excluded from income, spending, savings, and category totals.
 | --- | --- |
 | Retail T-Bank | Embedded official login; accounts, balances, and operations through a native read-only connector |
 | Retail Alfa-Bank | Embedded official login; bounded account, balance, and recent-operation snapshots from Alfa Online |
-| Retail VTB | Embedded official login; bounded account, balance, and 90-day operation snapshots from VTB Online |
+| Retail VTB | Embedded official login; bounded account, balance, and recent-operation snapshots from VTB Online |
 | Alfa-Bank B2C API | Accounts and operations with an already-issued integration token |
 | T-Bank Business | Accounts and statements with a T-API token |
 | Modulbank | Accounts and operations, including the public sandbox |
@@ -54,15 +54,14 @@ WealthTracker never installs a root certificate or disables TLS verification.
 
 Retail VTB keeps authentication inside the official VTB Online page. The app
 does not read cookies, login fields, headers, or web storage. It invokes the
-authenticated page's own HTTP client for three fixed read-only routes. History
-is split into three sequential windows because VTB limits each request to 31
-days. The balance-summary route is an optional supplement; products and embedded
+authenticated page's own HTTP client for two fixed account and balance routes,
+then opens the official history screen and observes only its exact read-only
+operation response. The balance-summary route is optional; products and embedded
 balances remain usable when VTB does not enable it for a profile. Only a bounded
-projection of accounts, balances, and recent operations is accepted. A
-temporary history-service failure preserves validated accounts and balances and
-is shown as a partial synchronization; authentication and schema failures still
-stop the sync. This frontend interface is undocumented and can break after a
-bank change.
+projection of accounts, balances, and recent operations is accepted. A temporary
+history-service failure preserves validated accounts and balances and is shown
+as a partial synchronization; authentication and schema failures still stop the
+sync. This frontend interface is undocumented and can break after a bank change.
 
 External JavaScript plugins are not sandboxed. They run as the current user and
 can access local files and the network. WealthTracker does not distribute
