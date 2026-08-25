@@ -5,7 +5,6 @@
 
 #include <QAbstractItemModel>
 #include <QCoreApplication>
-#include <QDate>
 #include <QDateTime>
 #include <QFile>
 #include <QHash>
@@ -107,7 +106,7 @@ TEST_CASE("VTB is an available embedded retail connection") {
     CHECK_FALSE(coordinatorSource.contains(QByteArrayLiteral("QDesktopServices")));
 }
 
-TEST_CASE("VTB synchronization uses only exact read routes through the bank client") {
+TEST_CASE("VTB synchronization uses only exact page-owned read routes") {
     using wealthtracker::app::vtb_financial_projection_script;
     using wealthtracker::app::vtb_sync_start_script;
 
@@ -120,12 +119,16 @@ TEST_CASE("VTB synchronization uses only exact read routes through the bank clie
     CHECK(start.contains(QStringLiteral(
         "/msa/api-gw/private/portfolio/portfolio-balances/financial/summary")));
     CHECK(start.contains(QStringLiteral(
-        "/msa/api-gw/private/history-hub/history-hub-homer/v1/history/byUser")));
+        "/msa/api-gw/private/history-hub/history-hub-homer/v1/history/")));
     CHECK(start.contains(QStringLiteral("client.get")));
-    CHECK(start.count(QStringLiteral("client.get(")) == 3);
+    CHECK(start.count(QStringLiteral("client.get(")) == 2);
     CHECK_FALSE(start.contains(QStringLiteral("client.post")));
     CHECK_FALSE(start.contains(QStringLiteral("fetch("), Qt::CaseInsensitive));
-    CHECK_FALSE(start.contains(QStringLiteral("XMLHttpRequest"), Qt::CaseInsensitive));
+    CHECK(start.contains(QStringLiteral("XMLHttpRequest"), Qt::CaseInsensitive));
+    CHECK(start.contains(QStringLiteral("history.pushState")));
+    CHECK_FALSE(start.contains(QStringLiteral("x-initiator-service")));
+    CHECK_FALSE(start.contains(QStringLiteral("x-smart-update-request")));
+    CHECK_FALSE(start.contains(QStringLiteral("dateFrom")));
     CHECK_FALSE(start.contains(QStringLiteral("document.cookie"), Qt::CaseInsensitive));
     CHECK_FALSE(start.contains(QStringLiteral("localStorage"), Qt::CaseInsensitive));
     CHECK_FALSE(start.contains(QStringLiteral("sessionStorage"), Qt::CaseInsensitive));
@@ -140,7 +143,7 @@ TEST_CASE("VTB synchronization uses only exact read routes through the bank clie
     CHECK(projection.contains(QStringLiteral("balanceMinor")));
 }
 
-TEST_CASE("VTB synchronization follows the current portfolio and history contracts") {
+TEST_CASE("VTB synchronization follows the current portfolio and page history contracts") {
     using wealthtracker::app::VtbProjectionStage;
     using wealthtracker::app::parse_vtb_financial_projection;
     using wealthtracker::app::vtb_financial_projection_script;
@@ -150,16 +153,42 @@ TEST_CASE("VTB synchronization follows the current portfolio and history contrac
     const auto setup = engine.evaluate(QStringLiteral(R"JS(
         var globalThis = this
         globalThis.location = { href: 'https://online.vtb.ru/login?post-auth=true' }
-        globalThis.URL = function() {
-            return { protocol: 'https:', hostname: 'online.vtb.ru', port: '',
-                     username: '', password: '', origin: 'https://online.vtb.ru',
-                     pathname: '/login' }
+        globalThis.URL = function(value) {
+            const text = String(value || '')
+            const marker = '/msa/api-gw/private/history-hub/history-hub-homer/v1/history/'
+            const markerIndex = text.indexOf(marker)
+            const queryIndex = text.indexOf('?', markerIndex)
+            const hostname = text.indexOf('evil.example') >= 0
+                ? 'evil.example' : 'online.vtb.ru'
+            return { protocol: 'https:', hostname: hostname, port: '',
+                     username: '', password: '', origin: 'https://' + hostname,
+                     pathname: markerIndex >= 0
+                         ? text.slice(markerIndex, queryIndex >= 0 ? queryIndex : undefined)
+                         : '/login' }
         }
         globalThis.TextEncoder = function() {
             this.encode = function(value) { return { byteLength: String(value).length } }
         }
-        globalThis.setTimeout = function(callback) { callback(); return 1 }
-        globalThis.crypto = { randomUUID: function() { return 'request-id' } }
+        globalThis.vtbTimers = []
+        globalThis.setTimeout = function(callback, milliseconds) {
+            if (milliseconds === 5000) { callback(); return 0 }
+            const timer = { callback: callback, milliseconds: milliseconds, active: true }
+            globalThis.vtbTimers.push(timer)
+            return globalThis.vtbTimers.length
+        }
+        globalThis.clearTimeout = function(identifier) {
+            const timer = globalThis.vtbTimers[Number(identifier) - 1]
+            if (timer) timer.active = false
+        }
+        globalThis.runVtbTimers = function(maximumMilliseconds) {
+            const ready = globalThis.vtbTimers.filter(function(timer) {
+                return timer.active && timer.milliseconds <= maximumMilliseconds
+            })
+            for (const timer of ready) {
+                timer.active = false
+                timer.callback()
+            }
+        }
         globalThis.vtbRequests = []
         globalThis.vtbPortfolioReads = 0
         globalThis.vtbPortfolioStatus = 200
@@ -167,6 +196,55 @@ TEST_CASE("VTB synchronization follows the current portfolio and history contrac
         globalThis.vtbBalanceThrows = false
         globalThis.vtbHistoryStatus = 200
         globalThis.vtbHistoryReads = 0
+        globalThis.vtbPageHistoryRequests = 0
+        globalThis.vtbObservedHistoryMethod = ''
+        globalThis.vtbObservedHistoryUrl = ''
+        globalThis.XMLHttpRequest = function() { this.listeners = {} }
+        XMLHttpRequest.prototype.addEventListener = function(name, callback) {
+            this.listeners[name] = callback
+        }
+        XMLHttpRequest.prototype.open = function(method, url) {
+            this.method = method
+            this.url = url
+        }
+        XMLHttpRequest.prototype.send = function() {
+            if (String(this.url).indexOf('/history/byProducts') === -1) return
+            globalThis.vtbPageHistoryRequests += 1
+            this.status = globalThis.vtbHistoryStatus
+            this.response = null
+            this.responseText = this.status === 200 ? JSON.stringify({ operations: [{
+                operationId: 'history-' + globalThis.vtbPageHistoryRequests,
+                accountProductId: 'account-1',
+                operationDate: '2026-08-14T12:30:00.000Z', debet: true,
+                operationAmount: { sum: 1, currency: 'RUB' }
+            }] }) : ''
+            if (this.listeners.loadend) {
+                globalThis.vtbHistoryReads += 1
+                globalThis.vtbObservedHistoryMethod = this.method
+                globalThis.vtbObservedHistoryUrl = this.url
+                this.listeners.loadend()
+            }
+        }
+        globalThis.vtbOriginalOpen = XMLHttpRequest.prototype.open
+        globalThis.vtbOriginalSend = XMLHttpRequest.prototype.send
+        globalThis.history = { pushState: function(_, __, path) {
+            globalThis.vtbOpenedPath = path
+        } }
+        globalThis.PopStateEvent = function(name) { this.type = name }
+        globalThis.dispatchEvent = function() {
+            const writeRequest = new XMLHttpRequest()
+            writeRequest.open('POST',
+                '/msa/api-gw/private/history-hub/history-hub-homer/v1/history/byProducts')
+            writeRequest.send()
+            const foreignRequest = new XMLHttpRequest()
+            foreignRequest.open('GET',
+                'https://evil.example/msa/api-gw/private/history-hub/history-hub-homer/v1/history/byProducts')
+            foreignRequest.send()
+            const request = new XMLHttpRequest()
+            request.open('GET',
+                '/msa/api-gw/private/history-hub/history-hub-homer/v1/history/byProducts?dateFrom=25.07.2026&dateTo=25.08.2026&product=account-1')
+            request.send()
+        }
         const client = {
             get: function(path, options) {
                 globalThis.vtbRequests.push({ path: path, options: options || {} })
@@ -189,18 +267,7 @@ TEST_CASE("VTB synchronization follows the current portfolio and history contrac
                         throw { message: 'supplement unavailable' }
                     return Promise.reject({ statusCode: globalThis.vtbBalanceStatus })
                 }
-                if (globalThis.vtbHistoryStatus !== 200)
-                    return Promise.reject({ response: {
-                        statusCode: globalThis.vtbHistoryStatus
-                    } })
-                globalThis.vtbHistoryReads += 1
-                return Promise.resolve({ data: { operations: [{
-                    operationId: 'history-' + globalThis.vtbHistoryReads,
-                    accountProductId: 'account-1',
-                    operationDate: '2026-08-14T12:30:00.000Z', debet: true,
-                    operationAmount: { sum: globalThis.vtbHistoryReads,
-                                       currency: 'RUB' }
-                }] } })
+                return Promise.reject({ status: 500 })
             }
         }
         globalThis.mf_1488_core = {
@@ -218,32 +285,30 @@ TEST_CASE("VTB synchronization follows the current portfolio and history contrac
         QCoreApplication::processEvents();
         (void)engine.evaluate(QStringLiteral("0"));
     }
+    REQUIRE_FALSE(engine.evaluate(QStringLiteral("globalThis.runVtbTimers(2000)"))
+                      .isError());
+    for (int index = 0; index < 64; ++index) {
+        QCoreApplication::processEvents();
+        (void)engine.evaluate(QStringLiteral("0"));
+    }
 
     INFO(engine.evaluate(QStringLiteral(
              "JSON.stringify(globalThis.__wealthtrackerVtbSync)"))
              .toString()
              .toStdString());
     CHECK(engine.evaluate(QStringLiteral("globalThis.vtbPortfolioReads")).toInt() == 2);
-    CHECK(engine.evaluate(QStringLiteral("globalThis.vtbHistoryReads")).toInt() == 3);
-    QVector<QDate> historyFrom;
-    QVector<QDate> historyTo;
-    for (int requestIndex = 3; requestIndex < 6; ++requestIndex) {
-        historyFrom.push_back(QDate::fromString(
-            engine.evaluate(QStringLiteral(
-                "globalThis.vtbRequests[%1].options.params.dateFrom")
-                                .arg(requestIndex)).toString(),
-            QStringLiteral("dd.MM.yyyy")));
-        historyTo.push_back(QDate::fromString(
-            engine.evaluate(QStringLiteral(
-                "globalThis.vtbRequests[%1].options.params.dateTo")
-                                .arg(requestIndex)).toString(),
-            QStringLiteral("dd.MM.yyyy")));
-        REQUIRE(historyFrom.back().isValid());
-        REQUIRE(historyTo.back().isValid());
-        CHECK(historyFrom.back().daysTo(historyTo.back()) <= 31);
-    }
-    CHECK(historyTo.at(1).addDays(1) == historyFrom.at(0));
-    CHECK(historyTo.at(2).addDays(1) == historyFrom.at(1));
+    CHECK(engine.evaluate(QStringLiteral("globalThis.vtbHistoryReads")).toInt() == 1);
+    CHECK(engine.evaluate(QStringLiteral("globalThis.vtbPageHistoryRequests")).toInt() == 3);
+    CHECK(engine.evaluate(QStringLiteral("globalThis.vtbOpenedPath")).toString() ==
+          QStringLiteral("/history"));
+    CHECK(engine.evaluate(QStringLiteral("globalThis.vtbObservedHistoryMethod")).toString() ==
+          QStringLiteral("GET"));
+    CHECK(engine.evaluate(QStringLiteral("globalThis.vtbObservedHistoryUrl")).toString()
+              .contains(QStringLiteral("/history/byProducts")));
+    CHECK(engine.evaluate(QStringLiteral(
+              "XMLHttpRequest.prototype.open === globalThis.vtbOriginalOpen && "
+              "XMLHttpRequest.prototype.send === globalThis.vtbOriginalSend"))
+              .toBool());
 
     const auto evaluated = engine.evaluate(vtb_financial_projection_script());
     REQUIRE_FALSE(evaluated.isError());
@@ -253,7 +318,7 @@ TEST_CASE("VTB synchronization follows the current portfolio and history contrac
     CHECK(parsed->stage == VtbProjectionStage::Ready);
     REQUIRE(parsed->batch);
     CHECK(parsed->batch->accounts.size() == 1);
-    CHECK(parsed->batch->transactions.size() == 3);
+    CHECK(parsed->batch->transactions.size() == 1);
 
     const auto restarted = engine.evaluate(QStringLiteral(
         "delete globalThis.__wealthtrackerVtbSync; "
@@ -261,6 +326,12 @@ TEST_CASE("VTB synchronization follows the current portfolio and history contrac
         "globalThis.vtbHistoryReads = 0;"));
     REQUIRE_FALSE(restarted.isError());
     REQUIRE_FALSE(engine.evaluate(vtb_sync_start_script()).isError());
+    for (int index = 0; index < 64; ++index) {
+        QCoreApplication::processEvents();
+        (void)engine.evaluate(QStringLiteral("0"));
+    }
+    REQUIRE_FALSE(engine.evaluate(QStringLiteral("globalThis.runVtbTimers(2000)"))
+                      .isError());
     for (int index = 0; index < 64; ++index) {
         QCoreApplication::processEvents();
         (void)engine.evaluate(QStringLiteral("0"));
@@ -275,6 +346,12 @@ TEST_CASE("VTB synchronization follows the current portfolio and history contrac
         "globalThis.vtbHistoryStatus = 503; globalThis.vtbHistoryReads = 0;"));
     REQUIRE_FALSE(partialRestart.isError());
     REQUIRE_FALSE(engine.evaluate(vtb_sync_start_script()).isError());
+    for (int index = 0; index < 64; ++index) {
+        QCoreApplication::processEvents();
+        (void)engine.evaluate(QStringLiteral("0"));
+    }
+    REQUIRE_FALSE(engine.evaluate(QStringLiteral("globalThis.runVtbTimers(2000)"))
+                      .isError());
     for (int index = 0; index < 64; ++index) {
         QCoreApplication::processEvents();
         (void)engine.evaluate(QStringLiteral("0"));
@@ -307,9 +384,15 @@ TEST_CASE("VTB synchronization follows the current portfolio and history contrac
         QCoreApplication::processEvents();
         (void)engine.evaluate(QStringLiteral("0"));
     }
+    REQUIRE_FALSE(engine.evaluate(QStringLiteral("globalThis.runVtbTimers(2000)"))
+                      .isError());
+    for (int index = 0; index < 64; ++index) {
+        QCoreApplication::processEvents();
+        (void)engine.evaluate(QStringLiteral("0"));
+    }
     CHECK(engine.evaluate(QStringLiteral(
               "globalThis.__wealthtrackerVtbSync.status === 'ready' && "
-              "globalThis.vtbHistoryReads === 3"))
+              "globalThis.vtbHistoryReads === 1"))
               .toBool());
 
     const auto failedPortfolioRestart = engine.evaluate(QStringLiteral(

@@ -44,9 +44,12 @@ struct VtbFinancialProjection {
 
     const state = globalThis[stateKey] = { status: 'running', requestStage: 'module' }
     const maximumPayloadBytes = 8 * 1024 * 1024
-    const historyWindowDays = 31
-    const historyPageCount = 3
-    const millisecondsPerDay = 24 * 60 * 60 * 1000
+    const maximumHistoryResponses = 16
+    const historyQuietMilliseconds = 1200
+    const historyTimeoutMilliseconds = 25 * 1000
+    const historyPrefix =
+      '/msa/api-gw/private/history-hub/history-hub-homer/v1/history/'
+    const historyKinds = new Set(['byUser', 'byProducts', 'byAccount', 'byCard'])
     const unwrap = response => response && typeof response === 'object' &&
       Object.prototype.hasOwnProperty.call(response, 'data') ? response.data : response
     const validPayload = value => {
@@ -61,11 +64,106 @@ struct VtbFinancialProjection {
       error?.response?.status ?? error?.response?.statusCode ??
       error?.status ?? error?.statusCode)
     const delay = milliseconds => new Promise(resolve => setTimeout(resolve, milliseconds))
-    const historyDate = value => {
-      const day = String(value.getDate()).padStart(2, '0')
-      const month = String(value.getMonth() + 1).padStart(2, '0')
-      return `${day}.${month}.${value.getFullYear()}`
+    const matchesHistoryEndpoint = value => {
+      try {
+        const url = new URL(String(value ?? ''), pageUrl.origin)
+        if (url.origin !== pageUrl.origin || url.username !== '' || url.password !== '' ||
+            !url.pathname.startsWith(historyPrefix))
+          return false
+        return historyKinds.has(url.pathname.slice(historyPrefix.length))
+      } catch (ignored) { return false }
     }
+    const capturePageHistory = () => new Promise((resolve, reject) => {
+      const prototype = globalThis.XMLHttpRequest?.prototype
+      if (!prototype || typeof prototype.open !== 'function' ||
+          typeof prototype.send !== 'function') {
+        frontendFailure('VTB-H1')
+      }
+      const nativeOpen = prototype.open
+      const nativeSend = prototype.send
+      const operations = []
+      let responseCount = 0
+      let settleGeneration = 0
+      let settleTimer = 0
+      let overallTimer = 0
+      let finished = false
+      let lastStatus = 0
+      let transportFailure = false
+      const restore = () => {
+        if (prototype.open === wrappedOpen) prototype.open = nativeOpen
+        if (prototype.send === wrappedSend) prototype.send = nativeSend
+      }
+      const finish = (error = null) => {
+        if (finished) return
+        finished = true
+        if (settleTimer) clearTimeout(settleTimer)
+        if (overallTimer) clearTimeout(overallTimer)
+        restore()
+        if (error) reject(error)
+        else resolve({ operations, complete: !transportFailure })
+      }
+      const scheduleSettlement = () => {
+        const generation = ++settleGeneration
+        settleTimer = setTimeout(() => {
+          if (finished || generation !== settleGeneration) return
+          if (responseCount > 0) finish()
+          else finish({ status: lastStatus, kind: 'history-transport' })
+        }, historyQuietMilliseconds)
+      }
+      const captureResponse = request => {
+        if (finished) return
+        lastStatus = Number(request.status)
+        if (lastStatus === 401 || lastStatus === 403) {
+          finish({ status: lastStatus })
+          return
+        }
+        if (lastStatus < 200 || lastStatus >= 300) {
+          transportFailure = true
+          scheduleSettlement()
+          return
+        }
+        try {
+          let payload = request.response
+          if (!payload || typeof payload !== 'object')
+            payload = JSON.parse(String(request.responseText ?? ''))
+          const history = unwrap(payload)
+          if (!validPayload(history) || !Array.isArray(history.operations) ||
+              responseCount >= maximumHistoryResponses)
+            frontendFailure('VTB-H1')
+          operations.push(...history.operations)
+          ++responseCount
+          if (!validPayload({ operations })) frontendFailure('VTB-H1')
+          scheduleSettlement()
+        } catch (error) {
+          finish(error?.kind === 'frontend' ? error : { kind: 'frontend', code: 'VTB-H1' })
+        }
+      }
+      function wrappedOpen(method, url, ...rest) {
+        this.__wealthtrackerVtbHistoryRequest =
+          String(method ?? '').toUpperCase() === 'GET' && matchesHistoryEndpoint(url)
+        return nativeOpen.call(this, method, url, ...rest)
+      }
+      function wrappedSend(body) {
+        if (this.__wealthtrackerVtbHistoryRequest)
+          this.addEventListener('loadend', () => captureResponse(this), { once: true })
+        return nativeSend.call(this, body)
+      }
+      prototype.open = wrappedOpen
+      prototype.send = wrappedSend
+      overallTimer = setTimeout(
+        () => finish({ status: lastStatus, kind: 'history-timeout' }),
+        historyTimeoutMilliseconds)
+      try {
+        if (!globalThis.history || typeof globalThis.history.pushState !== 'function' ||
+            typeof globalThis.dispatchEvent !== 'function' ||
+            typeof globalThis.PopStateEvent !== 'function')
+          frontendFailure('VTB-H1')
+        globalThis.history.pushState({}, '', '/history')
+        globalThis.dispatchEvent(new PopStateEvent('popstate'))
+      } catch (error) {
+        finish(error?.kind === 'frontend' ? error : { kind: 'frontend', code: 'VTB-H1' })
+      }
+    })
     const readPortfolio = (client, attempt = 0) => client.get(
       '/msa/api-gw/private/portfolio/portfolio-main-page/portfolios/active',
       { params: { requestProductTypes: 'CARD,ACCOUNT,SAVING,LOAN,METAL,WALLET' } })
@@ -115,48 +213,15 @@ struct VtbFinancialProjection {
       })
       .then(() => {
         state.requestStage = 'history'
-        const dateTo = new Date()
-        const operations = []
-        const readHistoryPage = page => {
-          const dateFrom = new Date(
-            dateTo.getTime() - historyWindowDays * (page + 1) * millisecondsPerDay)
-          const pageDateTo = page === 0 ? dateTo : new Date(
-            dateTo.getTime() - (historyWindowDays * page + 1) * millisecondsPerDay)
-          const requestId = globalThis.crypto &&
-            typeof globalThis.crypto.randomUUID === 'function'
-              ? globalThis.crypto.randomUUID()
-              : `wt-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 14)}`
-          return client.get(
-            '/msa/api-gw/private/history-hub/history-hub-homer/v1/history/byUser', {
-              params: {
-                dateFrom: historyDate(dateFrom), dateTo: historyDate(pageDateTo)
-              },
-              headers: {
-                'x-request-id': requestId,
-                'x-initiator-service': 'web_history_page',
-                'x-smart-update-request': false
-              }
-            })
-            .then(response => {
-            const history = unwrap(response)
-            if (!validPayload(history) || !Array.isArray(history.operations))
-              frontendFailure('VTB-H1')
-            operations.push(...history.operations)
-            if (!validPayload({ operations })) frontendFailure('VTB-H1')
-          })
-        }
-        let sequence = Promise.resolve()
-        for (let page = 0; page < historyPageCount; ++page)
-          sequence = sequence.then(() => readHistoryPage(page))
-        return sequence
-          .then(() => {
-            state.history = { operations }
-            state.historyComplete = true
+        return capturePageHistory()
+          .then(snapshot => {
+            state.history = { operations: snapshot.operations }
+            state.historyComplete = snapshot.complete
           })
           .catch(error => {
             const status = httpStatus(error)
             if (status === 401 || status === 403 || error?.kind === 'frontend') throw error
-            state.history = { operations }
+            state.history = { operations: [] }
             state.historyComplete = false
           })
       })
