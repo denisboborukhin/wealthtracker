@@ -489,6 +489,13 @@ TEST_CASE("Alfa projection reads the current inline runApp state after hydration
                 operationDirection: 'EXPENSE', cardId: 'product-inline-1',
                 operationAmount: { sum: 199.5, currency: 'RUR' },
                 title: 'Покупка'
+            }, {
+                id: 'cash-withdrawal-reference-1',
+                dateTime: '2026-08-14T11:45:00Z', direction: 'EXPENSE',
+                amount: { value: 100000, minorUnits: 100, currency: 'RUR' },
+                title: 'Снятие наличных', cashout: true,
+                sender: { accountNumber: 'account-number-2' },
+                terminal: { name: 'Банкомат Альфа-Банка' }
             }]
         } }
     )JS"));
@@ -510,7 +517,7 @@ TEST_CASE("Alfa projection reads the current inline runApp state after hydration
     CHECK(projection->batch->accounts.front().externalId ==
           QStringLiteral("product-inline-1"));
     CHECK(projection->batch->balances.front().balance.minorUnits == 125050);
-    REQUIRE(projection->batch->transactions.size() == 3);
+    REQUIRE(projection->batch->transactions.size() == 4);
     CHECK(projection->batch->transactions.front().amount.minorUnits == -5000);
     CHECK(projection->batch->transactions.front().accountExternalId ==
           QStringLiteral("product-inline-1"));
@@ -520,6 +527,11 @@ TEST_CASE("Alfa projection reads the current inline runApp state after hydration
     CHECK(projection->batch->transactions.at(1).accountExternalId ==
           QStringLiteral("product-inline-2"));
     CHECK(projection->batch->transactions.at(2).amount.minorUnits == -19950);
+    CHECK(projection->batch->transactions.at(3).amount.minorUnits == -100000);
+    CHECK(projection->batch->transactions.at(3).accountExternalId ==
+          QStringLiteral("product-inline-2"));
+    CHECK(projection->batch->transactions.at(3).bankCategory ==
+          QStringLiteral("Наличные"));
 }
 
 TEST_CASE("Alfa history capture expands only the bank page operation limit") {

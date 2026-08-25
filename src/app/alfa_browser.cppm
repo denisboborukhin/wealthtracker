@@ -436,6 +436,7 @@ struct AlfaFinancialProjection {
                           item.accountNumber, item.productId, item.cardId, item.cardNumber,
                           item.account?.id, item.account?.productId, item.account?.number,
                           item.product?.id, item.card?.id, item.card?.number,
+                          item.sender?.accountNumber, item.sender?.maskedCardNumber,
                           item.clickReference]
       if (Array.isArray(item.actions))
         for (const action of item.actions)
@@ -452,9 +453,11 @@ struct AlfaFinancialProjection {
       if (!seenAccounts.has(accountId)) return
       const description = text(item.description ?? item.title ?? item.comment ?? item.message ??
                                item.purpose ?? item.operationName)
-      const merchant = text(item.merchant?.name ?? item.merchant ?? item.brand?.name)
-      const category = text(item.category?.name ?? item.category ??
-                            item.spendingCategory?.name ?? item.operationCategory?.name)
+      const merchant = text(item.merchant?.name ?? item.merchant ?? item.brand?.name ??
+                            item.terminal?.name)
+      const category = item.cashout === true ? 'Наличные' :
+        text(item.category?.name ?? item.category ?? item.spendingCategory?.name ??
+             item.operationCategory?.name)
       const id = text(item.id ?? item.operationId ?? item.transactionId ?? item.reference)
       const direction = text(item.direction ?? item.operationDirection ??
                              item.operationType ?? item.type).toLowerCase()
