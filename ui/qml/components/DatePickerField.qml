@@ -136,6 +136,7 @@ Button {
         id: calendarPopup
         parent: Overlay.overlay
         width: 306
+        height: 322
         padding: 12
         modal: false
         focus: true
