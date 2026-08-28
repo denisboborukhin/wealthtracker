@@ -44,9 +44,11 @@ struct VtbFinancialProjection {
 
     const state = globalThis[stateKey] = { status: 'running', requestStage: 'module' }
     const maximumPayloadBytes = 8 * 1024 * 1024
-    const maximumHistoryResponses = 16
+    const maximumHistoryTemplates = 16
+    const maximumHistoryRequests = 128
+    const historyWindowDays = 31
     const historyQuietMilliseconds = 1200
-    const historyTimeoutMilliseconds = 25 * 1000
+    const historyTimeoutMilliseconds = 150 * 1000
     const historyPrefix =
       '/msa/api-gw/private/history-hub/history-hub-homer/v1/history/'
     const historyKinds = new Set(['byUser', 'byProducts', 'byAccount', 'byCard'])
@@ -73,7 +75,7 @@ struct VtbFinancialProjection {
         return historyKinds.has(url.pathname.slice(historyPrefix.length))
       } catch (ignored) { return false }
     }
-    const capturePageHistory = () => new Promise((resolve, reject) => {
+    const capturePageHistory = client => new Promise((resolve, reject) => {
       const prototype = globalThis.XMLHttpRequest?.prototype
       if (!prototype || typeof prototype.open !== 'function' ||
           typeof prototype.send !== 'function') {
@@ -82,6 +84,8 @@ struct VtbFinancialProjection {
       const nativeOpen = prototype.open
       const nativeSend = prototype.send
       const operations = []
+      const templates = []
+      const templateKeys = new Set()
       let responseCount = 0
       let settleGeneration = 0
       let settleTimer = 0
@@ -93,20 +97,185 @@ struct VtbFinancialProjection {
         if (prototype.open === wrappedOpen) prototype.open = nativeOpen
         if (prototype.send === wrappedSend) prototype.send = nativeSend
       }
-      const finish = (error = null) => {
+      const finish = (error = null, complete = false) => {
         if (finished) return
         finished = true
         if (settleTimer) clearTimeout(settleTimer)
         if (overallTimer) clearTimeout(overallTimer)
         restore()
         if (error) reject(error)
-        else resolve({ operations, complete: !transportFailure })
+        else resolve({ operations, complete: complete && !transportFailure })
       }
-      const scheduleSettlement = () => {
+      const normalizedKey = value => String(value).replace(/[-_]/g, '').toLowerCase()
+      const historyDate = (sample, value) => {
+        const day = String(value.getDate()).padStart(2, '0')
+        const month = String(value.getMonth() + 1).padStart(2, '0')
+        const year = String(value.getFullYear())
+        if (/^\d{2}\.\d{2}\.\d{4}$/.test(String(sample ?? '')))
+          return `${day}.${month}.${year}`
+        if (/^\d{4}-\d{2}-\d{2}$/.test(String(sample ?? '')))
+          return `${year}-${month}-${day}`
+        return null
+      }
+      const parseTemplate = value => {
+        try {
+          const url = new URL(String(value ?? ''), pageUrl.origin)
+          if (!matchesHistoryEndpoint(url.href ?? value)) return null
+          const params = {}
+          const query = String(url.search ?? '').replace(/^\?/, '')
+          for (const pair of query.split('&')) {
+            if (!pair) continue
+            const separator = pair.indexOf('=')
+            const key = decodeURIComponent(separator < 0 ? pair : pair.slice(0, separator))
+            const item = decodeURIComponent(separator < 0 ? '' : pair.slice(separator + 1))
+            if (key && !Object.prototype.hasOwnProperty.call(params, key)) params[key] = item
+          }
+          let fromKey = ''
+          let toKey = ''
+          let pageKey = ''
+          let offsetKey = ''
+          let limitKey = ''
+          for (const key of Object.keys(params)) {
+            const normalized = normalizedKey(key)
+            if (normalized === 'datefrom') fromKey = key
+            if (normalized === 'dateto') toKey = key
+            if (['page', 'pagenumber', 'pageindex'].includes(normalized)) pageKey = key
+            if (['offset', 'skip', 'startindex'].includes(normalized)) offsetKey = key
+            if (['limit', 'pagesize', 'pagelimit', 'itemsperpage',
+                 'operationslimit', 'operationsperpage'].includes(normalized)) limitKey = key
+          }
+          const stable = Object.keys(params).filter(
+            key => key !== fromKey && key !== toKey && key !== pageKey && key !== offsetKey)
+            .sort().map(key => `${key}=${params[key]}`).join('&')
+          return { path: url.pathname, params, fromKey, toKey, pageKey, offsetKey, limitKey,
+                   key: `${url.pathname}?${stable}` }
+        } catch (ignored) { return null }
+      }
+      const selectedTemplates = () => {
+        const byUser = templates.filter(template => template.path.endsWith('/byUser'))
+        return byUser.length > 0 ? [byUser[0]] : templates
+      }
+      const requestHeaders = () => ({
+        'x-request-id': globalThis.crypto &&
+          typeof globalThis.crypto.randomUUID === 'function'
+            ? globalThis.crypto.randomUUID()
+            : `wt-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 14)}`,
+        'x-initiator-service': 'web_history_page',
+        'x-smart-update-request': false
+      })
+      const continuationHint = history => {
+        const candidates = [history, history?.pagination, history?.page, history?.meta]
+        for (const candidate of candidates) {
+          if (!candidate || typeof candidate !== 'object') continue
+          for (const key of ['hasNext', 'hasMore', 'more'])
+            if (typeof candidate[key] === 'boolean') return candidate[key]
+          if (typeof candidate.last === 'boolean') return !candidate.last
+        }
+        return null
+      }
+      const replayTwoYears = () => {
+        restore()
+        const selected = selectedTemplates()
+        if (selected.length === 0) {
+          finish({ status: lastStatus, kind: 'history-transport' })
+          return
+        }
+        const rangeTo = new Date()
+        rangeTo.setHours(0, 0, 0, 0)
+        const rangeFrom = new Date(rangeTo)
+        rangeFrom.setFullYear(rangeFrom.getFullYear() - 2)
+        let requestCount = 0
+        const replayPage = (template, params) => {
+          if (finished) return Promise.reject({ kind: 'history-cancelled' })
+          if (requestCount >= maximumHistoryRequests)
+            return Promise.reject({ kind: 'history-limit' })
+          ++requestCount
+          return client.get(template.path, { params, headers: requestHeaders() })
+            .then(response => {
+              if (finished) throw { kind: 'history-cancelled' }
+              const history = unwrap(response)
+              if (!validPayload(history) || !Array.isArray(history.operations))
+                frontendFailure('VTB-H1')
+              operations.push(...history.operations)
+              if (!validPayload({ operations })) frontendFailure('VTB-H1')
+              const hint = continuationHint(history)
+              const pageSize = template.limitKey
+                ? Number(params[template.limitKey]) : 0
+              const terminal = hint === false ||
+                (hint === null && (history.operations.length === 0 ||
+                  (Number.isInteger(pageSize) && pageSize > 0 &&
+                   history.operations.length < pageSize)))
+              if (terminal) return
+              if (hint !== true && !(Number.isInteger(pageSize) && pageSize > 0 &&
+                                     history.operations.length >= pageSize)) {
+                transportFailure = true
+                return
+              }
+              const next = Object.assign({}, params)
+              if (template.pageKey) {
+                const current = Number(params[template.pageKey])
+                if (!Number.isInteger(current) || current < 0) {
+                  transportFailure = true
+                  return
+                }
+                next[template.pageKey] = String(current + 1)
+              } else if (template.offsetKey && Number.isInteger(pageSize) && pageSize > 0) {
+                const current = Number(params[template.offsetKey])
+                if (!Number.isInteger(current) || current < 0) {
+                  transportFailure = true
+                  return
+                }
+                next[template.offsetKey] = String(current + pageSize)
+              } else {
+                transportFailure = true
+                return
+              }
+              return replayPage(template, next)
+            })
+        }
+        let sequence = Promise.resolve()
+        for (const template of selected) {
+          if (!template.fromKey || !template.toKey ||
+              historyDate(template.params[template.fromKey], rangeFrom) === null ||
+              historyDate(template.params[template.toKey], rangeTo) === null) {
+            transportFailure = true
+            continue
+          }
+          for (let start = new Date(rangeFrom); start <= rangeTo;) {
+            const end = new Date(start)
+            end.setDate(end.getDate() + historyWindowDays - 1)
+            if (end > rangeTo) end.setTime(rangeTo.getTime())
+            const pageFrom = new Date(start)
+            const pageTo = new Date(end)
+            start = new Date(end)
+            start.setDate(start.getDate() + 1)
+            sequence = sequence.then(() => {
+              const params = Object.assign({}, template.params)
+              params[template.fromKey] = historyDate(template.params[template.fromKey], pageFrom)
+              params[template.toKey] = historyDate(template.params[template.toKey], pageTo)
+              if (template.pageKey) {
+                const firstPage = Number(template.params[template.pageKey]) === 0 ? 0 : 1
+                params[template.pageKey] = String(firstPage)
+              }
+              if (template.offsetKey) params[template.offsetKey] = '0'
+              return replayPage(template, params)
+            })
+          }
+        }
+        sequence.then(() => finish(null, true)).catch(error => {
+          const status = httpStatus(error)
+          if (status === 401 || status === 403 || error?.kind === 'frontend') finish(error)
+          else {
+            transportFailure = true
+            finish(null, false)
+          }
+        })
+      }
+      const scheduleReplay = () => {
         const generation = ++settleGeneration
         settleTimer = setTimeout(() => {
           if (finished || generation !== settleGeneration) return
-          if (responseCount > 0) finish()
+          if (responseCount > 0) replayTwoYears()
           else finish({ status: lastStatus, kind: 'history-transport' })
         }, historyQuietMilliseconds)
       }
@@ -119,7 +288,7 @@ struct VtbFinancialProjection {
         }
         if (lastStatus < 200 || lastStatus >= 300) {
           transportFailure = true
-          scheduleSettlement()
+          scheduleReplay()
           return
         }
         try {
@@ -128,12 +297,18 @@ struct VtbFinancialProjection {
             payload = JSON.parse(String(request.responseText ?? ''))
           const history = unwrap(payload)
           if (!validPayload(history) || !Array.isArray(history.operations) ||
-              responseCount >= maximumHistoryResponses)
+              responseCount >= maximumHistoryTemplates)
             frontendFailure('VTB-H1')
           operations.push(...history.operations)
           ++responseCount
+          const template = parseTemplate(request.__wealthtrackerVtbHistoryUrl)
+          if (!template) frontendFailure('VTB-H1')
+          if (!templateKeys.has(template.key)) {
+            templateKeys.add(template.key)
+            templates.push(template)
+          }
           if (!validPayload({ operations })) frontendFailure('VTB-H1')
-          scheduleSettlement()
+          scheduleReplay()
         } catch (error) {
           finish(error?.kind === 'frontend' ? error : { kind: 'frontend', code: 'VTB-H1' })
         }
@@ -141,6 +316,8 @@ struct VtbFinancialProjection {
       function wrappedOpen(method, url, ...rest) {
         this.__wealthtrackerVtbHistoryRequest =
           String(method ?? '').toUpperCase() === 'GET' && matchesHistoryEndpoint(url)
+        this.__wealthtrackerVtbHistoryUrl = this.__wealthtrackerVtbHistoryRequest
+          ? String(url ?? '') : ''
         return nativeOpen.call(this, method, url, ...rest)
       }
       function wrappedSend(body) {
@@ -151,7 +328,10 @@ struct VtbFinancialProjection {
       prototype.open = wrappedOpen
       prototype.send = wrappedSend
       overallTimer = setTimeout(
-        () => finish({ status: lastStatus, kind: 'history-timeout' }),
+        () => {
+          transportFailure = true
+          finish(null, false)
+        },
         historyTimeoutMilliseconds)
       try {
         if (!globalThis.history || typeof globalThis.history.pushState !== 'function' ||
@@ -213,7 +393,7 @@ struct VtbFinancialProjection {
       })
       .then(() => {
         state.requestStage = 'history'
-        return capturePageHistory()
+        return capturePageHistory(client)
           .then(snapshot => {
             state.history = { operations: snapshot.operations }
             state.historyComplete = snapshot.complete
@@ -525,9 +705,9 @@ parse_vtb_financial_projection(const QString& projection, const QDateTime& obser
     if (diagnostic == QStringLiteral("VTB-H2")) {
         batch->warnings.push_back(
             {wealthtracker::connectors::WarningSeverity::Information,
-             QStringLiteral("vtb-history-unavailable"),
+             QStringLiteral("vtb-history-incomplete"),
              QStringLiteral(
-                 "Счета и остатки ВТБ обновлены, история операций временно недоступна"),
+                 "ВТБ вернул только часть двухлетней истории операций"),
              -1});
     }
     return VtbFinancialProjection{VtbProjectionStage::Ready, std::move(*batch), diagnostic};

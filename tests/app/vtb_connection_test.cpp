@@ -121,13 +121,15 @@ TEST_CASE("VTB synchronization uses only exact page-owned read routes") {
     CHECK(start.contains(QStringLiteral(
         "/msa/api-gw/private/history-hub/history-hub-homer/v1/history/")));
     CHECK(start.contains(QStringLiteral("client.get")));
-    CHECK(start.count(QStringLiteral("client.get(")) == 2);
+    CHECK(start.count(QStringLiteral("client.get(")) == 3);
+    CHECK(start.contains(QStringLiteral("historyWindowDays = 31")));
+    CHECK(start.contains(QStringLiteral("setFullYear(rangeFrom.getFullYear() - 2)")));
     CHECK_FALSE(start.contains(QStringLiteral("client.post")));
     CHECK_FALSE(start.contains(QStringLiteral("fetch("), Qt::CaseInsensitive));
     CHECK(start.contains(QStringLiteral("XMLHttpRequest"), Qt::CaseInsensitive));
     CHECK(start.contains(QStringLiteral("history.pushState")));
-    CHECK_FALSE(start.contains(QStringLiteral("x-initiator-service")));
-    CHECK_FALSE(start.contains(QStringLiteral("x-smart-update-request")));
+    CHECK(start.contains(QStringLiteral("x-initiator-service")));
+    CHECK(start.contains(QStringLiteral("x-smart-update-request")));
     CHECK_FALSE(start.contains(QStringLiteral("dateFrom")));
     CHECK_FALSE(start.contains(QStringLiteral("document.cookie"), Qt::CaseInsensitive));
     CHECK_FALSE(start.contains(QStringLiteral("localStorage"), Qt::CaseInsensitive));
@@ -162,6 +164,8 @@ TEST_CASE("VTB synchronization follows the current portfolio and page history co
                 ? 'evil.example' : 'online.vtb.ru'
             return { protocol: 'https:', hostname: hostname, port: '',
                      username: '', password: '', origin: 'https://' + hostname,
+                     href: text,
+                     search: queryIndex >= 0 ? text.slice(queryIndex) : '',
                      pathname: markerIndex >= 0
                          ? text.slice(markerIndex, queryIndex >= 0 ? queryIndex : undefined)
                          : '/login' }
@@ -196,6 +200,11 @@ TEST_CASE("VTB synchronization follows the current portfolio and page history co
         globalThis.vtbBalanceThrows = false
         globalThis.vtbHistoryStatus = 200
         globalThis.vtbHistoryReads = 0
+        globalThis.vtbHistoryReplayReads = 0
+        globalThis.vtbHistoryReplayOptions = []
+        globalThis.vtbHistoryPaginationEnabled = true
+        globalThis.vtbHoldHistoryReplay = false
+        globalThis.vtbHeldHistoryResolvers = []
         globalThis.vtbPageHistoryRequests = 0
         globalThis.vtbObservedHistoryMethod = ''
         globalThis.vtbObservedHistoryUrl = ''
@@ -242,7 +251,7 @@ TEST_CASE("VTB synchronization follows the current portfolio and page history co
             foreignRequest.send()
             const request = new XMLHttpRequest()
             request.open('GET',
-                '/msa/api-gw/private/history-hub/history-hub-homer/v1/history/byProducts?dateFrom=25.07.2026&dateTo=25.08.2026&product=account-1')
+                '/msa/api-gw/private/history-hub/history-hub-homer/v1/history/byProducts?dateFrom=25.07.2026&dateTo=25.08.2026&product=account-1&page=0&pageSize=2')
             request.send()
         }
         const client = {
@@ -267,6 +276,22 @@ TEST_CASE("VTB synchronization follows the current portfolio and page history co
                         throw { message: 'supplement unavailable' }
                     return Promise.reject({ statusCode: globalThis.vtbBalanceStatus })
                 }
+                if (path.indexOf('/history/') !== -1) {
+                    globalThis.vtbHistoryReplayReads += 1
+                    globalThis.vtbHistoryReplayOptions.push(options || {})
+                    const firstPage = globalThis.vtbHistoryPaginationEnabled &&
+                        globalThis.vtbHistoryReplayReads === 1 &&
+                        Number(options.params.page) === 0
+                    const response = { data: { operations: [],
+                        pagination: { hasMore: firstPage } } }
+                    if (globalThis.vtbHoldHistoryReplay)
+                        return new Promise(function(resolve) {
+                            globalThis.vtbHeldHistoryResolvers.push(function() {
+                                resolve(response)
+                            })
+                        })
+                    return Promise.resolve(response)
+                }
                 return Promise.reject({ status: 500 })
             }
         }
@@ -281,13 +306,13 @@ TEST_CASE("VTB synchronization follows the current portfolio and page history co
           started.property(QStringLiteral("lineNumber")).toString())
              .toStdString());
     REQUIRE_FALSE(started.isError());
-    for (int index = 0; index < 64; ++index) {
+    for (int index = 0; index < 256; ++index) {
         QCoreApplication::processEvents();
         (void)engine.evaluate(QStringLiteral("0"));
     }
     REQUIRE_FALSE(engine.evaluate(QStringLiteral("globalThis.runVtbTimers(2000)"))
                       .isError());
-    for (int index = 0; index < 64; ++index) {
+    for (int index = 0; index < 256; ++index) {
         QCoreApplication::processEvents();
         (void)engine.evaluate(QStringLiteral("0"));
     }
@@ -298,6 +323,25 @@ TEST_CASE("VTB synchronization follows the current portfolio and page history co
              .toStdString());
     CHECK(engine.evaluate(QStringLiteral("globalThis.vtbPortfolioReads")).toInt() == 2);
     CHECK(engine.evaluate(QStringLiteral("globalThis.vtbHistoryReads")).toInt() == 1);
+    CHECK(engine.evaluate(QStringLiteral("globalThis.vtbHistoryReplayReads")).toInt() == 25);
+    const auto expectedHistoryFrom =
+        QDate::currentDate().addYears(-2).toString(QStringLiteral("dd.MM.yyyy"));
+    const auto expectedHistoryTo =
+        QDate::currentDate().toString(QStringLiteral("dd.MM.yyyy"));
+    CHECK(engine.evaluate(QStringLiteral(
+              "globalThis.vtbHistoryReplayOptions[0].params.dateFrom"))
+              .toString() == expectedHistoryFrom);
+    CHECK(engine.evaluate(QStringLiteral(
+              "globalThis.vtbHistoryReplayOptions[24].params.dateTo"))
+              .toString() == expectedHistoryTo);
+    CHECK(engine.evaluate(QStringLiteral(
+              "globalThis.vtbHistoryReplayOptions[0].params.product === 'account-1' && "
+              "globalThis.vtbHistoryReplayOptions[0].params.page === '0' && "
+              "globalThis.vtbHistoryReplayOptions[1].params.page === '1' && "
+              "globalThis.vtbHistoryReplayOptions.every(function(options) { "
+              "return options.params.dateFrom && options.params.dateTo && "
+              "options.headers['x-initiator-service'] === 'web_history_page' })"))
+              .toBool());
     CHECK(engine.evaluate(QStringLiteral("globalThis.vtbPageHistoryRequests")).toInt() == 3);
     CHECK(engine.evaluate(QStringLiteral("globalThis.vtbOpenedPath")).toString() ==
           QStringLiteral("/history"));
@@ -320,11 +364,16 @@ TEST_CASE("VTB synchronization follows the current portfolio and page history co
     CHECK(parsed->batch->accounts.size() == 1);
     CHECK(parsed->batch->transactions.size() == 1);
 
-    const auto restarted = engine.evaluate(QStringLiteral(
+    const auto timeoutRestart = engine.evaluate(QStringLiteral(
         "delete globalThis.__wealthtrackerVtbSync; "
-        "globalThis.vtbPortfolioReads = 0; globalThis.vtbBalanceStatus = 401; "
-        "globalThis.vtbHistoryReads = 0;"));
-    REQUIRE_FALSE(restarted.isError());
+        "globalThis.vtbPortfolioReads = 0; globalThis.vtbBalanceStatus = 404; "
+        "globalThis.vtbHistoryStatus = 200; globalThis.vtbHistoryReads = 0; "
+        "globalThis.vtbHistoryReplayReads = 0; "
+        "globalThis.vtbHistoryReplayOptions = []; "
+        "globalThis.vtbHistoryPaginationEnabled = false; "
+        "globalThis.vtbHoldHistoryReplay = true; "
+        "globalThis.vtbHeldHistoryResolvers = [];"));
+    REQUIRE_FALSE(timeoutRestart.isError());
     REQUIRE_FALSE(engine.evaluate(vtb_sync_start_script()).isError());
     for (int index = 0; index < 64; ++index) {
         QCoreApplication::processEvents();
@@ -333,6 +382,46 @@ TEST_CASE("VTB synchronization follows the current portfolio and page history co
     REQUIRE_FALSE(engine.evaluate(QStringLiteral("globalThis.runVtbTimers(2000)"))
                       .isError());
     for (int index = 0; index < 64; ++index) {
+        QCoreApplication::processEvents();
+        (void)engine.evaluate(QStringLiteral("0"));
+    }
+    CHECK(engine.evaluate(QStringLiteral(
+              "globalThis.vtbHistoryReplayReads === 1 && "
+              "globalThis.vtbHeldHistoryResolvers.length === 1"))
+              .toBool());
+    REQUIRE_FALSE(engine.evaluate(QStringLiteral("globalThis.runVtbTimers(200000)"))
+                      .isError());
+    for (int index = 0; index < 64; ++index) {
+        QCoreApplication::processEvents();
+        (void)engine.evaluate(QStringLiteral("0"));
+    }
+    CHECK(engine.evaluate(QStringLiteral(
+              "globalThis.__wealthtrackerVtbSync.status === 'ready' && "
+              "globalThis.__wealthtrackerVtbSync.historyComplete === false"))
+              .toBool());
+    REQUIRE_FALSE(engine.evaluate(QStringLiteral(
+        "globalThis.vtbHeldHistoryResolvers[0]()"))
+                      .isError());
+    for (int index = 0; index < 128; ++index) {
+        QCoreApplication::processEvents();
+        (void)engine.evaluate(QStringLiteral("0"));
+    }
+    CHECK(engine.evaluate(QStringLiteral("globalThis.vtbHistoryReplayReads")).toInt() == 1);
+
+    const auto restarted = engine.evaluate(QStringLiteral(
+        "delete globalThis.__wealthtrackerVtbSync; "
+        "globalThis.vtbPortfolioReads = 0; globalThis.vtbBalanceStatus = 401; "
+        "globalThis.vtbHistoryReads = 0; globalThis.vtbHoldHistoryReplay = false; "
+        "globalThis.vtbHistoryPaginationEnabled = true;"));
+    REQUIRE_FALSE(restarted.isError());
+    REQUIRE_FALSE(engine.evaluate(vtb_sync_start_script()).isError());
+    for (int index = 0; index < 64; ++index) {
+        QCoreApplication::processEvents();
+        (void)engine.evaluate(QStringLiteral("0"));
+    }
+    REQUIRE_FALSE(engine.evaluate(QStringLiteral("globalThis.runVtbTimers(2000)"))
+                      .isError());
+    for (int index = 0; index < 256; ++index) {
         QCoreApplication::processEvents();
         (void)engine.evaluate(QStringLiteral("0"));
     }
@@ -352,7 +441,7 @@ TEST_CASE("VTB synchronization follows the current portfolio and page history co
     }
     REQUIRE_FALSE(engine.evaluate(QStringLiteral("globalThis.runVtbTimers(2000)"))
                       .isError());
-    for (int index = 0; index < 64; ++index) {
+    for (int index = 0; index < 256; ++index) {
         QCoreApplication::processEvents();
         (void)engine.evaluate(QStringLiteral("0"));
     }
@@ -372,7 +461,7 @@ TEST_CASE("VTB synchronization follows the current portfolio and page history co
     CHECK(partial->batch->transactions.isEmpty());
     REQUIRE(partial->batch->warnings.size() == 1);
     CHECK(partial->batch->warnings.front().code ==
-          QStringLiteral("vtb-history-unavailable"));
+          QStringLiteral("vtb-history-incomplete"));
 
     const auto throwingSupplementRestart = engine.evaluate(QStringLiteral(
         "delete globalThis.__wealthtrackerVtbSync; "
@@ -386,7 +475,7 @@ TEST_CASE("VTB synchronization follows the current portfolio and page history co
     }
     REQUIRE_FALSE(engine.evaluate(QStringLiteral("globalThis.runVtbTimers(2000)"))
                       .isError());
-    for (int index = 0; index < 64; ++index) {
+    for (int index = 0; index < 256; ++index) {
         QCoreApplication::processEvents();
         (void)engine.evaluate(QStringLiteral("0"));
     }

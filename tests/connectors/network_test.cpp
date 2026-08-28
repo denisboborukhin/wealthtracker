@@ -320,6 +320,8 @@ TEST_CASE("T-Bank retail connector permits only exact read requests")
             .accountExternalId = QStringLiteral("account-1"),
             .from = QDateTime::fromString(
                 QStringLiteral("2026-07-01T00:00:00Z"), Qt::ISODate),
+            .to = QDateTime::fromString(
+                QStringLiteral("2026-08-01T12:34:56Z"), Qt::ISODate),
             .pageSize = 1'000,
         },
         session);
@@ -329,8 +331,39 @@ TEST_CASE("T-Bank retail connector permits only exact read requests")
           == QStringLiteral("/api/common/v1/operations"));
     CHECK(QUrlQuery(network.request.url()).queryItemValue(
               QStringLiteral("account")) == QStringLiteral("account-1"));
+    CHECK(QUrlQuery(network.request.url()).queryItemValue(
+              QStringLiteral("start")) == QStringLiteral("1782864000000"));
+    CHECK(QUrlQuery(network.request.url()).queryItemValue(
+              QStringLiteral("end")) == QStringLiteral("1785542399999"));
+
+    const auto secondWindow = client.synchronize(
+        LiveSyncRequest{
+            .accountExternalId = QStringLiteral("account-1"),
+            .cursor = QByteArrayLiteral("1"),
+            .from = QDateTime::fromString(
+                QStringLiteral("2024-08-26T00:00:00Z"), Qt::ISODate),
+            .to = QDateTime::fromString(
+                QStringLiteral("2026-08-26T12:34:56Z"), Qt::ISODate),
+            .pageSize = 1'000,
+        },
+        session);
+    REQUIRE(secondWindow);
+    CHECK(QUrlQuery(network.request.url()).queryItemValue(
+              QStringLiteral("start")) == QStringLiteral("1727308800000"));
+    CHECK(QUrlQuery(network.request.url()).queryItemValue(
+              QStringLiteral("end")) == QStringLiteral("1729987199999"));
 
     CHECK_FALSE(client.discoverAccounts(QByteArrayLiteral("unsafe;session-value")));
+    CHECK_FALSE(client.synchronize(
+        LiveSyncRequest{
+            .accountExternalId = QStringLiteral("account-1"),
+            .cursor = QByteArrayLiteral("24"),
+            .from = QDateTime::fromString(
+                QStringLiteral("2024-08-26T00:00:00Z"), Qt::ISODate),
+            .to = QDateTime::fromString(
+                QStringLiteral("2026-08-26T12:34:56Z"), Qt::ISODate),
+        },
+        session));
     CHECK_FALSE(TBankRetailClient::isReadOnlyPath(
         QStringLiteral("/api/common/v1/payments")));
 }
@@ -367,6 +400,13 @@ TEST_CASE("T-Bank retail responses normalize balances and operations")
     CHECK(operation.mcc == QStringLiteral("5814"));
     CHECK(operation.kind == NormalizedTransactionKind::InternalTransfer);
     CHECK_FALSE(operation.sourceFields.contains(QStringLiteral("hold")));
+    CHECK(operations->nextCursor == QByteArrayLiteral("1"));
+
+    const auto finalWindow = TBankRetailClient::parseOperationsResponse(
+        QByteArrayLiteral(R"({"resultCode":"NO_DATA_FOUND"})"),
+        QStringLiteral("account-1"), QByteArrayLiteral("23"));
+    REQUIRE(finalWindow);
+    CHECK(finalWindow->nextCursor.isEmpty());
 
     const auto noData = TBankRetailClient::parseOperationsResponse(
         QByteArrayLiteral(R"({"resultCode":"NO_DATA_FOUND","errorMessage":"No operations"})"),

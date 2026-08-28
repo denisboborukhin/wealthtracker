@@ -38,7 +38,40 @@ struct BankRuntime {
         parsePage;
     qsizetype maximumResponseBytes = 20 * 1024 * 1024;
     int maximumConcurrentRequests = 4;
+    int historyLookbackYears = 1;
 };
+
+[[nodiscard]] qsizetype retainPreviousTransactionsForPartialHistory(
+    wealthtracker::connectors::NormalizedBatch& current,
+    const wealthtracker::connectors::NormalizedBatch& previous,
+    const QDate& oldestDate) {
+    if (!oldestDate.isValid()) {
+        return 0;
+    }
+    QSet<QString> currentAccounts;
+    for (const auto& account : current.accounts) {
+        currentAccounts.insert(account.externalId);
+    }
+    QSet<QString> transactionKeys;
+    for (const auto& transaction : current.transactions) {
+        transactionKeys.insert(transaction.accountExternalId + QLatin1Char('\n') +
+                               transaction.externalId);
+    }
+    qsizetype retained = 0;
+    for (const auto& transaction : previous.transactions) {
+        const auto key = transaction.accountExternalId + QLatin1Char('\n') +
+                         transaction.externalId;
+        if (transaction.postingDate < oldestDate ||
+            !currentAccounts.contains(transaction.accountExternalId) ||
+            transactionKeys.contains(key)) {
+            continue;
+        }
+        transactionKeys.insert(key);
+        current.transactions.push_back(transaction);
+        ++retained;
+    }
+    return retained;
+}
 
 class BankSyncCoordinator final : public QObject {
   public:
@@ -56,7 +89,9 @@ class BankSyncCoordinator final : public QObject {
         if (started_ || discoveryReply == nullptr || runtime_.connector == nullptr ||
             !runtime_.parseAccounts || !runtime_.parsePage || runtime_.pageSize <= 0 ||
             runtime_.maximumResponseBytes <= 0 || runtime_.maximumConcurrentRequests <= 0 ||
-            runtime_.maximumConcurrentRequests > maximumSupportedConcurrentRequests) {
+            runtime_.maximumConcurrentRequests > maximumSupportedConcurrentRequests ||
+            runtime_.historyLookbackYears <= 0 ||
+            runtime_.historyLookbackYears > maximumSupportedHistoryLookbackYears) {
             fail({wealthtracker::connectors::ErrorCode::InvalidInput,
                   QStringLiteral("Некорректная конфигурация синхронизации"),
                   {},
@@ -65,6 +100,9 @@ class BankSyncCoordinator final : public QObject {
             return;
         }
         started_ = true;
+        history_to_ = QDateTime::currentDateTimeUtc();
+        history_from_ = QDateTime(history_to_.date().addYears(-runtime_.historyLookbackYears),
+                                  QTime(0, 0), QTimeZone::UTC);
         active_replies_.push_back(discoveryReply);
         QPointer<QNetworkReply> reply = discoveryReply;
         connect(discoveryReply, &QNetworkReply::finished, this, [this, reply] {
@@ -144,6 +182,7 @@ class BankSyncCoordinator final : public QObject {
     };
 
     static constexpr int maximumSupportedConcurrentRequests = 4;
+    static constexpr int maximumSupportedHistoryLookbackYears = 2;
     static constexpr qsizetype maximumAccountsPerRun = 256;
     static constexpr int maximumPagesPerAccount = 250;
     static constexpr int maximumPagesPerRun = 1'000;
@@ -211,7 +250,8 @@ class BankSyncCoordinator final : public QObject {
         const wealthtracker::connectors::LiveSyncRequest syncRequest{
             .accountExternalId = accountId,
             .cursor = cursor,
-            .from = QDateTime(QDate::currentDate().addYears(-1), QTime(0, 0), QTimeZone::UTC),
+            .from = history_from_,
+            .to = history_to_,
             .pageSize = runtime_.pageSize,
         };
         auto requests = runtime_.connector->synchronize(syncRequest, *credential);
@@ -320,6 +360,8 @@ class BankSyncCoordinator final : public QObject {
     QList<QPointer<QNetworkReply>> active_replies_;
     QList<PendingPage> pending_requests_;
     std::optional<wealthtracker::connectors::ConnectorError> first_error_;
+    QDateTime history_from_;
+    QDateTime history_to_;
     int pending_pages_ = 0;
     bool started_ = false;
     bool finished_ = false;

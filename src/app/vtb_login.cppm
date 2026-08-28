@@ -115,8 +115,8 @@ public:
 private:
     enum class Mode { Login, Synchronize };
     static constexpr qint64 loginTimeoutMilliseconds = 10 * 60 * 1'000;
-    static constexpr qint64 synchronizationTimeoutMilliseconds = 90 * 1'000;
-    static constexpr qint64 loadingStateTimeoutMilliseconds = 30 * 1'000;
+    static constexpr qint64 synchronizationTimeoutMilliseconds = 180 * 1'000;
+    static constexpr qint64 loadingStateTimeoutMilliseconds = 160 * 1'000;
 
     [[nodiscard]] static QString compatibilityMessage(QString message,
                                                       const QString& diagnostic) {

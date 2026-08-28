@@ -245,6 +245,7 @@ struct LiveSyncRequest {
     QString accountExternalId;
     QByteArray cursor;
     std::optional<QDateTime> from;
+    std::optional<QDateTime> to;
     int pageSize{1000};
 };
 
@@ -545,7 +546,8 @@ public:
     [[nodiscard]] static ConnectorResult<NormalizedBatch>
     parseAccountsResponse(const QByteArray &json, const QDateTime &observedAt);
     [[nodiscard]] static ConnectorResult<NormalizedBatch>
-    parseOperationsResponse(const QByteArray &json, const QString &accountExternalId);
+    parseOperationsResponse(const QByteArray &json, const QString &accountExternalId,
+                            const QByteArray &currentCursor = {});
 
 private:
     [[nodiscard]] ConnectorResult<QNetworkReply *>

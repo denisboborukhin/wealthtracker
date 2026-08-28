@@ -480,8 +480,23 @@ AppController::AppController(std::unique_ptr<CredentialBackend> credentials,
         },
         [this](NormalizedBatch batch) {
             const auto accountCount = batch.accounts.size();
+            const bool historyIncomplete = std::ranges::any_of(
+                batch.warnings, [](const auto& warning) {
+                    return warning.code == QStringLiteral("alfa-history-incomplete");
+                });
+            if (historyIncomplete) {
+                const auto previous =
+                    private_->bank_batches.constFind(QStringLiteral("alfa-retail"));
+                if (previous != private_->bank_batches.cend()) {
+                    (void)retainPreviousTransactionsForPartialHistory(
+                        batch, *previous, QDate::currentDate().addYears(-2));
+                }
+            }
             const auto transactionCount = batch.transactions.size();
-            const auto warningCount = batch.warnings.size();
+            const auto warningCount = std::ranges::count_if(
+                batch.warnings, [](const auto& warning) {
+                    return warning.code != QStringLiteral("alfa-history-incomplete");
+                });
             private_->alfa_sync_running = false;
             alfa_login_active_ = false;
             alfa_connected_ = true;
@@ -493,13 +508,22 @@ AppController::AppController(std::unique_ptr<CredentialBackend> credentials,
             settings.setValue(QStringLiteral("alfa/autoUpdate"),
                               settings.value(QStringLiteral("alfa/autoUpdate"), true));
             settings.setValue(QStringLiteral("alfa/lastSyncAt"), completedAt.toString(Qt::ISODate));
-            alfa_login_status_ =
-                QStringLiteral("Подключено · счетов %1 · операций %2")
-                    .arg(accountCount)
-                    .arg(transactionCount);
+            alfa_login_status_ = historyIncomplete
+                ? QStringLiteral(
+                      "Подключено частично · счетов %1 · операций %2 · "
+                      "история за 2 года неполная")
+                      .arg(accountCount)
+                      .arg(transactionCount)
+                : QStringLiteral(
+                      "Подключено · счетов %1 · операций %2 · история за 2 года")
+                      .arg(accountCount)
+                      .arg(transactionCount);
             sync_status_ = QStringLiteral("Альфа-Банк: счетов %1 · операций %2")
                                .arg(accountCount)
                                .arg(transactionCount);
+            if (historyIncomplete) {
+                sync_status_ += QStringLiteral(" · история за 2 года неполная");
+            }
             if (warningCount > 0) {
                 sync_status_ +=
                     QStringLiteral(" · пропущено записей %1").arg(warningCount);
@@ -543,14 +567,22 @@ AppController::AppController(std::unique_ptr<CredentialBackend> credentials,
         },
         [this](NormalizedBatch batch) {
             const auto accountCount = batch.accounts.size();
-            const auto transactionCount = batch.transactions.size();
-            const bool historyUnavailable = std::ranges::any_of(
+            const bool historyIncomplete = std::ranges::any_of(
                 batch.warnings, [](const auto& warning) {
-                    return warning.code == QStringLiteral("vtb-history-unavailable");
+                    return warning.code == QStringLiteral("vtb-history-incomplete");
                 });
+            if (historyIncomplete) {
+                const auto previous =
+                    private_->bank_batches.constFind(QStringLiteral("vtb-retail"));
+                if (previous != private_->bank_batches.cend()) {
+                    (void)retainPreviousTransactionsForPartialHistory(
+                        batch, *previous, QDate::currentDate().addYears(-2));
+                }
+            }
+            const auto transactionCount = batch.transactions.size();
             const auto warningCount = std::ranges::count_if(
                 batch.warnings, [](const auto& warning) {
-                    return warning.code != QStringLiteral("vtb-history-unavailable");
+                    return warning.code != QStringLiteral("vtb-history-incomplete");
                 });
             private_->vtb_sync_running = false;
             vtb_login_active_ = false;
@@ -564,19 +596,21 @@ AppController::AppController(std::unique_ptr<CredentialBackend> credentials,
                               settings.value(QStringLiteral("vtb/autoUpdate"), true));
             settings.setValue(QStringLiteral("vtb/lastSyncAt"),
                               completedAt.toString(Qt::ISODate));
-            vtb_login_status_ = historyUnavailable
+            vtb_login_status_ = historyIncomplete
                 ? QStringLiteral(
-                      "Подключено частично · счетов %1 · история операций временно "
-                      "недоступна")
+                      "Подключено частично · счетов %1 · операций %2 · "
+                      "история за 2 года неполная")
                       .arg(accountCount)
-                : QStringLiteral("Подключено · счетов %1 · операций %2")
+                      .arg(transactionCount)
+                : QStringLiteral(
+                      "Подключено · счетов %1 · операций %2 · история за 2 года")
                       .arg(accountCount)
                       .arg(transactionCount);
             sync_status_ = QStringLiteral("ВТБ: счетов %1 · операций %2")
                                .arg(accountCount)
                                .arg(transactionCount);
-            if (historyUnavailable) {
-                sync_status_ += QStringLiteral(" · история операций временно недоступна");
+            if (historyIncomplete) {
+                sync_status_ += QStringLiteral(" · история за 2 года неполная");
             }
             if (warningCount > 0) {
                 sync_status_ +=
@@ -2563,11 +2597,12 @@ bool AppController::synchronizeTBank() {
             return TBankRetailClient::parseAccountsResponse(body, observedAt);
         },
         [](const QByteArray& body, const QString& accountId,
-           const QByteArray&, int) {
-            return TBankRetailClient::parseOperationsResponse(body, accountId);
+           const QByteArray& cursor, int) {
+            return TBankRetailClient::parseOperationsResponse(body, accountId, cursor);
         },
     };
     runtime.maximumConcurrentRequests = 1;
+    runtime.historyLookbackYears = 2;
     auto* coordinator = new BankSyncCoordinator(
         std::move(runtime),
         [this]() -> std::expected<QByteArray, QString> {
@@ -2597,8 +2632,10 @@ bool AppController::synchronizeTBank() {
                 QStringLiteral("tbank/lastSyncAt"),
                 completedAt.toString(Qt::ISODateWithMs));
             tbank_login_status_ = QStringLiteral(
-                "Т-Банк подключён. Сессия хранится в системном хранилище.");
-            sync_status_ = QStringLiteral("Т-Банк: счетов %1 · операций %2")
+                "Т-Банк подключён. История запрошена за 2 года; сессия хранится "
+                "в системном хранилище.");
+            sync_status_ = QStringLiteral(
+                "Т-Банк: счетов %1 · операций %2 · период запроса 2 года")
                 .arg(accountCount)
                 .arg(transactionCount);
             if (warningCount > 0) {

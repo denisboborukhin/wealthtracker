@@ -181,9 +181,9 @@ public:
 private:
     enum class Mode { Login, Synchronize };
     static constexpr qint64 loginTimeoutMilliseconds = 10 * 60 * 1'000;
-    static constexpr qint64 synchronizationTimeoutMilliseconds = 90 * 1'000;
+    static constexpr qint64 synchronizationTimeoutMilliseconds = 180 * 1'000;
     static constexpr qint64 dashboardStateTimeoutMilliseconds = 30 * 1'000;
-    static constexpr qint64 operationsStateTimeoutMilliseconds = 30 * 1'000;
+    static constexpr qint64 operationsStateTimeoutMilliseconds = 150 * 1'000;
 
     void begin(const Mode mode, const QUrl& url, QString status) {
         stop(false, false);
