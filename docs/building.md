@@ -17,6 +17,24 @@ Keep that environment active during Conan installation. Dependency recipes
 invoke CMake and Ninja by name. C++23 module builds also require the selected
 compiler's dependency scanner; `scripts/configure.sh` validates it.
 
+On macOS, the script selects Python 3.9 or newer backed by OpenSSL 1.1.1 or
+newer. Apple's Command Line Tools Python uses an unsupported LibreSSL runtime.
+If no supported Python is found, install a current Python and select it
+explicitly:
+
+```sh
+brew install python@3.13
+WT_BOOTSTRAP_PYTHON=/opt/homebrew/opt/python@3.13/bin/python3.13 \
+  ./scripts/bootstrap.sh
+```
+
+Qt downloads use a TLS-valid HTTPS mirror because `download.qt.io` is not
+reachable from every network. Override it when necessary without disabling TLS:
+
+```sh
+WT_QT_MIRROR=https://mirror.netcologne.de/qtproject/ ./scripts/bootstrap.sh
+```
+
 On Windows, run `scripts/bootstrap.ps1`, then activate
 `build/tooling/Scripts/Activate.ps1` in PowerShell.
 
