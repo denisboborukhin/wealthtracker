@@ -53,8 +53,11 @@ reply, cancellation path, and candidate buffer. QML sees only the native
 window and textual status.
 
 The synchronization connector separately permits only account and operation
-reads at `www.tbank.ru`. The API is undocumented, so parse or authentication
-changes fail closed.
+reads at `www.tbank.ru`. It freezes a two-year range and serializes 24 bounded
+history windows per account. The response exposes no continuation marker, so
+the UI describes this as a requested period rather than asserting statement
+completeness. The API is undocumented, so parse or authentication changes fail
+closed.
 
 ## Retail Alfa-Bank login
 
@@ -84,13 +87,15 @@ DOM, fields, and storage are not read. Only the `initialState` object or
 For history, a short-lived observer follows the bank's normal `/history` route
 and accepts only 2xx JSON responses from the exact same-origin
 `/api/v1/operations-history/operations` path. For that POST only, it may parse a
-JSON request body of at most 64 KiB and raise an existing top-level or named
-pagination page-size field to 100. Unrelated `size` fields, filters, page
-position, headers, method, host, and path are unchanged. The body and its values
-remain page-local. The observer restores the browser API after a quiet interval.
+JSON request body of at most 64 KiB, rewrite recognized existing date fields to
+two years, reset an existing page or offset field, and raise an existing
+page-size field to 100. It constructs serial same-path continuation POSTs inside
+the page and sets only `Content-Type`. Unrelated filters, method, host, and path
+are unchanged. Bodies and values remain page-local. The observer restores the
+browser API when capture finishes.
 The coordinator always starts this route after it has accounts; dashboard
 preview operations are not trusted as evidence that history is complete. At
-most 16 responses and 8 MiB of combined response text are retained page-locally.
+most 200 responses and 8 MiB of combined response text are retained page-locally.
 The projection returns an allowlist of fields rather than raw page or response
 state, then releases its temporary response references. C++ enforces an 8 MiB
 result limit, 256-account and 20,000-operation limits, exact integer amounts,
@@ -118,11 +123,15 @@ discard balances embedded in a valid active portfolio.
 For history, a short-lived observer opens the official `/history` route. It
 accepts only same-origin `GET` responses from four fixed final paths under the
 exact VTB history prefix: `byUser`, `byProducts`, `byAccount`, and `byCard`.
-VTB's own page supplies query parameters and headers; the observer does not read
-or copy them, does not construct a request, and restores `XMLHttpRequest` after
-a quiet interval. At most 16 responses and 8 MiB of combined operation data are
-retained page-locally. The expression does not inspect cookies, login fields,
-headers, request bodies, resource timing, DOM contents, or browser storage. A
+The initial page request supplies an exact path and stable non-date query
+template. After capture, the page-owned HTTP client replays inclusive 31-day
+windows over two years and follows explicit pagination or a provable full page.
+Only recognized dates and page or offset values change. The script generates
+`x-request-id` and supplies fixed `x-initiator-service` and
+`x-smart-update-request` values; it does not inspect or copy private headers.
+At most 16 templates, 128 replay requests, and 8 MiB of combined operation data
+are retained page-locally. The expression does not inspect cookies, login
+fields, request bodies, resource timing, DOM contents, or browser storage. A
 redirect to another origin is not treated as an authenticated VTB page.
 
 Each response is checked for its expected top-level shape and an 8 MiB limit
@@ -141,10 +150,11 @@ direct credential requests at runtime.
 The expression tracks only a fixed request-stage label and accepts numeric HTTP
 status from `status`, `statusCode`, `response.status`, or
 `response.statusCode`; no response text is copied into a diagnostic. A
-non-authentication transport failure of the history service returns validated
-accounts and balances as an explicitly partial batch. A malformed history
-payload still fails closed because it indicates an unknown schema rather than a
-temporary transport outage.
+non-authentication replay failure, unsupported date or continuation template,
+timeout, or request limit returns an explicitly partial batch. Compatible prior
+operations for still-present accounts are retained only in memory and only
+inside the current two-year cutoff. A malformed history payload still fails
+closed because it indicates an unknown schema rather than a temporary outage.
 
 A login pathname can remain stale after MFA. WealthTracker therefore does not
 infer authentication from that presentation route. It verifies the exact origin

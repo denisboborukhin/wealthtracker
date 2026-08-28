@@ -193,7 +193,12 @@ Keep `build/tooling` activated while Conan builds dependencies. Use the equivale
 
 When the user corrects your approach, append a one-line rule here before ending the session. Write it concretely ("Always use X for Y"), never abstractly ("be careful with Y"). If an existing line already covers the correction, tighten it instead of adding a new one. Remove lines when the underlying issue goes away (model upgrades, refactors, process changes).
 
-- (empty)
+- Require explicit terminal pagination or a provably short final page before
+  labeling retail-bank history complete; stop queued replay after timeout.
+- Give first-open QML popups explicit geometry before using it for overlay
+  placement; closed content does not provide reliable implicit bounds.
+- Run aqt only with a supported OpenSSL-backed Python and an explicit HTTPS
+  mirror policy; never recover from repository errors by weakening TLS checks.
 
 ---
 

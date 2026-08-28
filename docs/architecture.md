@@ -23,17 +23,22 @@ by QML lint.
 
 ## Runtime data flow
 
-Built-in synchronization is:
+Native token and T-Bank synchronization is:
 
 1. Load one credential from the operating-system store.
 2. Construct a request through the connector's exact-host policy.
 3. Clear the temporary credential bytes.
 4. Parse a bounded response into `NormalizedBatch`.
-5. Follow bounded pagination with at most four requests in flight.
+5. Follow bounded pagination or history windows with at most four requests in
+   flight; retail T-Bank uses one serial request.
 6. Pair exact opposite operations across connected banks as own-account
    transfers, while preserving explicit connector markers.
 7. Filter operations to the selected inclusive reporting period and project
    the records and RUB cash-flow totals into in-memory Qt models.
+
+Alfa Online and VTB Online use a separate browser-owned flow. Their fixed page
+expressions make bounded same-origin reads through the authenticated WebView,
+project allowlisted fields, and pass no session material into C++.
 
 The default reporting period is the latest month through the current date.
 Current balances and net worth are not filtered by that period. Cross-bank
@@ -46,7 +51,7 @@ Each connector has at most one coordinator. Removing a connection or enabling
 the privacy screen aborts its replies and discards pending work. Retail T-Bank
 has separate login and synchronization coordinators so WebView callbacks,
 network replies, timers, cancellation, and session erasure have one owner.
-Retail Alfa-Bank has one WebView coordinator for both login and snapshot
+Retail Alfa-Bank has one WebView coordinator for both login and two-year history
 refresh, so its browser-owned session never crosses into the C++ network stack.
 Retail VTB follows the same session boundary and uses the authenticated page's
 own read client rather than exporting session material.
@@ -68,7 +73,9 @@ preview but does not commit the result.
    cookie-disabled, redirect-disabled request. Only `CLIENT` access succeeds.
 5. The opaque session is stored in the operating-system credential store.
 6. A native connector reads only `accounts_light_ib` and `operations` from the
-   exact T-Bank origin and validates the returned records.
+   exact T-Bank origin. It freezes a two-year UTC range and reads each account
+   serially in 24 non-overlapping windows of at most 31 days before validating
+   the returned records.
 
 The retail API is undocumented. A schema or authentication change fails closed
 without expanding the permitted host or introducing write requests.
@@ -86,11 +93,13 @@ without expanding the permitted host or introducing write requests.
 5. After accounts are available, a short-lived bounded observer follows the
    bank's normal `/history` route and accepts only successful same-origin
    `/api/v1/operations-history/operations` responses. On that POST only, it
-   raises an existing bounded JSON page-size field to 100 without changing the
-   page position, filters, headers, host, path, or method. It does not construct
-   a second request and restores the browser API after a quiet interval. This
-   happens even when the dashboard bootstrap contains a small recent-operation
-   preview; that preview is not a completion signal.
+   rewrites recognized existing date fields to two years, resets an existing
+   page or offset, and raises an existing page-size field to 100. It follows
+   serial same-path continuations inside the page and proves completion only
+   from a terminal flag or short final page. Unknown pagination remains partial.
+   Other filters, the host, and the method do not change. This happens even when
+   the dashboard bootstrap contains a short preview; that preview is not a
+   completion signal.
 6. `AlfaRetailClient` validates bounds, exact amounts, identifiers, dates,
    currencies, duplicates, and account ownership before producing a
    `NormalizedBatch`.
@@ -103,8 +112,8 @@ undocumented compatibility boundary and fails closed when either schema changes.
 The coordinator distinguishes authentication, the bank's certificate landing
 page, and a dashboard that is still loading. If no supported account state
 appears within 30 seconds after the dashboard is reached, or the operations
-response does not complete within 30 seconds, it reports an explicit
-compatibility error.
+response does not complete within 150 seconds, it reports an explicit
+compatibility error. The overall synchronization is capped at 180 seconds.
 
 ## Retail VTB
 
@@ -125,9 +134,13 @@ compatibility error.
    and balances; malformed history and unknown schemas remain blocking.
 4. For history, a bounded observer opens the official `/history` route and
    accepts only the bank page's exact same-origin GET responses for its four
-   known history variants. The page retains ownership of products, dates,
-   identifiers, headers, and endpoint selection. The observer restores the XHR
-   API after a quiet interval.
+   known history variants. It captures exact path and query templates, then the
+   page-owned client replays inclusive 31-day windows over two years. Stable
+   query values are preserved; only recognized dates and pagination positions
+   change. Explicit continuations or provable short pages are followed under a
+   128-request limit. The script supplies three fixed non-authentication headers
+   and never copies private page headers. The observer restores the XHR API
+   before replay.
 5. Raw responses remain page-local. A second fixed expression maps only bounded
    account and operation fields, associates child cards with their parent
    accounts, and marks VTB's own-account transfer codes as internal transfers.
@@ -138,10 +151,12 @@ compatibility error.
 
 No login field, cookie, authorization header, request body, or browser-storage
 value crosses into C++ or QML. The application labels partial history explicitly
-instead of reporting zero operations as a complete synchronization. The frontend
-module and routes are undocumented; missing exports, authentication failure,
-unexpected origins, and response drift all fail closed without adding new hosts
-or methods.
+instead of reporting zero operations as a complete synchronization. Partial
+Alfa and VTB refreshes retain distinct prior operations only for accounts still
+present and only inside the current two-year cutoff; this is in-memory retention
+and does not survive restart. The frontend module and routes are undocumented;
+missing exports, authentication failure, unexpected origins, and response drift
+all fail closed without adding new hosts or methods.
 
 ## External JavaScript plugins
 

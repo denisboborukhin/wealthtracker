@@ -11,9 +11,9 @@ financial records currently remain in memory and disappear when the app exits.
 
 | Connection | Accounts | Balances | Operations | Authentication |
 | --- | --- | --- | --- | --- |
-| Retail T-Bank | Yes | Yes | Yes | Embedded official login |
-| Retail Alfa-Bank | Yes | Yes | Recent snapshot | Embedded official login |
-| Retail VTB | Yes | Yes | Recent snapshot | Embedded official login |
+| Retail T-Bank | Yes | Yes | Windowed two-year request | Embedded official login |
+| Retail Alfa-Bank | Yes | Yes | Bounded two-year history; partial state explicit | Embedded official login |
+| Retail VTB | Yes | Yes | Bounded two-year history; partial state explicit | Embedded official login |
 | Alfa-Bank B2C API | Yes | Yes | Yes | Issued integration token |
 | T-Bank Business | Yes | Yes | Yes | T-API token |
 | Modulbank | Yes | Yes | Yes | API token or public sandbox token |
@@ -29,9 +29,9 @@ only; foreign-currency accounts stay visible without an implicit conversion.
 Income, spending, savings, categories, and the operations list use the inclusive
 date range selected with the two calendar controls. The default range is the
 latest month through today. Savings are an amount in rubles: RUB income minus
-RUB spending. The current release filters the operations already returned by
-connected banks; selecting an older period does not make a bank expose history
-beyond the connector limits shown above.
+RUB spending. Built-in retail synchronization targets the latest two years
+independently of this selection. The calendar filters operations already in
+memory; it does not start an older on-demand bank request.
 
 A bank's explicit own-account transfer marker is always honored. WealthTracker
 also pairs an outgoing operation with one incoming operation from another
@@ -66,12 +66,15 @@ disabled for these C++ requests. The session is removed if initial validation
 or later authentication fails. Successful connections refresh every six hours
 while the application is running when auto-update is enabled.
 
-Account histories are requested serially to avoid overlapping requests on the
-bank connection. `NO_DATA_FOUND` means an empty history, not a failed account.
+Each synchronization freezes one UTC two-year range. Account histories are
+requested serially in 24 non-overlapping windows of at most 31 days to avoid
+overlapping requests on the bank connection. `NO_DATA_FOUND` means an empty
+window, not a failed account. A failed window fails the synchronization.
 Malformed individual operations are skipped with a visible count while valid
-accounts, balances, and operations are retained. Operations marked `isInner`
-by T-Bank appear under **Внутренний перевод** and do not contribute to income,
-spending, savings, or spending-category totals.
+records are retained. The undocumented response has no continuation marker, so
+silent bank-side truncation inside a successful window cannot be detected.
+Operations marked `isInner` by T-Bank appear under **Внутренний перевод** and
+do not contribute to income, spending, savings, or spending-category totals.
 
 These retail endpoints are undocumented and unsupported by T-Bank as a public
 API. A bank-side change can break login or synchronization. WealthTracker does
@@ -108,31 +111,35 @@ inline `window.runApp({ appState: ... })`/`initialState` dashboard bootstrap for
 accounts and balances. It then installs a short-lived observer while Alfa's
 normal `/history` page loads. The observer accepts only successful responses
 from the exact same-origin `/api/v1/operations-history/operations` path. For
-that POST only, it parses a bounded JSON body and raises an existing top-level
-or pagination page-size field to 100; it does not create a new request, inspect
-headers, change filters or pagination position, or export the body. It restores
-the browser API after the response stream is quiet. The history page is opened
-after every successful account projection, even if the dashboard bootstrap
-already contains a small recent-operation preview. That preview is merged and
-deduplicated but is never treated as proof that history loading is complete.
+that POST only, it parses a body of at most 64 KiB, rewrites recognized existing
+date fields to the latest two years, resets an existing page or offset field,
+and raises an existing page-size field to 100. It then follows serial page-local
+POST continuations on the same path. Unrelated filters stay unchanged, and only
+`Content-Type` is set on continuation requests. An explicit terminal flag or a
+short final page proves completion; an unknown continuation shape is partial.
+The browser API is restored when capture finishes. The history page is opened
+after every successful account projection, even if the dashboard contains a
+short preview. That preview is merged and deduplicated but is not a completion
+signal.
 The resulting projection contains only these bounded fields:
 
 - at most 256 account identifiers, names, types, currencies, masked numbers,
   and balances;
-- at most 20,000 recent operations with account, date, amount, description,
+- at most 20,000 operations projected from the targeted two-year history with
+  account, date, amount, description,
   merchant, category, MCC, and internal-transfer state;
 - a version and authenticated flag.
 
 It does not read cookie values, authorization headers, form fields, local
-storage, rendered text, or arbitrary DOM elements. The bounded pagination-body
-rewrite stays inside the bank page. Inline script scanning is limited by count
-and size. History capture requires 2xx JSON, stores at most 16 responses, and
-limits their combined text to 8 MiB. Raw bootstrap, request, and response objects
-never leave the bank page. C++ limits the returned
-projection to 8 MiB, validates exact integer minor units and ISO dates, rejects
-malformed accounts, and skips malformed or duplicate operations with a visible
-warning count. Internal transfers do not contribute
-to income, spending, savings, or category totals.
+storage, rendered text, or arbitrary DOM elements. Request rewriting and
+pagination stay inside the bank page. Inline script scanning is limited by
+count and size. History capture requires 2xx JSON, stores at most 200 responses,
+and limits their combined text to 8 MiB. Raw bootstrap, request, and response
+objects never leave the bank page. C++ limits the returned projection to 8 MiB,
+validates exact integer minor units and ISO dates, rejects malformed accounts,
+and skips malformed or duplicate operations with a visible warning count.
+Internal transfers do not contribute to income, spending, savings, or category
+totals.
 Operations carrying Alfa's `cashout` marker use the source account or masked
 card from the sender object when needed and appear under **Наличные**.
 
@@ -140,15 +147,20 @@ After Alfa redirects back to its dashboard, the dialog shows **Вход выпо
 Получаем счета из Альфа-Онлайн…**. If the bank no longer exposes a supported
 bootstrap schema, synchronization stops with a compatibility error after 30
 seconds instead of leaving the login dialog waiting indefinitely. The same
-bounded failure applies if the history response does not finish.
+bounded failure applies if history does not finish within 150 seconds; the
+overall synchronization is capped at 180 seconds.
 
 The system WebView retains Alfa's browser session so the app can reload the
 dashboard every six hours while auto-update is enabled. Disconnecting clears
 that browser session. If Alfa redirects a refresh back to its authentication
 host, the connection is marked expired and its in-memory rows are removed.
 
-This path uses undocumented Alfa Online page state. It may provide fewer
-operations than a full statement and can stop working after a frontend change.
+This path uses undocumented Alfa Online page state. If the two-year range or a
+terminal page cannot be proven, the UI says the history is incomplete and a
+partial refresh retains distinct operations from still-present accounts inside
+the current two-year cutoff. That retention is in memory and does not survive
+an app restart. The connector may still provide fewer operations than a bank
+statement and can stop working after a frontend change.
 WealthTracker does not bypass certificate validation, submit direct credential
 requests, extract cookies, replay private headers, or call write endpoints. The
 separate **Альфа-Банк API** row remains the supported option for users who
@@ -173,12 +185,16 @@ For operations, the expression temporarily observes `XMLHttpRequest`, opens the
 official `/history` screen, and accepts only successful same-origin `GET`
 responses whose exact final path component is `byUser`, `byProducts`,
 `byAccount`, or `byCard` under
-`/msa/api-gw/private/history-hub/history-hub-homer/v1/history/`. VTB's page,
-not WealthTracker, selects products, dates, request identifiers, feature headers,
-and the compatible endpoint. The observer restores the browser API after the
-bank response stream is quiet. It retains at most 16 responses and 8 MiB of
-combined operation data. This produces the recent interval loaded by VTB's
-history screen; it is not documented as a complete account statement.
+`/msa/api-gw/private/history-hub/history-hub-homer/v1/history/`. It captures at
+most 16 exact path and query templates, prefers `byUser` when available, and
+restores the browser API. The page-owned HTTP client then replays the selected
+template serially over inclusive 31-day windows covering two years. Non-date
+query fields are preserved; only recognized `dateFrom`, `dateTo`, page, or
+offset fields change. Continuation follows explicit `hasNext`, `hasMore`, or
+`last` metadata, or a full page with a known page size. WealthTracker supplies
+only a generated request ID and the fixed `web_history_page` and smart-update
+headers; it never copies private headers. Replay is capped at 128 requests and
+8 MiB of combined operation data.
 
 A portfolio response that is still loading is retried at most twice, matching
 the current bank frontend. The financial-summary route is an optional balance
@@ -203,9 +219,11 @@ response from the page-owned read client marks the connection expired. The SPA
 pathname is not used as an authentication signal because presentation routing
 can remain unchanged after the session transition. An unknown origin, route
 contract, module shape, or response schema stops synchronization instead of
-broadening access. A transport failure limited to the page-owned history request
-preserves validated accounts and balances and reports **история операций временно
-недоступна**; it does not claim that zero operations is a complete result.
+broadening access. An unsupported date or continuation template, timeout,
+request limit, or non-authentication replay failure reports **история за 2 года
+неполная**. A partial refresh retains distinct operations from still-present
+accounts inside the current two-year cutoff; retention is in memory only.
+Authentication and malformed history schemas remain blocking.
 Compatibility errors include only fixed stage codes such as `VTB-P3` or
 `VTB-H1`; codes contain no account, operation, balance, cookie, or response
 value.
