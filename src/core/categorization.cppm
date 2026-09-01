@@ -90,12 +90,31 @@ std::string normalized_text(const std::string& value) {
     std::string result;
     result.reserve(value.size());
     bool previous_was_space = true;
-    for (const unsigned char character : value) {
+    for (std::size_t index = 0; index < value.size(); ++index) {
+        const auto character = static_cast<unsigned char>(value[index]);
         if (std::isspace(character) != 0) {
             if (!previous_was_space) {
                 result.push_back(' ');
             }
             previous_was_space = true;
+        } else if (character == 0xd0U && index + 1 < value.size()) {
+            const auto continuation = static_cast<unsigned char>(value[index + 1]);
+            if (continuation == 0x81U) {
+                result.push_back(static_cast<char>(0xd1U));
+                result.push_back(static_cast<char>(0x91U));
+                ++index;
+            } else if (continuation >= 0x90U && continuation <= 0x9fU) {
+                result.push_back(static_cast<char>(0xd0U));
+                result.push_back(static_cast<char>(continuation + 0x20U));
+                ++index;
+            } else if (continuation >= 0xa0U && continuation <= 0xafU) {
+                result.push_back(static_cast<char>(0xd1U));
+                result.push_back(static_cast<char>(continuation - 0x20U));
+                ++index;
+            } else {
+                result.push_back(static_cast<char>(character));
+            }
+            previous_was_space = false;
         } else {
             result.push_back(character < 128 ? static_cast<char>(std::tolower(character))
                                              : static_cast<char>(character));

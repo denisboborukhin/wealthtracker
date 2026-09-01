@@ -91,6 +91,21 @@ TEST_CASE("categorization falls through mappings and transaction classifiers") {
     CHECK_FALSE(categorizer.categorize(unknown).category_id);
 }
 
+TEST_CASE("categorization normalizes Russian letter case") {
+    CategorizerConfig config;
+    config.remembered_payees.emplace("Пятёрочка", "groceries");
+    config.bank_category_mapping.emplace("ТРАНСПОРТ", "transport");
+    const Categorizer categorizer{std::move(config)};
+
+    const auto purchase = transaction(
+        "t1", "card", day(2026, 7, 1), -500, "ПЯТЁРОЧКА");
+    CHECK(categorizer.categorize(purchase).category_id == "groceries");
+
+    auto ride = transaction("t2", "card", day(2026, 7, 1), -500);
+    ride.bank_category = "транспорт";
+    CHECK(categorizer.categorize(ride).category_id == "transport");
+}
+
 TEST_CASE("transfer detection requires equal opposite amounts across accounts") {
     const std::vector transactions{
         transaction(

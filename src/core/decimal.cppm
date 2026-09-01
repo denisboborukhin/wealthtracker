@@ -38,7 +38,6 @@ public:
     [[nodiscard]] std::int32_t scale() const noexcept;
     [[nodiscard]] bool is_zero() const noexcept;
     [[nodiscard]] std::string to_string() const;
-    [[nodiscard]] double to_double() const;
     [[nodiscard]] std::expected<std::int64_t, DecimalError> to_int64_rounded() const;
 
     [[nodiscard]] std::expected<Decimal, DecimalError> add(const Decimal& other) const;
@@ -182,10 +181,6 @@ std::string Decimal::to_string() const {
     }
     digits.insert(digits.size() - static_cast<std::size_t>(scale_), 1, '.');
     return negative ? "-" + digits : digits;
-}
-
-double Decimal::to_double() const {
-    return std::stod(to_string());
 }
 
 std::expected<std::int64_t, DecimalError> Decimal::to_int64_rounded() const {

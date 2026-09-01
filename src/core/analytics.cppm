@@ -172,7 +172,9 @@ std::expected<CashflowSummary, AnalyticsError> summarize_cashflow(
     CashflowSummary summary{
         .income = Money::from_minor(0, reporting_currency),
         .spending = Money::from_minor(0, reporting_currency),
-        .net = Money::from_minor(0, reporting_currency)};
+        .net = Money::from_minor(0, reporting_currency),
+        .savings_rate = std::nullopt,
+        .spending_by_category = {}};
     std::map<CategoryId, Money> category_totals;
 
     for (const auto& transaction : transactions) {
@@ -287,7 +289,8 @@ std::expected<PortfolioSummary, AnalyticsError> value_portfolio(
         .market_value = Money::from_minor(0, reporting_currency),
         .cost_basis = Money::from_minor(0, reporting_currency),
         .unrealized_pnl = Money::from_minor(0, reporting_currency),
-        .realized_pnl = Money::from_minor(0, reporting_currency)};
+        .realized_pnl = Money::from_minor(0, reporting_currency),
+        .positions = {}};
     const Decimal zero = Decimal::from_integer(0);
 
     for (const auto& position : positions) {
@@ -360,6 +363,7 @@ std::expected<double, XirrError> calculate_xirr(
     bool has_positive = false;
     bool has_negative = false;
     LocalDate first_date = cash_flows.front().date;
+    LocalDate last_date = first_date;
     for (const auto& cash_flow : cash_flows) {
         if (cash_flow.amount.currency() != currency) {
             return std::unexpected(XirrError::currency_mismatch);
@@ -367,9 +371,13 @@ std::expected<double, XirrError> calculate_xirr(
         has_positive = has_positive || cash_flow.amount.is_positive();
         has_negative = has_negative || cash_flow.amount.is_negative();
         first_date = std::min(first_date, cash_flow.date);
+        last_date = std::max(last_date, cash_flow.date);
     }
     if (!has_positive || !has_negative) {
         return std::unexpected(XirrError::no_sign_change);
+    }
+    if (first_date == last_date) {
+        return std::unexpected(XirrError::no_solution);
     }
 
     constexpr std::array<long double, 25> candidate_rates{

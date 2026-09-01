@@ -166,3 +166,13 @@ TEST_CASE("XIRR rejects flows without both signs") {
     REQUIRE_FALSE(calculate_xirr(flows));
     CHECK(calculate_xirr(flows).error() == XirrError::no_sign_change);
 }
+
+TEST_CASE("XIRR rejects cash flows without a time interval") {
+    const std::vector flows{
+        DatedCashFlow{day(2026, 1, 1), Money::from_minor(-100, Currency::rub())},
+        DatedCashFlow{day(2026, 1, 1), Money::from_minor(100, Currency::rub())}};
+
+    const auto result = calculate_xirr(flows);
+    REQUIRE_FALSE(result);
+    CHECK(result.error() == XirrError::no_solution);
+}
