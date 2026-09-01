@@ -2,11 +2,13 @@
 
 #include <algorithm>
 #include <cstddef>
+#include <string>
 #include <string_view>
 
 #include <sodium.h>
 
 import wt.platform.vault_crypto;
+import wt.platform.credential_store;
 
 TEST_CASE("vault key wraps and unwraps with Argon2id", "[platform][crypto]") {
     auto key = wealthtracker::platform::VaultCrypto::generate_database_key();
@@ -63,4 +65,15 @@ TEST_CASE("wrapped key serialization is versioned and rejects corruption", "[pla
     auto corrupted = wealthtracker::platform::VaultCrypto::deserialize(bytes);
     REQUIRE_FALSE(corrupted.has_value());
     REQUIRE(corrupted.error().code == wealthtracker::platform::CryptoErrorCode::invalid_serialization);
+}
+
+TEST_CASE("credential identifiers reject malformed UTF-8", "[platform][credentials]") {
+    auto store = wealthtracker::platform::make_system_credential_store(
+        "org.wealthtracker.tests");
+    const std::string malformed(1, static_cast<char>(0xff));
+
+    const auto result = store->get(malformed);
+    REQUIRE_FALSE(result);
+    CHECK(result.error().code ==
+          wealthtracker::platform::CredentialErrorCode::invalid_argument);
 }

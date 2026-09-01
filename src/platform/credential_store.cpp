@@ -34,9 +34,68 @@ CredentialError invalid_account() {
         CredentialErrorCode::invalid_argument, 0, "credential account must not be empty"};
 }
 
+constexpr std::size_t maximum_secret_size = 65'536;
+
+bool valid_utf8(std::string_view value) {
+    for (std::size_t index = 0; index < value.size();) {
+        const auto first = static_cast<std::uint8_t>(value[index]);
+        if (first <= 0x7fU) {
+            ++index;
+            continue;
+        }
+        if (first >= 0xc2U && first <= 0xdfU) {
+            if (index + 1 >= value.size()) {
+                return false;
+            }
+            const auto second = static_cast<std::uint8_t>(value[index + 1]);
+            if (second < 0x80U || second > 0xbfU) {
+                return false;
+            }
+            index += 2;
+            continue;
+        }
+        if (first >= 0xe0U && first <= 0xefU) {
+            if (index + 2 >= value.size()) {
+                return false;
+            }
+            const auto second = static_cast<std::uint8_t>(value[index + 1]);
+            const auto third = static_cast<std::uint8_t>(value[index + 2]);
+            const bool valid_second =
+                second >= 0x80U && second <= 0xbfU &&
+                (first != 0xe0U || second >= 0xa0U) &&
+                (first != 0xedU || second <= 0x9fU);
+            if (!valid_second || third < 0x80U || third > 0xbfU) {
+                return false;
+            }
+            index += 3;
+            continue;
+        }
+        if (first >= 0xf0U && first <= 0xf4U) {
+            if (index + 3 >= value.size()) {
+                return false;
+            }
+            const auto second = static_cast<std::uint8_t>(value[index + 1]);
+            const auto third = static_cast<std::uint8_t>(value[index + 2]);
+            const auto fourth = static_cast<std::uint8_t>(value[index + 3]);
+            const bool valid_second =
+                second >= 0x80U && second <= 0xbfU &&
+                (first != 0xf0U || second >= 0x90U) &&
+                (first != 0xf4U || second <= 0x8fU);
+            if (!valid_second || third < 0x80U || third > 0xbfU ||
+                fourth < 0x80U || fourth > 0xbfU) {
+                return false;
+            }
+            index += 4;
+            continue;
+        }
+        return false;
+    }
+    return true;
+}
+
 bool valid_identifier(std::string_view value) {
     return !value.empty() && value.size() <= 1'024 &&
-           value.find('\0') == std::string_view::npos;
+           value.find('\0') == std::string_view::npos && valid_utf8(value);
 }
 
 class UnsupportedCredentialStore final : public CredentialStore {
@@ -118,7 +177,7 @@ public:
     std::expected<void, CredentialError> put(
         std::string_view account,
         std::span<const std::byte> secret) override {
-        if (!valid_identifier(account) || secret.empty() || secret.size() > 65'536) {
+        if (!valid_identifier(account) || secret.empty() || secret.size() > maximum_secret_size) {
             return std::unexpected(!valid_identifier(account)
                                        ? invalid_account()
                                        : CredentialError{CredentialErrorCode::invalid_argument,
@@ -142,6 +201,10 @@ public:
             3,
             &kCFTypeDictionaryKeyCallBacks,
             &kCFTypeDictionaryValueCallBacks));
+        if (query.get() == nullptr) {
+            return std::unexpected(CredentialError{
+                CredentialErrorCode::platform_error, 0, "create Keychain query"});
+        }
         // Reference the caller's secure buffer only for the duration of this
         // synchronous call instead of creating an additional unwipeable CFData copy.
         CfRef<CFDataRef> secret_data(CFDataCreateWithBytesNoCopy(
@@ -163,6 +226,10 @@ public:
             2,
             &kCFTypeDictionaryKeyCallBacks,
             &kCFTypeDictionaryValueCallBacks));
+        if (update.get() == nullptr) {
+            return std::unexpected(CredentialError{
+                CredentialErrorCode::platform_error, 0, "create Keychain update"});
+        }
         const OSStatus update_status = SecItemUpdate(query.get(), update.get());
         if (update_status == errSecSuccess) {
             return {};
@@ -186,6 +253,10 @@ public:
             5,
             &kCFTypeDictionaryKeyCallBacks,
             &kCFTypeDictionaryValueCallBacks));
+        if (add.get() == nullptr) {
+            return std::unexpected(CredentialError{
+                CredentialErrorCode::platform_error, 0, "create Keychain item"});
+        }
         const OSStatus status = SecItemAdd(add.get(), nullptr);
         if (status != errSecSuccess) {
             return std::unexpected(keychain_error(status, "store Keychain item"));
@@ -199,6 +270,10 @@ public:
         }
         auto service = make_cf_string(service_);
         auto account_name = make_cf_string(account);
+        if (service.get() == nullptr || account_name.get() == nullptr) {
+            return std::unexpected(CredentialError{
+                CredentialErrorCode::platform_error, 0, "encode Keychain attributes"});
+        }
         const void* keys[] = {
             kSecClass, kSecAttrService, kSecAttrAccount, kSecReturnData, kSecMatchLimit};
         const void* values[] = {
@@ -214,16 +289,30 @@ public:
             5,
             &kCFTypeDictionaryKeyCallBacks,
             &kCFTypeDictionaryValueCallBacks));
+        if (query.get() == nullptr) {
+            return std::unexpected(CredentialError{
+                CredentialErrorCode::platform_error, 0, "create Keychain query"});
+        }
         CFTypeRef raw_result = nullptr;
         const OSStatus status = SecItemCopyMatching(query.get(), &raw_result);
-        CfRef<CFDataRef> data(static_cast<CFDataRef>(raw_result));
         if (status != errSecSuccess) {
+            if (raw_result != nullptr) {
+                CFRelease(raw_result);
+            }
             return std::unexpected(keychain_error(status, "read Keychain item"));
         }
-        const auto size = static_cast<std::size_t>(CFDataGetLength(data.get()));
-        if (size == 0) {
+        if (raw_result == nullptr || CFGetTypeID(raw_result) != CFDataGetTypeID()) {
+            if (raw_result != nullptr) {
+                CFRelease(raw_result);
+            }
             return std::unexpected(CredentialError{
-                CredentialErrorCode::platform_error, 0, "Keychain item is empty"});
+                CredentialErrorCode::platform_error, 0, "Keychain returned invalid data"});
+        }
+        CfRef<CFDataRef> data(static_cast<CFDataRef>(raw_result));
+        const auto size = static_cast<std::size_t>(CFDataGetLength(data.get()));
+        if (size == 0 || size > maximum_secret_size || CFDataGetBytePtr(data.get()) == nullptr) {
+            return std::unexpected(CredentialError{
+                CredentialErrorCode::platform_error, 0, "Keychain item size is invalid"});
         }
         auto secret = SecureBuffer::create(size);
         if (!secret) {
@@ -240,6 +329,10 @@ public:
         }
         auto service = make_cf_string(service_);
         auto account_name = make_cf_string(account);
+        if (service.get() == nullptr || account_name.get() == nullptr) {
+            return std::unexpected(CredentialError{
+                CredentialErrorCode::platform_error, 0, "encode Keychain attributes"});
+        }
         const void* keys[] = {kSecClass, kSecAttrService, kSecAttrAccount};
         const void* values[] = {
             kSecClassGenericPassword, service.get(), account_name.get()};
@@ -250,6 +343,10 @@ public:
             3,
             &kCFTypeDictionaryKeyCallBacks,
             &kCFTypeDictionaryValueCallBacks));
+        if (query.get() == nullptr) {
+            return std::unexpected(CredentialError{
+                CredentialErrorCode::platform_error, 0, "create Keychain query"});
+        }
         const OSStatus status = SecItemDelete(query.get());
         if (status == errSecItemNotFound) {
             return {};
@@ -353,9 +450,11 @@ public:
                 CredFree(value);
             }
         } guard{credential};
-        if (credential->CredentialBlobSize == 0) {
+        if (credential->CredentialBlobSize == 0 ||
+            credential->CredentialBlobSize > maximum_secret_size ||
+            credential->CredentialBlob == nullptr) {
             return std::unexpected(CredentialError{
-                CredentialErrorCode::platform_error, 0, "Windows credential is empty"});
+                CredentialErrorCode::platform_error, 0, "Windows credential size is invalid"});
         }
         auto secret = SecureBuffer::create(credential->CredentialBlobSize);
         if (!secret) {
