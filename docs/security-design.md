@@ -16,8 +16,10 @@ Credential Manager. Linux currently has no supported secure credential backend,
 so token and API-session connections that require it fail closed there.
 
 Credentials are loaded for request construction and temporary byte arrays are
-cleared immediately afterward. They are not exposed as QML properties or
-included in status text. Removing a connection deletes its credential entry.
+cleared immediately afterward. Persisted values are not exposed as QML
+properties or included in status text. A token or external-plugin answer typed
+in the interface exists temporarily in its QML input control, which is cleared
+after submission. Removing a connection deletes its credential entry.
 Alfa Online and VTB Online are different: the system WebView owns each browser
 session, and WealthTracker never extracts or copies cookie values into
 application memory.

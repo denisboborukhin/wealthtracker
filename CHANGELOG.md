@@ -16,7 +16,9 @@
 - Retail T-Bank history requests are serialized, bounded by a transfer timeout,
   and no longer read failed TLS replies.
 - Internal T-Bank transfers use a separate category and are excluded from
-  income, spending, savings-rate, and spending-category totals.
+  income, spending, savings, and spending-category totals.
+- Retail Alfa-Bank and VTB connections use their authenticated WebViews for
+  bounded two-year operation history and report incomplete retrieval explicitly.
 - A malformed operation is reported and skipped without discarding valid
   account balances and other operations from the same synchronization.
 - Split bank synchronization, T-Bank login, and external-plugin execution into
@@ -29,6 +31,8 @@
   controls from the interface.
 - Reframed the lock control as a privacy screen and cancel active work when it
   is enabled.
+- Removed the nonfunctional operation search field, made transaction dates and
+  equal-time ordering unambiguous, and bounded long connection forms.
 - Rewrote documentation to distinguish implemented behavior from standalone
   storage components and planned features.
 

@@ -17,9 +17,11 @@ Headers are retained only where Qt `moc` or a platform ABI requires them.
 - `ui`: QML pages and reusable visual components.
 
 The QML root receives one explicit `app` property. It has no database handle,
-credential object, token, T-Bank session value, or retail-bank cookie value. List
-delegates declare their roles explicitly so runtime binding errors are caught
-by QML lint.
+credential object, persisted token, T-Bank session value, or retail-bank cookie
+value. A token or external-plugin answer typed by the user temporarily exists in
+its input control until submission; the controller converts it to temporary
+bytes and the QML field is cleared. List delegates declare their roles
+explicitly so runtime binding errors are caught by QML lint.
 
 ## Runtime data flow
 

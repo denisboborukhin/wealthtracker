@@ -99,8 +99,9 @@ plugin.
 
 - C++23 named modules separate finance, storage, platform, connector, and
   application code.
-- Qt Quick/QML receives models and commands, not credentials or bank-session
-  projections.
+- Official bank credentials and session projections are not exposed as QML
+  properties or status text. Tokens and external-plugin answers entered in the
+  interface exist in QML memory only until submission and are then cleared.
 - Official tokens and the T-Bank API session use macOS Keychain or Windows
   Credential Manager. Alfa Online and VTB Online browser sessions stay inside
   the operating-system WebView and are removed when a connection is deleted.

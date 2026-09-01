@@ -5,8 +5,8 @@ libraries but currently has no secure credential backend for live connections.
 
 ## Toolchain
 
-The bootstrap script installs pinned CMake, Ninja, Conan, and the official Qt
-SDK under the ignored `build/` directory:
+On macOS, the bootstrap script installs pinned CMake, Ninja, Conan, and the
+official Qt SDK under the ignored `build/` directory:
 
 ```sh
 ./scripts/bootstrap.sh
