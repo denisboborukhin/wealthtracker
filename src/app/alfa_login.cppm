@@ -44,6 +44,14 @@ struct AlfaLoadFailure {
     return QUrl{QStringLiteral("https://alfa.bank/cert")};
 }
 
+[[nodiscard]] bool is_alfa_login_url(const QUrl& url) noexcept {
+    const auto host = url.host().toLower();
+    return url.isValid() && url.scheme() == QStringLiteral("https") &&
+           (host == QStringLiteral("web.alfabank.ru") ||
+            host == QStringLiteral("private.auth.alfabank.ru")) &&
+           (url.port() == -1 || url.port() == 443) && url.userInfo().isEmpty();
+}
+
 [[nodiscard]] AlfaLoadFailure
 classify_alfa_load_failure(const QUrl& failedUrl, const QString& errorString) {
     const auto host = failedUrl.host().toLower();
@@ -129,6 +137,13 @@ public:
                         if (!active_) {
                             return;
                         }
+                        if (!is_alfa_login_url(information.url())) {
+                            fail({AlfaLoginFailureKind::Protocol,
+                                  QStringLiteral(
+                                      "Альфа-Банк открыл страницу вне официального домена. "
+                                      "Вход остановлен.")});
+                            return;
+                        }
                         if (information.status() == QWebViewLoadingInfo::LoadStatus::Failed) {
                             load_succeeded_ = false;
                             auto failure = classify_alfa_load_failure(
@@ -187,6 +202,11 @@ private:
 
     void begin(const Mode mode, const QUrl& url, QString status) {
         stop(false, false);
+        if (!is_alfa_login_url(url)) {
+            fail({AlfaLoginFailureKind::Protocol,
+                  QStringLiteral("Адрес Альфа-Банка не прошёл проверку безопасности")});
+            return;
+        }
         ++generation_;
         mode_ = mode;
         active_ = true;

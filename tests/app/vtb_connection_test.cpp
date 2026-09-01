@@ -85,6 +85,8 @@ TEST_CASE("VTB is an available embedded retail connection") {
     controller.describeBankConnection(QStringLiteral("vtb-retail"));
     CHECK(controller.connectionMessage().contains(QStringLiteral("системный WebView")));
     CHECK(controller.connectionMessage().contains(QStringLiteral("не читает cookies")));
+    CHECK(controller.connectionMessage().contains(QStringLiteral("жёстких лимитов")));
+    CHECK_FALSE(controller.connectionMessage().contains(QStringLiteral("три фиксированных")));
 
     QFile page(QStringLiteral(
         WEALTHTRACKER_SOURCE_DIR "/ui/qml/pages/ConnectionsPage.qml"));
@@ -499,6 +501,59 @@ TEST_CASE("VTB synchronization follows the current portfolio and page history co
               "globalThis.__wealthtrackerVtbSync.status === 'failed' && "
               "globalThis.__wealthtrackerVtbSync.reason === 'VTB-P3'"))
               .toBool());
+}
+
+TEST_CASE("VTB projection marks size truncation as partial history") {
+    using wealthtracker::app::parse_vtb_financial_projection;
+    using wealthtracker::app::vtb_financial_projection_script;
+
+    QJSEngine engine;
+    const auto setup = engine.evaluate(QStringLiteral(R"JS(
+        var globalThis = this
+        globalThis.location = { href: 'https://online.vtb.ru/' }
+        globalThis.URL = function() {
+            return { protocol: 'https:', hostname: 'online.vtb.ru', port: '',
+                     username: '', password: '', origin: 'https://online.vtb.ru',
+                     pathname: '/' }
+        }
+        globalThis.TextEncoder = function() {
+            this.encode = function(value) { return { byteLength: String(value).length } }
+        }
+        const operations = []
+        for (let index = 0; index < 20000; ++index) {
+            operations.push({
+                operationId: 'operation-' + index,
+                accountProductId: 'account-1',
+                operationDate: '2026-08-14T12:30:00.000Z',
+                debet: true,
+                operationAmount: { sum: 1, currency: 'RUB' },
+                description: 'x'.repeat(256),
+                merchant: { title: 'y'.repeat(256) },
+                category: { name: 'z'.repeat(256) }
+            })
+        }
+        globalThis.__wealthtrackerVtbSync = {
+            status: 'ready', historyComplete: true,
+            portfolio: { data: { accounts: [{
+                publicId: 'account-1', name: 'Account',
+                balance: { sum: 100, currency: 'RUB' }
+            }] } },
+            balances: {}, history: { operations: operations }
+        }
+    )JS"));
+    REQUIRE_FALSE(setup.isError());
+
+    const auto evaluated = engine.evaluate(vtb_financial_projection_script());
+    REQUIRE_FALSE(evaluated.isError());
+    const auto parsed = parse_vtb_financial_projection(
+        evaluated.toString(), QDateTime::currentDateTimeUtc());
+    REQUIRE(parsed);
+    CHECK(parsed->diagnostic == QStringLiteral("VTB-H2"));
+    REQUIRE(parsed->batch);
+    CHECK(parsed->batch->transactions.size() < 20000);
+    REQUIRE(parsed->batch->warnings.size() == 1);
+    CHECK(parsed->batch->warnings.front().code ==
+          QStringLiteral("vtb-history-incomplete"));
 }
 
 TEST_CASE("VTB projection maps child cards and bank transfer markers") {

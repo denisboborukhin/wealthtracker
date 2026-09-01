@@ -26,6 +26,7 @@
 #include <optional>
 #include <span>
 #include <string>
+#include <tuple>
 #include <utility>
 #include <vector>
 
@@ -280,6 +281,14 @@ QString formatSyncDateTime(const QDateTime& value) {
     auto local = value.toLocalTime();
     return QLocale(QLocale::Russian, QLocale::Russia)
         .toString(local, QStringLiteral("d MMMM, HH:mm"));
+}
+
+QString formatTransactionDate(const QDate& value, const QDate& today) {
+    if (value == today) {
+        return QStringLiteral("Сегодня");
+    }
+    return QLocale(QLocale::Russian, QLocale::Russia)
+        .toString(value, QStringLiteral("d MMM yyyy"));
 }
 
 bool canPersistZenPreference(
@@ -1257,6 +1266,10 @@ void AppController::scheduleVtbAutoUpdateAfter(const QDateTime& from) {
 
 void AppController::loadDemoData() {
     demo_mode_ = true;
+    const auto today = QDate::currentDate();
+    const auto demoDate = [this](const int daysBeforeEnd) {
+        return std::max(reporting_from_, reporting_to_.addDays(-daysBeforeEnd));
+    };
     accounts_.replace({
         {QStringLiteral("Black"), QStringLiteral("Т-Банк"), QStringLiteral("Дебетовая карта"),
          QStringLiteral("328 450"), QStringLiteral("₽"), QStringLiteral("#F9C74F")},
@@ -1272,18 +1285,23 @@ void AppController::loadDemoData() {
 
     transactions_.replace({
         {QStringLiteral("Перекрёсток"), QStringLiteral("Продукты и супермаркеты"),
-         QStringLiteral("Продукты"), QStringLiteral("−4 860 ₽"), QStringLiteral("Сегодня"), false},
+         QStringLiteral("Продукты"), QStringLiteral("−4 860 ₽"),
+         formatTransactionDate(demoDate(0), today), false},
         {QStringLiteral("Заработная плата"), QStringLiteral("ООО «Компания»"),
-         QStringLiteral("Доход"), QStringLiteral("+240 000 ₽"), QStringLiteral("29 июля"), true},
+         QStringLiteral("Доход"), QStringLiteral("+240 000 ₽"),
+         formatTransactionDate(demoDate(2), today), true},
         {QStringLiteral("Яндекс Go"), QStringLiteral("Поездка"),
-         QStringLiteral("Транспорт"), QStringLiteral("−1 170 ₽"), QStringLiteral("29 июля"), false},
+         QStringLiteral("Транспорт"), QStringLiteral("−1 170 ₽"),
+         formatTransactionDate(demoDate(2), today), false},
         {QStringLiteral("Пополнение брокерского счёта"), QStringLiteral("Внутренний перевод"),
-         QStringLiteral("Перевод"), QStringLiteral("−50 000 ₽"), QStringLiteral("28 июля"), false,
-         true},
+         QStringLiteral("Перевод"), QStringLiteral("−50 000 ₽"),
+         formatTransactionDate(demoDate(3), today), false, true},
         {QStringLiteral("Купон ОФЗ"), QStringLiteral("Т-Инвестиции"),
-         QStringLiteral("Инвестиционный доход"), QStringLiteral("+3 480 ₽"), QStringLiteral("27 июля"), true},
+         QStringLiteral("Инвестиционный доход"), QStringLiteral("+3 480 ₽"),
+         formatTransactionDate(demoDate(4), today), true},
         {QStringLiteral("ЖКХ"), QStringLiteral("Единый платёжный документ"),
-         QStringLiteral("Дом"), QStringLiteral("−12 640 ₽"), QStringLiteral("25 июля"), false},
+         QStringLiteral("Дом"), QStringLiteral("−12 640 ₽"),
+         formatTransactionDate(demoDate(6), today), false},
     });
 
     categories_.replace({
@@ -1623,7 +1641,6 @@ void AppController::synchronizeInvestments() {
             return;
         }
         private_->investment_reply.clear();
-        const QByteArray body = reply->readAll();
         if (reply->error() != QNetworkReply::NoError) {
             sync_status_ =
                 QStringLiteral("Ошибка Т-Инвест: %1").arg(reply->errorString());
@@ -1631,6 +1648,7 @@ void AppController::synchronizeInvestments() {
             reply->deleteLater();
             return;
         }
+        const QByteArray body = reply->readAll();
         const auto accounts =
             wealthtracker::connectors::TInvestClient::parseAccountsResponse(body);
         if (!accounts || accounts->accounts.isEmpty()) {
@@ -1799,8 +1817,10 @@ void AppController::rebuildBankModels() {
     struct DatedTransaction {
         TransactionRow row;
         QDateTime sortTime;
+        QString sortKey;
     };
     struct SourceTransaction {
+        QString connectorId;
         QString institution;
         const wealthtracker::connectors::NormalizedTransaction* transaction{};
     };
@@ -1813,7 +1833,10 @@ void AppController::rebuildBankModels() {
     std::int64_t rubNetWorth = 0;
     std::int64_t reportIncome = 0;
     std::int64_t reportSpending = 0;
-    bool totalsValid = true;
+    bool netWorthValid = true;
+    bool incomeValid = true;
+    bool spendingValid = true;
+    bool categoriesValid = true;
     const auto today = QDate::currentDate();
     const ReportingPeriod reportingPeriod{reporting_from_, reporting_to_};
 
@@ -1832,7 +1855,7 @@ void AppController::rebuildBankModels() {
         for (const auto& snapshot : bank->balances) {
             balances.insert(snapshot.accountExternalId, snapshot.balance);
             if (snapshot.balance.currency == QStringLiteral("RUB")) {
-                totalsValid &= checkedAdd(rubNetWorth, snapshot.balance.minorUnits);
+                netWorthValid &= checkedAdd(rubNetWorth, snapshot.balance.minorUnits);
             }
         }
         for (const auto& account : bank->accounts) {
@@ -1847,7 +1870,7 @@ void AppController::rebuildBankModels() {
             });
         }
         for (const auto& transaction : bank->transactions) {
-            sourceTransactions.push_back({institution, &transaction});
+            sourceTransactions.push_back({bank.key(), institution, &transaction});
             ownedTransactions.push_back(
                 {bank.key(), transaction.accountExternalId, transaction.externalId,
                  transaction.postingDate, transaction.occurredAt, transaction.amount.minorUnits,
@@ -1883,41 +1906,46 @@ void AppController::rebuildBankModels() {
                                   : transaction.bankCategory.trimmed();
         const auto sortTime = transaction.occurredAt.value_or(
             QDateTime(transaction.postingDate, QTime(0, 0), QTimeZone::UTC));
-        const auto dateText =
-            transaction.postingDate == today
-                ? QStringLiteral("Сегодня")
-                : QLocale(QLocale::Russian, QLocale::Russia)
-                      .toString(transaction.postingDate, QStringLiteral("d MMMM"));
+        const auto dateText = formatTransactionDate(transaction.postingDate, today);
+        const auto sortKey = QStringLiteral("%1\n%2\n%3")
+                                 .arg(source.connectorId,
+                                      transaction.accountExternalId,
+                                      transaction.externalId);
         transactionRows.push_back({
             {title, subtitle, category, signedMoney(transaction.amount), dateText,
              transaction.amount.minorUnits >= 0, internalTransfer},
             sortTime,
+            sortKey,
         });
 
         if (transaction.amount.currency != QStringLiteral("RUB") || internalTransfer) {
             continue;
         }
         if (transaction.amount.minorUnits >= 0) {
-            totalsValid &= checkedAdd(reportIncome, transaction.amount.minorUnits);
+            incomeValid &= checkedAdd(reportIncome, transaction.amount.minorUnits);
             continue;
         }
         if (transaction.amount.minorUnits == std::numeric_limits<std::int64_t>::min()) {
-            totalsValid = false;
+            spendingValid = false;
+            categoriesValid = false;
             continue;
         }
         const auto spending = -transaction.amount.minorUnits;
-        totalsValid &= checkedAdd(reportSpending, spending);
+        spendingValid &= checkedAdd(reportSpending, spending);
         auto categoryTotal = categorySpending.value(category);
         if (checkedAdd(categoryTotal, spending)) {
             categorySpending.insert(category, categoryTotal);
         } else {
-            totalsValid = false;
+            categoriesValid = false;
         }
     }
 
     std::sort(transactionRows.begin(), transactionRows.end(),
               [](const DatedTransaction& left, const DatedTransaction& right) {
-                  return left.sortTime > right.sortTime;
+                  if (left.sortTime != right.sortTime) {
+                      return left.sortTime > right.sortTime;
+                  }
+                  return left.sortKey < right.sortKey;
               });
     QVector<TransactionRow> sortedTransactions;
     sortedTransactions.reserve(transactionRows.size());
@@ -1932,36 +1960,57 @@ void AppController::rebuildBankModels() {
         sortedCategories.emplace_back(category.key(), category.value());
     }
     std::sort(sortedCategories.begin(), sortedCategories.end(),
-              [](const auto& left, const auto& right) { return left.second > right.second; });
+              [](const auto& left, const auto& right) {
+                  if (left.second != right.second) {
+                      return left.second > right.second;
+                  }
+                  return left.first < right.first;
+              });
     static const QStringList categoryColors{QStringLiteral("#2563EB"), QStringLiteral("#7C3AED"),
                                             QStringLiteral("#059669"), QStringLiteral("#D97706"),
                                             QStringLiteral("#64748B")};
     QVector<CategoryRow> categoryRows;
-    categoryRows.reserve(sortedCategories.size());
-    for (qsizetype index = 0; index < sortedCategories.size(); ++index) {
-        const auto& [name, amount] = sortedCategories.at(index);
-        const auto share = reportSpending > 0
-                               ? static_cast<double>(amount) / static_cast<double>(reportSpending)
-                               : 0.0;
-        categoryRows.push_back({name, QStringLiteral("%1 ₽").arg(formatMinorUnits(amount)), share,
-                                categoryColors.at(index % categoryColors.size())});
+    if (spendingValid && categoriesValid) {
+        categoryRows.reserve(sortedCategories.size());
+        for (qsizetype index = 0; index < sortedCategories.size(); ++index) {
+            const auto& [name, amount] = sortedCategories.at(index);
+            const auto share = reportSpending > 0
+                                   ? static_cast<double>(amount) /
+                                         static_cast<double>(reportSpending)
+                                   : 0.0;
+            categoryRows.push_back(
+                {name, QStringLiteral("%1 ₽").arg(formatMinorUnits(amount)), share,
+                 categoryColors.at(index % categoryColors.size())});
+        }
     }
+
+    std::sort(accountRows.begin(), accountRows.end(),
+              [](const AccountRow& left, const AccountRow& right) {
+                  return std::tie(left.institution, left.name, left.type) <
+                         std::tie(right.institution, right.name, right.type);
+              });
+
+    auto savings = reportIncome;
+    const bool savingsValid = incomeValid && spendingValid &&
+                              checkedAdd(savings, -reportSpending);
 
     accounts_.replace(std::move(accountRows));
     transactions_.replace(std::move(sortedTransactions));
     categories_.replace(std::move(categoryRows));
     holdings_.replace({});
     net_worth_series_.clear();
-    live_net_worth_ = totalsValid ? QStringLiteral("%1 ₽").arg(formatMinorUnits(rubNetWorth))
-                                  : QStringLiteral("—");
-    live_report_income_ = totalsValid ? QStringLiteral("%1 ₽").arg(formatMinorUnits(reportIncome))
-                                      : QStringLiteral("—");
-    live_report_spending_ = totalsValid
+    live_net_worth_ = netWorthValid
+                          ? QStringLiteral("%1 ₽").arg(formatMinorUnits(rubNetWorth))
+                          : QStringLiteral("—");
+    live_report_income_ = incomeValid
+                              ? QStringLiteral("%1 ₽").arg(formatMinorUnits(reportIncome))
+                              : QStringLiteral("—");
+    live_report_spending_ = spendingValid
                                 ? QStringLiteral("%1 ₽").arg(formatMinorUnits(reportSpending))
                                 : QStringLiteral("—");
-    live_savings_ =
-        totalsValid ? QStringLiteral("%1 ₽").arg(formatMinorUnits(reportIncome - reportSpending))
-                    : QStringLiteral("—");
+    live_savings_ = savingsValid
+                        ? QStringLiteral("%1 ₽").arg(formatMinorUnits(savings))
+                        : QStringLiteral("—");
     const bool demoChanged = demo_mode_;
     demo_mode_ = false;
     emit dashboardChanged();
@@ -2957,8 +3006,9 @@ void AppController::describeBankConnection(const QString& connectorId) {
             "приложения через системный WebView. Телефон, пароль и код "
             "обрабатывает только страница банка. Приложение не читает cookies, "
             "поля входа или браузерное хранилище. Оно вызывает через клиент "
-            "авторизованной страницы только три фиксированных GET-запроса счетов, "
-            "остатков и операций. Сессия остаётся в WebView и удаляется при отключении.");
+            "авторизованной страницы только разрешённые GET-маршруты счетов, "
+            "остатков и истории в пределах жёстких лимитов. Сессия остаётся в "
+            "WebView и удаляется при отключении.");
     } else if (connectorId == QStringLiteral("alfa-api")) {
         connection_message_ = QStringLiteral(
             "Нужен access token приложения Альфа-Банка со scope для счетов и "

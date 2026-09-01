@@ -616,7 +616,7 @@ struct AlfaFinancialProjection {
       const direction = text(item.direction ?? item.operationDirection ??
                              item.operationType ?? item.type).toLowerCase()
       let signedMinor = amount.minor
-      if ((item.isDebit === true || item.debet === true ||
+      if ((item.cashout === true || item.isDebit === true || item.debet === true ||
            /debit|expense|outcome|outgoing|spend|purchase|payment|расход|покуп|оплат/.test(direction)) &&
           !signedMinor.startsWith('-')) signedMinor = `-${signedMinor}`
       else if ((item.isDebit === false || item.debet === false ||

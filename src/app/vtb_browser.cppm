@@ -629,6 +629,7 @@ struct VtbFinancialProjection {
           else upper = middle - 1
         }
         result.transactions = allTransactions.slice(0, lower)
+        if (lower < allTransactions.length) result.diagnostic = 'VTB-H2'
       }
     }
   } catch (ignored) {

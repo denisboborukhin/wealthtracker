@@ -29,10 +29,16 @@
 
 import wt.tbank_auth;
 import wt.tbank_browser;
+import wt.tbank_login;
 import wt.alfa_browser;
 import wt.alfa_login;
+import wt.vtb_login;
 import wt.bank_sync;
 import wt.connectors;
+
+using wealthtracker::app::is_alfa_login_url;
+using wealthtracker::app::is_tbank_login_url;
+using wealthtracker::app::is_vtb_login_url;
 
 namespace {
 
@@ -136,6 +142,7 @@ class TBankNetworkFixture final : public QNetworkAccessManager {
     int operationReadCalls = 0;
     bool allRequestsDisableHttp2 = true;
     bool failOperations = false;
+    bool overflowBalances = false;
     QVector<OperationRange> operationRanges;
     QHash<QString, int> operationPages;
 
@@ -149,8 +156,11 @@ class TBankNetworkFixture final : public QNetworkAccessManager {
         QByteArray body;
         int delayMilliseconds = 0;
         if (request.url().path() == QStringLiteral("/api/common/v1/accounts_light_ib")) {
-            body = QByteArrayLiteral(
-                R"({"resultCode":"OK","payload":[{"id":"account-a","name":"Black","accountType":"Debit","moneyAmount":{"value":"1500.00","currency":{"name":"RUB"}}},{"id":"account-b","name":"Savings","accountType":"Deposit","moneyAmount":{"value":"2500.00","currency":{"name":"RUB"}}}]})");
+            body = overflowBalances
+                       ? QByteArrayLiteral(
+                             R"({"resultCode":"OK","payload":[{"id":"account-a","name":"Black","accountType":"Debit","moneyAmount":{"value":"92233720368547758.07","currency":{"name":"RUB"}}},{"id":"account-b","name":"Savings","accountType":"Deposit","moneyAmount":{"value":"2500.00","currency":{"name":"RUB"}}}]})")
+                       : QByteArrayLiteral(
+                             R"({"resultCode":"OK","payload":[{"id":"account-a","name":"Black","accountType":"Debit","moneyAmount":{"value":"1500.00","currency":{"name":"RUB"}}},{"id":"account-b","name":"Savings","accountType":"Deposit","moneyAmount":{"value":"2500.00","currency":{"name":"RUB"}}}]})");
         } else {
             REQUIRE(request.url().path() == QStringLiteral("/api/common/v1/operations"));
             ++activeOperationRequests;
@@ -158,6 +168,8 @@ class TBankNetworkFixture final : public QNetworkAccessManager {
                 std::max(maximumActiveOperationRequests, activeOperationRequests);
             delayMilliseconds = 20;
             const auto timestamp = QDateTime::currentDateTimeUtc().toMSecsSinceEpoch();
+            const auto olderTimestamp =
+                QDateTime::currentDateTimeUtc().addDays(-7).toMSecsSinceEpoch();
             const QUrlQuery query(request.url());
             const auto account = query.queryItemValue(QStringLiteral("account"));
             operationRanges.push_back(
@@ -171,8 +183,9 @@ class TBankNetworkFixture final : public QNetworkAccessManager {
             } else if (account == QStringLiteral("account-a")) {
                 body =
                     QStringLiteral(
-                        R"({"resultCode":"OK","payload":[{"id":"transfer-out","status":"OK","type":"Debit","isInner":true,"accountAmount":{"value":"-500.00","currency":{"name":"RUB"}},"operationTime":{"milliseconds":%1},"description":"Между своими счетами"},{"id":"expense","status":"OK","type":"Debit","accountAmount":{"value":"-200.00","currency":{"name":"RUB"}},"operationTime":{"milliseconds":%1},"description":"Кофе","spendingCategory":{"name":"Кафе"}},{"id":"bad","status":"OK","type":"Debit","accountAmount":{"value":0,"currency":{"name":"RUB"}}}]})")
+                        R"({"resultCode":"OK","payload":[{"id":"transfer-out","status":"OK","type":"Debit","isInner":true,"accountAmount":{"value":"-500.00","currency":{"name":"RUB"}},"operationTime":{"milliseconds":%1},"description":"Между своими счетами"},{"id":"expense","status":"OK","type":"Debit","accountAmount":{"value":"-200.00","currency":{"name":"RUB"}},"operationTime":{"milliseconds":%2},"description":"Кофе","spendingCategory":{"name":"Кафе"}},{"id":"bad","status":"OK","type":"Debit","accountAmount":{"value":0,"currency":{"name":"RUB"}}}]})")
                         .arg(timestamp)
+                        .arg(olderTimestamp)
                         .toUtf8();
             } else {
                 REQUIRE(account == QStringLiteral("account-b"));
@@ -196,6 +209,20 @@ class TBankNetworkFixture final : public QNetworkAccessManager {
             connect(reply, &QNetworkReply::finished, this, [this] { --activeOperationRequests; });
         }
         return reply;
+    }
+};
+
+class FailedInvestmentNetworkFixture final : public QNetworkAccessManager {
+public:
+    int readCalls = 0;
+
+protected:
+    QNetworkReply* createRequest(const Operation operation,
+                                 const QNetworkRequest& request,
+                                 QIODevice*) override {
+        REQUIRE(operation == PostOperation);
+        return new BufferedNetworkReply(
+            request, {}, 0, QNetworkReply::RemoteHostClosedError, &readCalls, this);
     }
 };
 
@@ -514,7 +541,7 @@ TEST_CASE("Alfa projection reads the current inline runApp state after hydration
                 title: 'Покупка'
             }, {
                 id: 'cash-withdrawal-reference-1',
-                dateTime: '2026-08-14T11:45:00Z', direction: 'EXPENSE',
+                dateTime: '2026-08-14T11:45:00Z',
                 amount: { value: 100000, minorUnits: 100, currency: 'RUR' },
                 title: 'Снятие наличных', cashout: true,
                 sender: { accountNumber: 'account-number-2' },
@@ -836,6 +863,20 @@ TEST_CASE("Alfa WebView failures distinguish certificate trust without leaking U
     CHECK_FALSE(untrustedHost.message.contains(QStringLiteral("secret")));
 }
 
+TEST_CASE("embedded bank login accepts only exact official HTTPS origins") {
+    CHECK(is_tbank_login_url(QUrl(QStringLiteral("https://www.tbank.ru/login/"))));
+    CHECK(is_alfa_login_url(QUrl(QStringLiteral("https://web.alfabank.ru/dashboard"))));
+    CHECK(is_alfa_login_url(QUrl(QStringLiteral("https://private.auth.alfabank.ru/"))));
+    CHECK(is_vtb_login_url(QUrl(QStringLiteral("https://online.vtb.ru/"))));
+
+    CHECK_FALSE(is_tbank_login_url(QUrl(QStringLiteral("https://tbank.ru/login/"))));
+    CHECK_FALSE(is_tbank_login_url(
+        QUrl(QStringLiteral("https://user@www.tbank.ru/login/"))));
+    CHECK_FALSE(is_alfa_login_url(QUrl(QStringLiteral("http://web.alfabank.ru/"))));
+    CHECK_FALSE(is_alfa_login_url(QUrl(QStringLiteral("https://web.alfabank.ru:444/"))));
+    CHECK_FALSE(is_vtb_login_url(QUrl(QStringLiteral("https://online.vtb.ru.evil.test/"))));
+}
+
 TEST_CASE("Alfa certificate help uses only the official bank instructions") {
     using wealthtracker::app::alfa_certificate_instructions_url;
 
@@ -952,6 +993,29 @@ TEST_CASE("T-Bank synchronization publishes balances and excludes internal trans
     CHECK(historyEnd <= latestSyncEnd);
     CHECK(controller.accounts()->rowCount() == 2);
     CHECK(controller.transactions()->rowCount() == 4);
+    CHECK(controller.accounts()
+              ->data(controller.accounts()->index(0, 0),
+                     wealthtracker::app::AccountModel::NameRole)
+              .toString() == QStringLiteral("Black"));
+    CHECK(controller.transactions()
+              ->data(controller.transactions()->index(0, 0),
+                     wealthtracker::app::TransactionModel::TitleRole)
+              .toString() == QStringLiteral("Доход"));
+    CHECK(controller.transactions()
+              ->data(controller.transactions()->index(1, 0),
+                     wealthtracker::app::TransactionModel::TitleRole)
+              .toString() == QStringLiteral("Между своими счетами"));
+    const auto oldestTransaction =
+        controller.transactions()->index(controller.transactions()->rowCount() - 1, 0);
+    CHECK(controller.transactions()
+              ->data(oldestTransaction,
+                     wealthtracker::app::TransactionModel::TitleRole)
+              .toString() == QStringLiteral("Кофе"));
+    CHECK(controller.transactions()
+              ->data(oldestTransaction,
+                     wealthtracker::app::TransactionModel::DateRole)
+              .toString()
+              .contains(QString::number(QDate::currentDate().year())));
     CHECK(controller.reportIncome() == QStringLiteral("1 000 ₽"));
     CHECK(controller.reportSpending() == QStringLiteral("200 ₽"));
     CHECK(controller.savings() == QStringLiteral("800 ₽"));
@@ -1012,6 +1076,42 @@ TEST_CASE("T-Bank network failures do not read a closed TLS reply") {
     CHECK(observedNetwork->operationReadCalls == 0);
     CHECK(controller.syncStatus().contains(QStringLiteral("банк закрыл соединение")));
     CHECK(controller.accounts()->rowCount() == 0);
+}
+
+TEST_CASE("balance overflow does not hide valid cash-flow totals") {
+    const TBankSettingsCleanup cleanup;
+    auto credentials = std::make_unique<MemoryCredentialBackend>();
+    credentials->values.insert(QStringLiteral("tbank-retail-session"),
+                               QByteArrayLiteral("connected-session-123456789"));
+    auto network = std::make_unique<TBankNetworkFixture>();
+    network->overflowBalances = true;
+    wealthtracker::app::AppController controller(std::move(credentials),
+                                                 std::move(network), nullptr);
+
+    REQUIRE(controller.synchronizeTBank());
+    REQUIRE(waitUntil([&controller] { return !controller.tbankSyncRunning(); }));
+
+    CHECK(controller.netWorth() == QStringLiteral("—"));
+    CHECK(controller.reportIncome() == QStringLiteral("1 000 ₽"));
+    CHECK(controller.reportSpending() == QStringLiteral("200 ₽"));
+    CHECK(controller.savings() == QStringLiteral("800 ₽"));
+}
+
+TEST_CASE("T-Invest network failures do not read a closed TLS reply") {
+    auto credentials = std::make_unique<MemoryCredentialBackend>();
+    auto network = std::make_unique<FailedInvestmentNetworkFixture>();
+    auto* observedNetwork = network.get();
+    wealthtracker::app::AppController controller(
+        std::move(credentials), std::move(network), nullptr);
+
+    REQUIRE(controller.saveInvestmentToken(
+        QStringLiteral("readonly-token-with-safe-length")));
+    controller.synchronizeInvestments();
+    REQUIRE(waitUntil([&controller] {
+        return controller.syncStatus().contains(QStringLiteral("Ошибка Т-Инвест"));
+    }));
+
+    CHECK(observedNetwork->readCalls == 0);
 }
 
 TEST_CASE("T-Bank WebView projection is bounded before API validation") {

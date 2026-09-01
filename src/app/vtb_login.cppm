@@ -25,6 +25,12 @@ import wt.vtb_browser;
 
 export namespace wealthtracker::app {
 
+[[nodiscard]] bool is_vtb_login_url(const QUrl& url) noexcept {
+    return url.isValid() && url.scheme() == QStringLiteral("https") &&
+           url.host() == QStringLiteral("online.vtb.ru") &&
+           (url.port() == -1 || url.port() == 443) && url.userInfo().isEmpty();
+}
+
 enum class VtbLoginFailureKind { AuthenticationRequired, Protocol, Timeout };
 
 struct VtbLoginFailure {
@@ -67,6 +73,13 @@ public:
             connect(web_view_.get(), &QWebView::loadingChanged, this,
                     [this](const QWebViewLoadingInfo& information) {
                         if (!active_) {
+                            return;
+                        }
+                        if (!is_vtb_login_url(information.url())) {
+                            fail({VtbLoginFailureKind::Protocol,
+                                  QStringLiteral(
+                                      "ВТБ открыл страницу вне официального домена. "
+                                      "Вход остановлен.")});
                             return;
                         }
                         if (information.status() == QWebViewLoadingInfo::LoadStatus::Failed) {
@@ -128,6 +141,11 @@ private:
 
     void begin(const Mode mode, const QUrl& url, QString status) {
         stop(false, false);
+        if (!is_vtb_login_url(url)) {
+            fail({VtbLoginFailureKind::Protocol,
+                  QStringLiteral("Адрес ВТБ не прошёл проверку безопасности")});
+            return;
+        }
         ++generation_;
         mode_ = mode;
         active_ = true;

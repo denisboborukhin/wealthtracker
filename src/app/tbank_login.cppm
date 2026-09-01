@@ -29,6 +29,12 @@ import wt.tbank_browser;
 
 export namespace wealthtracker::app {
 
+[[nodiscard]] bool is_tbank_login_url(const QUrl& url) noexcept {
+    return url.isValid() && url.scheme() == QStringLiteral("https") &&
+           url.host() == QStringLiteral("www.tbank.ru") &&
+           (url.port() == -1 || url.port() == 443) && url.userInfo().isEmpty();
+}
+
 class TBankLoginCoordinator final : public QObject {
   public:
     using StatusChanged = std::function<void(QString)>;
@@ -65,6 +71,12 @@ class TBankLoginCoordinator final : public QObject {
             web_view_->setUrl(QUrl{QStringLiteral("about:blank")});
             connect(web_view_.get(), &QWebView::loadingChanged, this,
                     [this](const QWebViewLoadingInfo& information) {
+                        if (active_ && !is_tbank_login_url(information.url())) {
+                            fail(QStringLiteral(
+                                "Т-Банк открыл страницу вне официального домена. "
+                                "Вход остановлен."));
+                            return;
+                        }
                         if (active_ &&
                             information.status() == QWebViewLoadingInfo::LoadStatus::Failed) {
                             reportStatus(QStringLiteral("Не удалось загрузить страницу Т-Банка. "
@@ -77,6 +89,10 @@ class TBankLoginCoordinator final : public QObject {
 
     void start(const QUrl& loginUrl) {
         stop(false);
+        if (!is_tbank_login_url(loginUrl)) {
+            fail(QStringLiteral("Адрес входа Т-Банка не прошёл проверку безопасности"));
+            return;
+        }
         ++generation_;
         elapsed_.start();
         active_ = true;
