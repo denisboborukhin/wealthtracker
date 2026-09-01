@@ -46,11 +46,37 @@ esac
   "cmake==4.1.2" \
   "ninja==1.13.0"
 
-"${tool_dir}/bin/aqt" -c "${project_dir}/scripts/aqt.ini" install-qt \
-  mac desktop 6.11.1 clang_64 \
-  --modules qtwebview \
-  --base "${qt_mirror}" \
-  -O "${project_dir}/build/qt"
+qt_dir="${project_dir}/build/qt/6.11.1/macos"
+qtpaths="${qt_dir}/bin/qtpaths"
+qt_version=
+if [ -x "${qtpaths}" ]; then
+  qt_version=$("${qtpaths}" --qt-version 2>/dev/null || true)
+fi
+
+if [ "${qt_version}" = "6.11.1" ] &&
+  [ -x "${qt_dir}/bin/qmllint" ] &&
+  [ -f "${qt_dir}/lib/cmake/Qt6/Qt6Config.cmake" ] &&
+  [ -f "${qt_dir}/lib/cmake/Qt6WebView/Qt6WebViewConfig.cmake" ] &&
+  [ -f "${qt_dir}/lib/QtQuick.framework/QtQuick" ] &&
+  [ -f "${qt_dir}/lib/QtWebView.framework/QtWebView" ] &&
+  [ -f "${qt_dir}/plugins/webview/libqtwebview_darwin.dylib" ]; then
+  echo "Reusing complete Qt 6.11.1 SDK under ${qt_dir}"
+else
+  qt_checksum_url="https://download.qt.io/online/qtsdkrepository/mac_x64/desktop/qt6_6111/qt6_6111/qt.qt6.6111.clang_64/6.11.1-0-202605090526qtbase-MacOS-MacOS_15-Clang-MacOS-MacOS_15-X86_64-ARM64.7z.sha256"
+  if ! "${tool_dir}/bin/python" "${project_dir}/scripts/check_qt_checksum.py" \
+    "${qt_checksum_url}"; then
+    echo "Qt archives are mirrored, but aqt requires SHA-256 sidecars from download.qt.io." >&2
+    echo "Connect through a network or VPN that reaches download.qt.io, or set HTTPS_PROXY, then retry." >&2
+    echo "Checksum verification remains enabled and must not be bypassed." >&2
+    exit 1
+  fi
+
+  "${tool_dir}/bin/aqt" -c "${project_dir}/scripts/aqt.ini" install-qt \
+    mac desktop 6.11.1 clang_64 \
+    --modules qtwebview \
+    --base "${qt_mirror}" \
+    -O "${project_dir}/build/qt"
+fi
 
 echo "Tools installed under ${tool_dir}"
 echo "Qt installed under ${project_dir}/build/qt/6.11.1"
