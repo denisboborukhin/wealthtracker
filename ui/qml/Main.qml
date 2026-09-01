@@ -63,29 +63,31 @@ ApplicationWindow {
 
                 Repeater {
                     model: window.navigationItems
-                    delegate: Rectangle {
+                    delegate: Button {
                         id: navigationItem
                         required property int index
                         required property var modelData
 
                         Layout.fillWidth: true
                         Layout.preferredHeight: 38
-                        radius: 7
-                        color: navigation.currentIndex === navigationItem.index ? Theme.surfaceRaised : "transparent"
-                        Text {
-                            anchors.fill: parent
-                            anchors.leftMargin: 12
-                            anchors.rightMargin: 12
+                        flat: true
+                        Accessible.name: navigationItem.modelData.title
+                        onClicked: navigation.currentIndex = navigationItem.index
+                        contentItem: Text {
                             text: navigationItem.modelData.title
                             color: navigation.currentIndex === navigationItem.index ? Theme.text : Theme.textMuted
                             font.pixelSize: 13
                             font.weight: navigation.currentIndex === navigationItem.index ? Font.Medium : Font.Normal
                             verticalAlignment: Text.AlignVCenter
+                            leftPadding: 12
+                            rightPadding: 12
                         }
-                        MouseArea {
-                            anchors.fill: parent
-                            cursorShape: Qt.PointingHandCursor
-                            onClicked: navigation.currentIndex = navigationItem.index
+                        background: Rectangle {
+                            radius: 7
+                            color: navigation.currentIndex === navigationItem.index
+                                   ? Theme.surfaceRaised : "transparent"
+                            border.color: navigationItem.activeFocus
+                                          ? Theme.primary : "transparent"
                         }
                     }
                 }
@@ -132,11 +134,31 @@ ApplicationWindow {
         }
     }
 
-    Rectangle {
+    FocusScope {
+        id: privacyScreen
         anchors.fill: parent
         visible: window.app.locked
+        focus: visible
         z: 100
-        color: Theme.background
+
+        onVisibleChanged: {
+            if (visible)
+                returnToDataButton.forceActiveFocus()
+        }
+        Keys.onPressed: function(event) {
+            event.accepted = true
+        }
+
+        Rectangle {
+            anchors.fill: parent
+            color: Theme.background
+        }
+
+        MouseArea {
+            anchors.fill: parent
+            acceptedButtons: Qt.AllButtons
+            hoverEnabled: true
+        }
 
         Rectangle {
             anchors.centerIn: parent
@@ -173,6 +195,7 @@ ApplicationWindow {
                     wrapMode: Text.WordWrap
                 }
                 ActionButton {
+                    id: returnToDataButton
                     Layout.fillWidth: true
                     text: qsTr("Вернуться к данным")
                     primary: true

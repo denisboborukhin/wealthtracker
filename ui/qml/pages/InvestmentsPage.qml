@@ -16,11 +16,18 @@ Item {
         RowLayout {
             Layout.fillWidth: true
             ColumnLayout {
+                Layout.fillWidth: true
+                Layout.minimumWidth: 0
                 spacing: 4
                 Text { text: qsTr("Инвестиции"); color: Theme.text; font.pixelSize: 26; font.weight: Font.DemiBold }
-                Text { text: page.app.syncStatus; color: Theme.textMuted; font.pixelSize: 12 }
+                Text {
+                    Layout.fillWidth: true
+                    text: page.app.syncStatus
+                    color: Theme.textMuted
+                    font.pixelSize: 12
+                    elide: Text.ElideRight
+                }
             }
-            Item { Layout.fillWidth: true }
             ActionButton {
                 text: qsTr("Проверить подключение")
                 primary: true

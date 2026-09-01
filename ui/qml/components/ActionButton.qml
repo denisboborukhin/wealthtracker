@@ -6,6 +6,7 @@ Button {
     property bool primary: false
     property bool destructive: false
 
+    Accessible.name: text
     implicitHeight: 36
     leftPadding: 16
     rightPadding: 16
@@ -30,8 +31,11 @@ Button {
               : root.primary ? (root.down ? "#2445B7" : Theme.primary)
               : root.down ? Theme.surfaceRaised
               : Theme.surface
-        border.color: root.primary ? Theme.primary
-                     : root.destructive ? "#E8BFC2"
-                     : Theme.borderStrong
+        border.width: root.activeFocus ? 2 : 1
+        border.color: root.activeFocus
+                      ? (root.primary ? "#FFFFFF" : Theme.primary)
+                      : root.primary ? Theme.primary
+                      : root.destructive ? "#E8BFC2"
+                      : Theme.borderStrong
     }
 }

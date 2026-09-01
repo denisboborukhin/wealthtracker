@@ -54,6 +54,7 @@ Item {
                         Text { text: qsTr("Показывать пример данных вместо пустого состояния"); color: Theme.textMuted; font.pixelSize: 11 }
                     }
                     MinimalSwitch {
+                        accessibleName: qsTr("Демо-режим")
                         checked: page.app.demoMode
                         onToggled: checked ? page.app.loadDemoData() : page.app.clearDemoData()
                     }

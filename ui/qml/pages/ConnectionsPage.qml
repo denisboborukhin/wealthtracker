@@ -43,10 +43,10 @@ Item {
         parent: Overlay.overlay
         modal: true
         focus: true
-        width: connectionDialog.retailLoginActive
-               ? Math.min(parent.width - 32, 760) : 520
-        height: connectionDialog.retailLoginActive
-                ? Math.min(parent.height - 32, 760) : implicitHeight
+        width: Math.min(parent.width - 32,
+                        connectionDialog.retailLoginActive ? 760 : 520)
+        height: Math.min(parent.height - 32,
+                         connectionDialog.retailLoginActive ? 760 : implicitHeight)
         x: Math.round((parent.width - width) / 2)
         y: Math.round((parent.height - height) / 2)
         padding: 0
@@ -176,8 +176,16 @@ Item {
             border.color: Theme.border
         }
 
-        contentItem: ColumnLayout {
-            spacing: 0
+        contentItem: ScrollView {
+            id: connectionScroll
+            clip: true
+            contentWidth: availableWidth
+            ScrollBar.horizontal.policy: ScrollBar.AlwaysOff
+
+            ColumnLayout {
+                id: connectionContent
+                width: connectionScroll.availableWidth
+                spacing: 0
 
             ColumnLayout {
                 Layout.fillWidth: true
@@ -457,6 +465,7 @@ Item {
                                 }
                                 MinimalSwitch {
                                     id: checkboxField
+                                    accessibleName: preferenceField.modelData.label
                                     visible: preferenceField.modelData.kind === "checkbox"
                                     checked: preferenceField.modelData.defaultValue === true
                                              || preferenceField.modelData.defaultValue === "true"
@@ -491,6 +500,7 @@ Item {
                                 font.weight: Font.Medium
                             }
                             MinimalSwitch {
+                                accessibleName: qsTr("Автообновление локального плагина")
                                 checked: page.app.zenPluginAutoUpdate
                                 enabled: !page.app.zenPluginRunning
                                 onToggled: page.app.setZenPluginAutoUpdate(checked)
@@ -570,6 +580,7 @@ Item {
                             font.weight: Font.Medium
                         }
                         MinimalSwitch {
+                            accessibleName: qsTr("Автообновление банковского подключения")
                             checked: connectionDialog.retailAutoUpdate
                             enabled: !connectionDialog.retailSyncRunning
                             onToggled: connectionDialog.setRetailAutoUpdate(checked)
@@ -750,6 +761,7 @@ Item {
                     }
                 }
             }
+        }
         }
 
         onClosed: {

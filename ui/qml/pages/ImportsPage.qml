@@ -27,8 +27,8 @@ Item {
         ColumnLayout {
             Layout.fillWidth: true
             spacing: 4
-            Text { text: qsTr("Импорт"); color: Theme.text; font.pixelSize: 26; font.weight: Font.DemiBold }
-            Text { text: qsTr("Добавление операций из банковской выписки"); color: Theme.textMuted; font.pixelSize: 12 }
+            Text { text: qsTr("Проверка выписки"); color: Theme.text; font.pixelSize: 26; font.weight: Font.DemiBold }
+            Text { text: qsTr("Предварительный просмотр без сохранения операций"); color: Theme.textMuted; font.pixelSize: 12 }
         }
 
         SectionCard {

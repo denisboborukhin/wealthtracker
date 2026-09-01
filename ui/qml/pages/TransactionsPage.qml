@@ -1,7 +1,6 @@
 pragma ComponentBehavior: Bound
 
 import QtQuick
-import QtQuick.Controls
 import QtQuick.Layouts
 import "../components"
 
@@ -14,36 +13,19 @@ Item {
         anchors.margins: Theme.pageMargin
         spacing: 20
 
-        RowLayout {
+        ColumnLayout {
             Layout.fillWidth: true
-            ColumnLayout {
-                spacing: 4
-                Text {
-                    text: qsTr("Операции")
-                    color: Theme.text
-                    font.pixelSize: 26
-                    font.weight: Font.DemiBold
-                }
-                Text {
-                    text: qsTr("Все счета · ") + page.app.reportingPeriodLabel
-                    color: Theme.textMuted
-                    font.pixelSize: 12
-                }
-            }
-            Item { Layout.fillWidth: true }
-            TextField {
-                id: searchField
-                Layout.preferredWidth: 240
-                Layout.preferredHeight: 38
-                placeholderText: qsTr("Поиск операций")
+            spacing: 4
+            Text {
+                text: qsTr("Операции")
                 color: Theme.text
-                selectByMouse: true
-                background: Rectangle {
-                    color: Theme.surface
-                    border.color: searchField.activeFocus
-                                  ? Theme.primary : Theme.borderStrong
-                    radius: 7
-                }
+                font.pixelSize: 26
+                font.weight: Font.DemiBold
+            }
+            Text {
+                text: qsTr("Все счета · ") + page.app.reportingPeriodLabel
+                color: Theme.textMuted
+                font.pixelSize: 12
             }
         }
 

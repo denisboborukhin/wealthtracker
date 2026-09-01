@@ -68,7 +68,7 @@ Flickable {
                 Text {
                     Layout.fillWidth: true
                     text: page.app.demoMode
-                          ? qsTr("Пример данных · июль 2026")
+                          ? qsTr("Пример данных · ") + page.app.reportingPeriodLabel
                           : page.app.hasFinancialData
                             ? qsTr("Все подключённые счета")
                             : qsTr("Подключите банк или импортируйте выписку")
@@ -315,6 +315,7 @@ Flickable {
 
                                     RowLayout {
                                         Layout.fillWidth: true
+                                        Layout.rightMargin: 12
                                         spacing: 10
                                         Text {
                                             Layout.fillWidth: true
@@ -431,7 +432,7 @@ Flickable {
                             RowLayout {
                                 anchors.fill: parent
                                 anchors.leftMargin: 18
-                                anchors.rightMargin: 18
+                                anchors.rightMargin: 30
                                 Text {
                                     Layout.preferredWidth: 88
                                     Layout.minimumWidth: 72

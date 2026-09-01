@@ -55,6 +55,8 @@ TEST_CASE("dashboard keeps populated summaries inside responsive surfaces") {
     const auto window = readQml("Main.qml");
     CHECK(window.contains(QByteArrayLiteral("left: navigationRail.right")));
     CHECK(window.contains(QByteArrayLiteral("right: parent.right")));
+    CHECK(window.contains(QByteArrayLiteral("delegate: Button")));
+    CHECK_FALSE(window.contains(QByteArrayLiteral("MouseArea {\n                            anchors.fill: parent")));
 
     const auto datePicker = readQml("components/DatePickerField.qml");
     CHECK(datePicker.contains(QByteArrayLiteral("MonthGrid")));
@@ -78,4 +80,28 @@ TEST_CASE("privacy screen describes its scope and limitations") {
     CHECK(window.contains(QByteArrayLiteral("Экран приватности включён")));
     CHECK(window.contains(QByteArrayLiteral("пароль не требуется")));
     CHECK(window.contains(QByteArrayLiteral("color: Theme.background")));
+    CHECK(window.contains(QByteArrayLiteral("id: privacyScreen")));
+    CHECK(window.contains(QByteArrayLiteral("acceptedButtons: Qt.AllButtons")));
+    CHECK(window.contains(QByteArrayLiteral("returnToDataButton.forceActiveFocus()")));
+
+    const auto transactions =
+        readQml(QStringLiteral("pages/TransactionsPage.qml"));
+    CHECK_FALSE(transactions.contains(QByteArrayLiteral("Поиск операций")));
+
+    const auto imports = readQml(QStringLiteral("pages/ImportsPage.qml"));
+    CHECK(imports.contains(QByteArrayLiteral("Предварительный просмотр без сохранения")));
+
+    const auto connections =
+        readQml(QStringLiteral("pages/ConnectionsPage.qml"));
+    CHECK(connections.contains(QByteArrayLiteral("contentItem: ScrollView")));
+    CHECK(connections.contains(QByteArrayLiteral("parent.height - 32")));
+
+    const auto actionButton =
+        readQml(QStringLiteral("components/ActionButton.qml"));
+    CHECK(actionButton.contains(QByteArrayLiteral("root.activeFocus ? 2 : 1")));
+
+    const auto investments =
+        readQml(QStringLiteral("pages/InvestmentsPage.qml"));
+    CHECK(investments.contains(QByteArrayLiteral("Layout.minimumWidth: 0")));
+    CHECK(investments.contains(QByteArrayLiteral("elide: Text.ElideRight")));
 }
