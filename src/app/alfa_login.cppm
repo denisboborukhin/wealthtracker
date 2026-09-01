@@ -131,7 +131,6 @@ public:
             settings->setAttribute(QWebViewSettings::WebAttribute::AllowFileAccess, false);
             settings->setAttribute(QWebViewSettings::WebAttribute::LocalContentCanAccessFileUrls,
                                    false);
-            web_view_->setUrl(QUrl{QStringLiteral("about:blank")});
             connect(web_view_.get(), &QWebView::loadingChanged, this,
                     [this](const QWebViewLoadingInfo& information) {
                         if (!active_) {
@@ -257,8 +256,11 @@ private:
                                      if (!guard) {
                                          return;
                                      }
+                                     if (generation != guard->generation_) {
+                                         return;
+                                     }
                                      guard->probe_pending_ = false;
-                                     if (!guard->active_ || generation != guard->generation_ ||
+                                     if (!guard->active_ ||
                                          !value.canConvert<QString>()) {
                                          return;
                                      }
@@ -363,8 +365,11 @@ private:
                                      if (!guard) {
                                          return;
                                      }
+                                     if (generation != guard->generation_) {
+                                         return;
+                                     }
                                      guard->probe_pending_ = false;
-                                     if (!guard->active_ || generation != guard->generation_) {
+                                     if (!guard->active_) {
                                          return;
                                      }
                                      const auto status = value.toString();
@@ -392,11 +397,14 @@ private:
         history_capture_started_ = false;
         elapsed_.invalidate();
         if (web_view_ && (invalidateGeneration || clearCookies)) {
-            web_view_->stop();
-            if (clearCookies) {
-                web_view_->deleteAllCookies();
-            }
-            web_view_->setUrl(QUrl{QStringLiteral("about:blank")});
+            auto* view = web_view_.release();
+            QTimer::singleShot(0, view, [view, clearCookies] {
+                view->stop();
+                if (clearCookies) {
+                    view->deleteAllCookies();
+                }
+                view->deleteLater();
+            });
         }
     }
 

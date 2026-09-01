@@ -69,7 +69,6 @@ public:
             settings->setAttribute(QWebViewSettings::WebAttribute::AllowFileAccess, false);
             settings->setAttribute(QWebViewSettings::WebAttribute::LocalContentCanAccessFileUrls,
                                    false);
-            web_view_->setUrl(QUrl{QStringLiteral("about:blank")});
             connect(web_view_.get(), &QWebView::loadingChanged, this,
                     [this](const QWebViewLoadingInfo& information) {
                         if (!active_) {
@@ -194,8 +193,11 @@ private:
                                      if (!guard) {
                                          return;
                                      }
-                                     if (!guard->active_ || generation != guard->generation_) {
-                                         guard->probe_pending_ = false;
+                                     if (generation != guard->generation_) {
+                                         return;
+                                     }
+                                     guard->probe_pending_ = false;
+                                     if (!guard->active_) {
                                          return;
                                      }
                                      if (value.toString() == QStringLiteral("wrong-origin")) {
@@ -213,9 +215,11 @@ private:
                                              if (!guard) {
                                                  return;
                                              }
+                                             if (generation != guard->generation_) {
+                                                 return;
+                                             }
                                              guard->probe_pending_ = false;
                                              if (!guard->active_ ||
-                                                 generation != guard->generation_ ||
                                                  !projection.canConvert<QString>()) {
                                                  return;
                                              }
@@ -286,14 +290,14 @@ private:
         loading_observed_elapsed_ = -1;
         elapsed_.invalidate();
         if (web_view_ && (invalidateGeneration || clearCookies)) {
-            web_view_->stop();
-            if (clearCookies) {
-                web_view_->deleteAllCookies();
-            }
-            web_view_->setUrl(QUrl{QStringLiteral("about:blank")});
-            if (clearCookies) {
-                web_view_.reset();
-            }
+            auto* view = web_view_.release();
+            QTimer::singleShot(0, view, [view, clearCookies] {
+                view->stop();
+                if (clearCookies) {
+                    view->deleteAllCookies();
+                }
+                view->deleteLater();
+            });
         }
     }
 

@@ -195,6 +195,9 @@ When the user corrects your approach, append a one-line rule here before ending 
 
 - Require explicit terminal pagination or a provably short final page before
   labeling retail-bank history complete; stop queued replay after timeout.
+- Never stop, navigate, or destroy a `QWebView` synchronously from its
+  `loadingChanged` or `runJavaScript` callback; detach it from QML and defer
+  native cleanup until the event loop regains control.
 - Give first-open QML popups explicit geometry before using it for overlay
   placement; closed content does not provide reliable implicit bounds.
 - Run aqt only with a supported OpenSSL-backed Python and an explicit HTTPS

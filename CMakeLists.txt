@@ -264,6 +264,19 @@ if(BUILD_TESTING)
     enable_catch2_compatibility(app_tests)
     enable_sanitizers(app_tests)
     catch_discover_tests(app_tests)
+
+    if(APPLE)
+        add_executable(webview_tests
+            tests/app/webview_test_main.cpp
+            tests/app/webview_lifecycle_test.cpp
+        )
+        target_link_libraries(webview_tests PRIVATE app Catch2::Catch2)
+        set_property(TARGET webview_tests PROPERTY CXX_SCAN_FOR_MODULES ON)
+        enable_strict_warnings(webview_tests)
+        enable_catch2_compatibility(webview_tests)
+        enable_sanitizers(webview_tests)
+        catch_discover_tests(webview_tests)
+    endif()
 endif()
 
 install(

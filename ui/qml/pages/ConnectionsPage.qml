@@ -317,7 +317,8 @@ Item {
                             anchors.fill: parent
                             anchors.margins: 1
                             visible: connectionDialog.retailLoginActive
-                            window: connectionDialog.retailWebView
+                            window: connectionDialog.retailLoginActive
+                                    ? connectionDialog.retailWebView : null
                         }
                     }
 

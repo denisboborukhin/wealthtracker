@@ -372,7 +372,7 @@ TEST_CASE("T-Bank login UI embeds a coordinator-owned native WebView") {
     CHECK(source.contains(QByteArrayLiteral(
         "page.app.tbankWebView")));
     CHECK(source.contains(QByteArrayLiteral(
-        "window: connectionDialog.retailWebView")));
+        "? connectionDialog.retailWebView : null")));
     CHECK_FALSE(source.contains(QByteArrayLiteral("sessionid")));
     CHECK_FALSE(source.contains(QByteArrayLiteral("runJavaScript(")));
     CHECK_FALSE(source.contains(QByteArrayLiteral("отдельном Chrome")));
@@ -395,6 +395,8 @@ TEST_CASE("T-Bank login UI embeds a coordinator-owned native WebView") {
     CHECK(coordinator.contains(QByteArrayLiteral("runJavaScript(")));
     CHECK(coordinator.contains(QByteArrayLiteral("LocalStorageEnabled")));
     CHECK(coordinator.contains(QByteArrayLiteral("deleteAllCookies()")));
+    CHECK(coordinator.contains(QByteArrayLiteral("view->deleteLater()")));
+    CHECK_FALSE(coordinator.contains(QByteArrayLiteral("about:blank")));
     CHECK_FALSE(coordinator.contains(QByteArrayLiteral(
         "TBankBrowserRunner")));
     CHECK_FALSE(coordinator.contains(QByteArrayLiteral(
@@ -789,6 +791,10 @@ TEST_CASE("Alfa projection reports post-login loading instead of waiting silentl
         "Альфа-Онлайн открыл страницу установки российских")));
     CHECK(coordinatorSource.contains(QByteArrayLiteral(
         "certificate_help_required_ = true")));
+    CHECK(coordinatorSource.contains(QByteArrayLiteral(
+        "QTimer::singleShot(0, view")));
+    CHECK(coordinatorSource.contains(QByteArrayLiteral("view->deleteLater()")));
+    CHECK_FALSE(coordinatorSource.contains(QByteArrayLiteral("about:blank")));
 }
 
 TEST_CASE("Alfa projection recognizes the bank certificate landing page") {

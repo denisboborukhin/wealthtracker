@@ -103,7 +103,10 @@ TEST_CASE("VTB is an available embedded retail connection") {
     CHECK(coordinatorSource.contains(QByteArrayLiteral("LocalStorageEnabled, false")));
     CHECK(coordinatorSource.contains(QByteArrayLiteral("AllowFileAccess, false")));
     CHECK(coordinatorSource.contains(QByteArrayLiteral("deleteAllCookies()")));
-    CHECK(coordinatorSource.contains(QByteArrayLiteral("web_view_.reset()")));
+    CHECK(coordinatorSource.contains(QByteArrayLiteral("QTimer::singleShot(0, view")));
+    CHECK(coordinatorSource.contains(QByteArrayLiteral("view->deleteLater()")));
+    CHECK_FALSE(coordinatorSource.contains(QByteArrayLiteral("about:blank")));
+    CHECK_FALSE(coordinatorSource.contains(QByteArrayLiteral("web_view_.reset()")));
     CHECK_FALSE(coordinatorSource.contains(QByteArrayLiteral("cookieStore()")));
     CHECK_FALSE(coordinatorSource.contains(QByteArrayLiteral("QDesktopServices")));
 }

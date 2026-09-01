@@ -52,7 +52,7 @@ class TBankLoginCoordinator final : public QObject {
     }
 
     ~TBankLoginCoordinator() override {
-        stop(false);
+        stop(false, false);
         candidate_session_.fill('\0');
     }
 
@@ -68,7 +68,6 @@ class TBankLoginCoordinator final : public QObject {
             settings->setAttribute(QWebViewSettings::WebAttribute::AllowFileAccess, false);
             settings->setAttribute(QWebViewSettings::WebAttribute::LocalContentCanAccessFileUrls,
                                    false);
-            web_view_->setUrl(QUrl{QStringLiteral("about:blank")});
             connect(web_view_.get(), &QWebView::loadingChanged, this,
                     [this](const QWebViewLoadingInfo& information) {
                         if (active_ && !is_tbank_login_url(information.url())) {
@@ -88,7 +87,7 @@ class TBankLoginCoordinator final : public QObject {
     }
 
     void start(const QUrl& loginUrl) {
-        stop(false);
+        stop(false, false);
         if (!is_tbank_login_url(loginUrl)) {
             fail(QStringLiteral("Адрес входа Т-Банка не прошёл проверку безопасности"));
             return;
@@ -112,7 +111,7 @@ class TBankLoginCoordinator final : public QObject {
         web_view_->reload();
     }
 
-    void cancel() { stop(true); }
+    void cancel() { stop(true, true); }
 
   private:
     static constexpr qint64 authorizationTimeoutMilliseconds = 10 * 60 * 1'000;
@@ -167,8 +166,11 @@ class TBankLoginCoordinator final : public QObject {
                                      if (!guard) {
                                          return;
                                      }
+                                     if (generation != guard->generation_) {
+                                         return;
+                                     }
                                      guard->probe_pending_ = false;
-                                     if (generation != guard->generation_ || !guard->active_ ||
+                                     if (!guard->active_ ||
                                          !result.canConvert<QString>()) {
                                          return;
                                      }
@@ -259,7 +261,7 @@ class TBankLoginCoordinator final : public QObject {
                         return;
                     }
 
-                    stop(false);
+                    stop(false, true);
                     if (completed_) {
                         completed_(std::move(polledSession));
                     } else {
@@ -268,18 +270,21 @@ class TBankLoginCoordinator final : public QObject {
                 });
     }
 
-    void clearWebView() {
+    void scheduleWebViewCleanup() {
         probe_timer_.stop();
         probe_pending_ = false;
         if (!web_view_) {
             return;
         }
-        web_view_->stop();
-        web_view_->deleteAllCookies();
-        web_view_->setUrl(QUrl{QStringLiteral("about:blank")});
+        auto* view = web_view_.release();
+        QTimer::singleShot(0, view, [view] {
+            view->stop();
+            view->deleteAllCookies();
+            view->deleteLater();
+        });
     }
 
-    void stop(const bool invalidateGeneration) {
+    void stop(const bool invalidateGeneration, const bool cleanupWebView) {
         if (invalidateGeneration) {
             ++generation_;
         }
@@ -294,11 +299,13 @@ class TBankLoginCoordinator final : public QObject {
         candidate_session_.fill('\0');
         candidate_session_.clear();
         elapsed_.invalidate();
-        clearWebView();
+        if (cleanupWebView) {
+            scheduleWebViewCleanup();
+        }
     }
 
     void fail(QString message) {
-        stop(true);
+        stop(true, true);
         if (failed_) {
             failed_(std::move(message));
         }
