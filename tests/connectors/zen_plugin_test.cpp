@@ -296,3 +296,60 @@ TEST_CASE("local host executes an external bundle and handles an OTP prompt")
         QByteArrayLiteral("never-log-this-secret")));
     CHECK(process.waitForFinished(5000));
 }
+
+TEST_CASE("local host redacts prompt answers from plugin errors")
+{
+    const auto node = QStandardPaths::findExecutable(QStringLiteral("node"));
+    if (node.isEmpty()) {
+        SKIP("Node.js is not installed");
+    }
+
+    const auto fixture = QStringLiteral(
+        WEALTHTRACKER_SOURCE_DIR
+        "/tests/fixtures/zen_plugin_prompt_failure_fixture.cjs");
+    const auto descriptor = inspectZenPluginBundle(fixture);
+    REQUIRE(descriptor);
+
+    QProcess process;
+    process.setProcessChannelMode(QProcess::SeparateChannels);
+    process.start(
+        node,
+        {QStringLiteral(WEALTHTRACKER_SOURCE_DIR
+                        "/scripts/zen_plugin_host.mjs")});
+    REQUIRE(process.waitForStarted(5000));
+
+    const ZenPluginRunRequest request{
+        .descriptor = *descriptor,
+        .preferences = {},
+        .state = {},
+        .from = QDateTime::fromString(
+            QStringLiteral("2026-07-01T00:00:00Z"), Qt::ISODate),
+        .to = QDateTime::fromString(
+            QStringLiteral("2026-07-30T00:00:00Z"), Qt::ISODate),
+        .allowedOrigins = {},
+    };
+    const auto startMessage = makeZenPluginStartMessage(request);
+    REQUIRE(startMessage);
+    process.write(*startMessage);
+    REQUIRE(process.waitForBytesWritten(5000));
+
+    const auto prompt = parseZenPluginEvent(
+        readProtocolLine(process), descriptor->pluginId);
+    REQUIRE(prompt);
+    REQUIRE(prompt->kind == ZenPluginEventKind::Prompt);
+
+    constexpr auto secret = "837291";
+    const auto inputMessage = makeZenPluginInputMessage(
+        prompt->prompt.requestId, QByteArray(secret));
+    REQUIRE(inputMessage);
+    process.write(*inputMessage);
+    REQUIRE(process.waitForBytesWritten(5000));
+
+    const auto errorLine = readProtocolLine(process);
+    CHECK_FALSE(errorLine.contains(QByteArray(secret)));
+    const auto result = parseZenPluginEvent(errorLine, descriptor->pluginId);
+    REQUIRE(result);
+    CHECK(result->kind == ZenPluginEventKind::Error);
+    CHECK(result->message.contains(QStringLiteral("[redacted]")));
+    CHECK(process.waitForFinished(5000));
+}

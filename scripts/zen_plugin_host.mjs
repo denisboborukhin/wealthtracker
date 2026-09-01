@@ -23,6 +23,7 @@ let completed = false
 let inputBufferBytes = 0
 let pendingPrompt = null
 let preferenceSecrets = []
+let promptSecrets = []
 
 const input = readline.createInterface({
   input: process.stdin,
@@ -41,13 +42,15 @@ function finish () {
   completed = true
   pendingPrompt?.resolve(null)
   pendingPrompt = null
+  preferenceSecrets = []
+  promptSecrets = []
   input.close()
   process.stdin.pause()
 }
 
 function redact (message) {
   let result = String(message ?? 'Plugin execution failed')
-  for (const secret of preferenceSecrets) {
+  for (const secret of [...preferenceSecrets, ...promptSecrets]) {
     if (secret.length >= 3) {
       result = result.split(secret).join('[redacted]')
     }
@@ -434,6 +437,9 @@ input.on('line', line => {
   }
   const prompt = pendingPrompt
   pendingPrompt = null
+  if (command.value.length >= 3) {
+    promptSecrets.push(command.value)
+  }
   prompt.resolve(command.value)
 })
 
