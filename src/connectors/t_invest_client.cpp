@@ -48,6 +48,20 @@ ConnectorResult<QJsonObject> parseObject(const QByteArray &json)
     return document.object();
 }
 
+ConnectorResult<QJsonArray> requiredArray(const QJsonObject &object,
+                                          const QString &key,
+                                          const QString &source)
+{
+    const auto value = object.value(key);
+    if (!value.isArray()) {
+        return std::unexpected(ConnectorError{
+            ErrorCode::ParseFailed,
+            QStringLiteral("%1 response omitted the required %2 array").arg(source, key),
+            {}, false});
+    }
+    return value.toArray();
+}
+
 std::optional<std::int64_t> jsonInteger(const QJsonValue &value)
 {
     bool ok = false;
@@ -249,9 +263,13 @@ ConnectorResult<NormalizedBatch> TInvestClient::parseAccountsResponse(const QByt
         return std::unexpected(root.error());
     }
     NormalizedBatch batch;
-    const auto accounts = root->value(QStringLiteral("accounts")).toArray();
-    for (qsizetype index = 0; index < accounts.size(); ++index) {
-        const auto item = accounts.at(index).toObject();
+    const auto accounts = requiredArray(
+        *root, QStringLiteral("accounts"), QStringLiteral("T-Invest accounts"));
+    if (!accounts) {
+        return std::unexpected(accounts.error());
+    }
+    for (qsizetype index = 0; index < accounts->size(); ++index) {
+        const auto item = accounts->at(index).toObject();
         const auto id = item.value(QStringLiteral("id")).toString().trimmed();
         if (id.isEmpty()) {
             batch.warnings.push_back(
@@ -284,9 +302,13 @@ TInvestClient::parseOperationsResponse(const QByteArray &json, const QString &ac
         return std::unexpected(root.error());
     }
     NormalizedBatch batch;
-    const auto operations = root->value(QStringLiteral("items")).toArray();
-    for (qsizetype index = 0; index < operations.size(); ++index) {
-        const auto item = operations.at(index).toObject();
+    const auto operations = requiredArray(
+        *root, QStringLiteral("items"), QStringLiteral("T-Invest operations"));
+    if (!operations) {
+        return std::unexpected(operations.error());
+    }
+    for (qsizetype index = 0; index < operations->size(); ++index) {
+        const auto item = operations->at(index).toObject();
         const auto id = item.value(QStringLiteral("id")).toString().trimmed();
         const auto occurredAt =
             QDateTime::fromString(item.value(QStringLiteral("date")).toString(), Qt::ISODate);
@@ -341,9 +363,13 @@ TInvestClient::parsePortfolioResponse(const QByteArray &json, const QString &acc
         return std::unexpected(root.error());
     }
     NormalizedBatch batch;
-    const auto positions = root->value(QStringLiteral("positions")).toArray();
-    for (qsizetype index = 0; index < positions.size(); ++index) {
-        const auto item = positions.at(index).toObject();
+    const auto positions = requiredArray(
+        *root, QStringLiteral("positions"), QStringLiteral("T-Invest portfolio"));
+    if (!positions) {
+        return std::unexpected(positions.error());
+    }
+    for (qsizetype index = 0; index < positions->size(); ++index) {
+        const auto item = positions->at(index).toObject();
         auto instrumentId = item.value(QStringLiteral("instrumentUid")).toString();
         if (instrumentId.isEmpty()) {
             instrumentId = item.value(QStringLiteral("figi")).toString();

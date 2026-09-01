@@ -468,6 +468,21 @@ TEST_CASE("official bank parsers reject unsafe or malformed responses")
         QByteArrayLiteral("{not-json}"), QStringLiteral("account"), 0, 50);
     REQUIRE_FALSE(malformed);
     CHECK(malformed.error().code == ErrorCode::ParseFailed);
+
+    const auto missingTInvestOperations = TInvestClient::parseOperationsResponse(
+        QByteArrayLiteral(R"({"hasNext":false})"), QStringLiteral("account"));
+    REQUIRE_FALSE(missingTInvestOperations);
+    CHECK(missingTInvestOperations.error().code == ErrorCode::ParseFailed);
+
+    const auto missingAlfaOperations = AlfaBankClient::parseOperationsResponse(
+        QByteArrayLiteral(R"({"status":"ok"})"), QStringLiteral("account"), 0, 100);
+    REQUIRE_FALSE(missingAlfaOperations);
+    CHECK(missingAlfaOperations.error().code == ErrorCode::ParseFailed);
+
+    const auto missingTBankStatement = TBankBusinessClient::parseStatementResponse(
+        QByteArrayLiteral(R"({"balances":{}})"), QStringLiteral("account"));
+    REQUIRE_FALSE(missingTBankStatement);
+    CHECK(missingTBankStatement.error().code == ErrorCode::ParseFailed);
 }
 
 TEST_CASE("Bank of Russia daily XML is parsed without floating point conversion")

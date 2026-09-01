@@ -183,9 +183,21 @@ QString firstString(const QJsonObject &object, const std::initializer_list<QStri
     return {};
 }
 
-QJsonArray arrayFromDocument(const QJsonDocument &document, const QString &key)
+ConnectorResult<QJsonArray> requiredArray(const QJsonDocument &document,
+                                          const QString &key,
+                                          const QString &source)
 {
-    return document.isArray() ? document.array() : document.object().value(key).toArray();
+    if (document.isArray()) {
+        return document.array();
+    }
+    const auto value = document.object().value(key);
+    if (!value.isArray()) {
+        return std::unexpected(ConnectorError{
+            ErrorCode::ParseFailed,
+            QStringLiteral("%1 response omitted the required %2 array").arg(source, key),
+            {}, false});
+    }
+    return value.toArray();
 }
 
 std::optional<QDateTime> parseBankDateTime(const QString &value)
@@ -380,9 +392,13 @@ AlfaBankClient::parseAccountsResponse(const QByteArray &json, const QDateTime &o
         return std::unexpected(document.error());
     }
     NormalizedBatch batch;
-    const auto accounts = arrayFromDocument(*document, QStringLiteral("accounts"));
-    for (qsizetype index = 0; index < accounts.size(); ++index) {
-        const auto item = accounts.at(index).toObject();
+    const auto accounts = requiredArray(
+        *document, QStringLiteral("accounts"), QStringLiteral("Alfa accounts"));
+    if (!accounts) {
+        return std::unexpected(accounts.error());
+    }
+    for (qsizetype index = 0; index < accounts->size(); ++index) {
+        const auto item = accounts->at(index).toObject();
         const auto id = item.value(QStringLiteral("number")).toString().trimmed();
         const auto balance =
             alfaMoney(item.value(QStringLiteral("balance")).toObject(),
@@ -430,9 +446,13 @@ AlfaBankClient::parseOperationsResponse(const QByteArray &json,
         return std::unexpected(document.error());
     }
     NormalizedBatch batch;
-    const auto operations = arrayFromDocument(*document, QStringLiteral("operations"));
-    for (qsizetype index = 0; index < operations.size(); ++index) {
-        const auto item = operations.at(index).toObject();
+    const auto operations = requiredArray(
+        *document, QStringLiteral("operations"), QStringLiteral("Alfa operations"));
+    if (!operations) {
+        return std::unexpected(operations.error());
+    }
+    for (qsizetype index = 0; index < operations->size(); ++index) {
+        const auto item = operations->at(index).toObject();
         const auto id = item.value(QStringLiteral("id")).toString().trimmed();
         const auto occurredAt =
             parseBankDateTime(item.value(QStringLiteral("dateTime")).toString());
@@ -468,8 +488,8 @@ AlfaBankClient::parseOperationsResponse(const QByteArray &json,
               {QStringLiteral("status"), item.value(QStringLiteral("status")).toString()}},
              {QStringLiteral("alfa-b2c-readonly-v1"), {}, id, index}});
     }
-    if (operations.size() == requestedPageSize) {
-        batch.nextCursor = QByteArray::number(currentOffset + operations.size());
+    if (operations->size() == requestedPageSize) {
+        batch.nextCursor = QByteArray::number(currentOffset + operations->size());
     }
     return batch;
 }
@@ -591,9 +611,13 @@ TBankBusinessClient::parseAccountsResponse(const QByteArray &json,
         return std::unexpected(document.error());
     }
     NormalizedBatch batch;
-    const auto accounts = arrayFromDocument(*document, QStringLiteral("accounts"));
-    for (qsizetype index = 0; index < accounts.size(); ++index) {
-        const auto item = accounts.at(index).toObject();
+    const auto accounts = requiredArray(
+        *document, QStringLiteral("accounts"), QStringLiteral("T-Bank Business accounts"));
+    if (!accounts) {
+        return std::unexpected(accounts.error());
+    }
+    for (qsizetype index = 0; index < accounts->size(); ++index) {
+        const auto item = accounts->at(index).toObject();
         const auto id =
             firstString(item, {QStringLiteral("accountNumber"), QStringLiteral("id")});
         const auto currency = normalizedCurrency(
@@ -646,13 +670,15 @@ TBankBusinessClient::parseStatementResponse(const QByteArray &json,
     if (!document) {
         return std::unexpected(document.error());
     }
-    const auto root = document->isObject() ? document->object() : QJsonObject{};
     NormalizedBatch batch;
-    const auto operations = document->isArray()
-        ? document->array()
-        : root.value(QStringLiteral("operations")).toArray();
-    for (qsizetype index = 0; index < operations.size(); ++index) {
-        const auto item = operations.at(index).toObject();
+    const auto operations = requiredArray(
+        *document, QStringLiteral("operations"), QStringLiteral("T-Bank Business statement"));
+    if (!operations) {
+        return std::unexpected(operations.error());
+    }
+    const auto root = document->isObject() ? document->object() : QJsonObject{};
+    for (qsizetype index = 0; index < operations->size(); ++index) {
+        const auto item = operations->at(index).toObject();
         const auto id =
             firstString(item, {QStringLiteral("operationId"), QStringLiteral("id")});
         const auto dateText = firstString(
@@ -849,11 +875,22 @@ ModulbankClient::parseAccountsResponse(const QByteArray &json,
         return std::unexpected(document.error());
     }
     NormalizedBatch batch;
-    const auto companies = arrayFromDocument(*document, QStringLiteral("companies"));
-    for (const auto &companyValue : companies) {
+    const auto companies = requiredArray(
+        *document, QStringLiteral("companies"), QStringLiteral("Modulbank accounts"));
+    if (!companies) {
+        return std::unexpected(companies.error());
+    }
+    for (const auto &companyValue : *companies) {
         const auto company = companyValue.toObject();
         const auto companyName = company.value(QStringLiteral("companyName")).toString();
-        const auto accounts = company.value(QStringLiteral("bankAccounts")).toArray();
+        const auto accountsValue = company.value(QStringLiteral("bankAccounts"));
+        if (!accountsValue.isArray()) {
+            return std::unexpected(ConnectorError{
+                ErrorCode::ParseFailed,
+                QStringLiteral("Modulbank company omitted the required bankAccounts array"),
+                {}, false});
+        }
+        const auto accounts = accountsValue.toArray();
         for (qsizetype index = 0; index < accounts.size(); ++index) {
             const auto item = accounts.at(index).toObject();
             const auto id = item.value(QStringLiteral("id")).toString().trimmed();
@@ -910,9 +947,13 @@ ModulbankClient::parseOperationsResponse(const QByteArray &json,
         return std::unexpected(document.error());
     }
     NormalizedBatch batch;
-    const auto operations = arrayFromDocument(*document, QStringLiteral("operations"));
-    for (qsizetype index = 0; index < operations.size(); ++index) {
-        const auto item = operations.at(index).toObject();
+    const auto operations = requiredArray(
+        *document, QStringLiteral("operations"), QStringLiteral("Modulbank operations"));
+    if (!operations) {
+        return std::unexpected(operations.error());
+    }
+    for (qsizetype index = 0; index < operations->size(); ++index) {
+        const auto item = operations->at(index).toObject();
         const auto id = item.value(QStringLiteral("id")).toString().trimmed();
         const auto occurredAt = parseBankDateTime(firstString(
             item, {QStringLiteral("executed"), QStringLiteral("created")}));
@@ -950,8 +991,8 @@ ModulbankClient::parseOperationsResponse(const QByteArray &json,
                item.value(QStringLiteral("docNumber")).toString()}},
              {QStringLiteral("modulbank-readonly-v1"), {}, id, index}});
     }
-    if (operations.size() == requestedPageSize) {
-        batch.nextCursor = QByteArray::number(currentOffset + operations.size());
+    if (operations->size() == requestedPageSize) {
+        batch.nextCursor = QByteArray::number(currentOffset + operations->size());
     }
     return batch;
 }
