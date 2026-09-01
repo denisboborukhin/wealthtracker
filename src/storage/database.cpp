@@ -112,18 +112,6 @@ std::expected<void, Error> Statement::bind(int index, std::int64_t value) {
     return {};
 }
 
-std::expected<void, Error> Statement::bind(int index, double value) {
-    if (statement_ == nullptr) {
-        return std::unexpected(
-            Error{ErrorCode::invalid_state, SQLITE_MISUSE, "statement is not active"});
-    }
-    const int result = sqlite3_bind_double(statement_, index, value);
-    if (result != SQLITE_OK) {
-        return std::unexpected(make_statement_error(statement_, result, "bind floating point"));
-    }
-    return {};
-}
-
 std::expected<void, Error> Statement::bind(int index, std::string_view value) {
     if (statement_ == nullptr) {
         return std::unexpected(
@@ -203,10 +191,6 @@ bool Statement::column_is_null(int index) const noexcept {
 
 std::int64_t Statement::column_int64(int index) const noexcept {
     return statement_ == nullptr ? 0 : sqlite3_column_int64(statement_, index);
-}
-
-double Statement::column_double(int index) const noexcept {
-    return statement_ == nullptr ? 0.0 : sqlite3_column_double(statement_, index);
 }
 
 std::string Statement::column_text(int index) const {
@@ -323,10 +307,22 @@ std::expected<Database, Error> Database::open(
     }
 
 #ifdef SQLITE_DBCONFIG_DEFENSIVE
-    sqlite3_db_config(handle, SQLITE_DBCONFIG_DEFENSIVE, 1, nullptr);
+    int defensive_enabled = 0;
+    const int defensive_result =
+        sqlite3_db_config(handle, SQLITE_DBCONFIG_DEFENSIVE, 1, &defensive_enabled);
+    if (defensive_result != SQLITE_OK || defensive_enabled != 1) {
+        return std::unexpected(make_error(
+            handle, defensive_result, "enable defensive database mode"));
+    }
 #endif
 #ifdef SQLITE_DBCONFIG_TRUSTED_SCHEMA
-    sqlite3_db_config(handle, SQLITE_DBCONFIG_TRUSTED_SCHEMA, 0, nullptr);
+    int trusted_schema_enabled = 1;
+    const int trusted_schema_result =
+        sqlite3_db_config(handle, SQLITE_DBCONFIG_TRUSTED_SCHEMA, 0, &trusted_schema_enabled);
+    if (trusted_schema_result != SQLITE_OK || trusted_schema_enabled != 0) {
+        return std::unexpected(make_error(
+            handle, trusted_schema_result, "disable trusted database schema"));
+    }
 #endif
 
     constexpr std::string_view initialization = R"sql(
@@ -339,6 +335,38 @@ std::expected<Database, Error> Database::open(
     )sql";
     if (auto init_result = database.execute(initialization); !init_result) {
         return std::unexpected(init_result.error());
+    }
+
+    const std::array<std::pair<std::string_view, std::int64_t>, 4> required_pragmas{{
+        {"PRAGMA foreign_keys;", 1},
+        {"PRAGMA secure_delete;", 1},
+        {"PRAGMA temp_store;", 2},
+        {"PRAGMA synchronous;", 2},
+    }};
+    for (const auto& [query, required_value] : required_pragmas) {
+        auto value = database.scalar_int64(query);
+        if (!value || *value != required_value) {
+            return std::unexpected(Error{
+                ErrorCode::open_failed,
+                value ? SQLITE_MISUSE : value.error().native_code,
+                "required database safety setting was not applied"});
+        }
+    }
+    auto journal_mode = database.scalar_text("PRAGMA journal_mode;");
+    if (!journal_mode || *journal_mode != "wal") {
+        return std::unexpected(Error{
+            ErrorCode::open_failed,
+            journal_mode ? SQLITE_MISUSE : journal_mode.error().native_code,
+            "write-ahead logging was not enabled"});
+    }
+    if (options.require_cipher) {
+        auto memory_security = database.scalar_int64("PRAGMA cipher_memory_security;");
+        if (!memory_security || *memory_security != 1) {
+            return std::unexpected(Error{
+                ErrorCode::open_failed,
+                memory_security ? SQLITE_MISUSE : memory_security.error().native_code,
+                "SQLCipher memory security was not enabled"});
+        }
     }
     return database;
 }

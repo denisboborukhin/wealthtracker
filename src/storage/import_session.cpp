@@ -137,8 +137,13 @@ std::expected<void, Error> ImportSession::upsert_account(const AccountDraft& acc
             currency, opened_at, created_at)
         VALUES(?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)
         ON CONFLICT(id) DO UPDATE SET
+            connection_id = excluded.connection_id,
+            institution_id = excluded.institution_id,
+            external_id = excluded.external_id,
             name = excluded.name,
             account_type = excluded.account_type,
+            currency = excluded.currency,
+            opened_at = excluded.opened_at,
             is_closed = 0;
     )sql");
     if (!statement) {
@@ -234,7 +239,7 @@ std::expected<ImportInsertResult, Error> ImportSession::add_transaction(
 
     if (transaction.external_id) {
         auto exact = database_->prepare(R"sql(
-            SELECT id FROM ledger_transactions
+            SELECT id, canonical_hash FROM ledger_transactions
             WHERE account_id = ?1 AND external_id = ?2
             LIMIT 1;
         )sql");
@@ -252,8 +257,66 @@ std::expected<ImportInsertResult, Error> ImportSession::add_transaction(
             return std::unexpected(step.error());
         }
         if (*step == StepResult::row) {
-            return ImportInsertResult{
-                ImportInsertStatus::exact_duplicate, exact->column_text(0)};
+            const auto existing_id = exact->column_text(0);
+            if (exact->column_text(1) == transaction.canonical_hash) {
+                return ImportInsertResult{
+                    ImportInsertStatus::exact_duplicate, existing_id};
+            }
+
+            auto update = database_->prepare(R"sql(
+                UPDATE ledger_transactions
+                SET source_record_id = ?1,
+                    posted_on = ?2,
+                    occurred_at = ?3,
+                    amount_minor = ?4,
+                    currency = ?5,
+                    description = ?6,
+                    bank_category = ?7,
+                    transaction_kind = ?8,
+                    canonical_hash = ?9
+                WHERE id = ?10;
+            )sql");
+            if (!update) {
+                return std::unexpected(update.error());
+            }
+            if (auto result = update->bind(1, transaction.source_record_id); !result) {
+                return std::unexpected(result.error());
+            }
+            if (auto result = update->bind(2, transaction.posted_on); !result) {
+                return std::unexpected(result.error());
+            }
+            if (auto result = bind_optional(*update, 3, transaction.occurred_at); !result) {
+                return std::unexpected(result.error());
+            }
+            if (auto result = update->bind(4, transaction.amount_minor); !result) {
+                return std::unexpected(result.error());
+            }
+            if (auto result = update->bind(5, transaction.currency); !result) {
+                return std::unexpected(result.error());
+            }
+            if (auto result = update->bind(6, transaction.description); !result) {
+                return std::unexpected(result.error());
+            }
+            if (auto result = bind_optional(*update, 7, transaction.bank_category); !result) {
+                return std::unexpected(result.error());
+            }
+            if (auto result = update->bind(8, transaction.transaction_kind); !result) {
+                return std::unexpected(result.error());
+            }
+            if (auto result = update->bind(9, transaction.canonical_hash); !result) {
+                return std::unexpected(result.error());
+            }
+            if (auto result = update->bind(10, existing_id); !result) {
+                return std::unexpected(result.error());
+            }
+            if (auto result = expect_done(*update); !result) {
+                return std::unexpected(result.error());
+            }
+            if (database_->changes() != 1) {
+                return std::unexpected(Error{
+                    ErrorCode::invalid_state, 0, "existing transaction was not updated"});
+            }
+            return ImportInsertResult{ImportInsertStatus::updated, existing_id};
         }
     }
 

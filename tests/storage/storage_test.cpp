@@ -5,6 +5,8 @@
 #include <cstddef>
 #include <expected>
 #include <filesystem>
+#include <fstream>
+#include <iterator>
 #include <optional>
 #include <random>
 #include <string>
@@ -87,6 +89,31 @@ TEST_CASE("newer database schemas fail closed", "[storage][migrations]") {
     auto result = runner.apply(wealthtracker::storage::default_migrations());
     REQUIRE_FALSE(result.has_value());
     REQUIRE(result.error().code == wealthtracker::storage::ErrorCode::migration_error);
+}
+
+TEST_CASE("SQLCipher database rejects a wrong key and hides schema text", "[storage][crypto]") {
+    TemporaryDatabase temporary;
+    std::array<std::byte, 32> key{};
+    key.fill(std::byte{0x31});
+    {
+        auto database = wealthtracker::storage::Database::open(temporary.path(), key);
+        REQUIRE(database);
+        wealthtracker::storage::MigrationRunner runner(*database);
+        REQUIRE(runner.apply(wealthtracker::storage::default_migrations()));
+    }
+
+    std::ifstream encrypted(temporary.path(), std::ios::binary);
+    REQUIRE(encrypted);
+    const std::string bytes{
+        std::istreambuf_iterator<char>{encrypted}, std::istreambuf_iterator<char>{}};
+    CHECK_FALSE(bytes.contains("ledger_transactions"));
+
+    std::array<std::byte, 32> wrong_key{};
+    wrong_key.fill(std::byte{0x32});
+    const auto reopened = wealthtracker::storage::Database::open(
+        temporary.path(), wrong_key,
+        wealthtracker::storage::OpenOptions{.create_if_missing = false});
+    REQUIRE_FALSE(reopened);
 }
 
 TEST_CASE("uncommitted import is rolled back atomically", "[storage][import]") {
@@ -180,16 +207,86 @@ TEST_CASE("import detects source IDs exactly and fingerprints conservatively", "
     REQUIRE(third->add_source_record({
         .id = "source-3",
         .row_number = 1,
-        .canonical_hash = "fingerprint",
-        .raw_payload_json = R"({"row":1})",
+        .canonical_hash = "corrected-fingerprint",
+        .raw_payload_json = R"({"row":"corrected"})",
         .created_at = "2026-07-30T00:04:00Z",
     }).has_value());
     original.id = "transaction-3";
     original.source_record_id = "source-3";
+    original.amount_minor = -12'000;
+    original.description = "Corrected purchase";
+    original.canonical_hash = "corrected-fingerprint";
+    auto updated = third->add_transaction(original);
+    REQUIRE(updated.has_value());
+    REQUIRE(updated->status == wealthtracker::storage::ImportInsertStatus::updated);
+    REQUIRE(updated->possible_existing_id == "transaction-1");
+    REQUIRE(third->commit("2026-07-30T00:05:00Z", 0).has_value());
+
+    auto stored_amount = database->scalar_int64(
+        "SELECT amount_minor FROM ledger_transactions WHERE id = 'transaction-1';");
+    REQUIRE(stored_amount);
+    CHECK(*stored_amount == -12'000);
+    auto stored_description = database->scalar_text(
+        "SELECT description FROM ledger_transactions WHERE id = 'transaction-1';");
+    REQUIRE(stored_description);
+    CHECK(*stored_description == "Corrected purchase");
+
+    auto fourth = wealthtracker::storage::ImportSession::begin(*database, batch("batch-4", "hash-4"));
+    REQUIRE(fourth.has_value());
+    REQUIRE(fourth->add_source_record({
+        .id = "source-4",
+        .row_number = 1,
+        .canonical_hash = "corrected-fingerprint",
+        .raw_payload_json = R"({"row":"possible-duplicate"})",
+        .created_at = "2026-07-30T00:06:00Z",
+    }).has_value());
+    original.id = "transaction-4";
+    original.source_record_id = "source-4";
     original.external_id = std::nullopt;
-    auto ambiguous = third->add_transaction(original);
+    auto ambiguous = fourth->add_transaction(original);
     REQUIRE(ambiguous.has_value());
     REQUIRE(ambiguous->status == wealthtracker::storage::ImportInsertStatus::needs_review);
+}
+
+TEST_CASE("account refresh updates imported bank metadata", "[storage][import]") {
+    TemporaryDatabase temporary;
+    auto database = open_test_database(temporary.path());
+    REQUIRE(database);
+    wealthtracker::storage::MigrationRunner runner(*database);
+    REQUIRE(runner.apply(wealthtracker::storage::default_migrations()));
+
+    auto session = wealthtracker::storage::ImportSession::begin(
+        *database, batch("account-batch", "account-hash"));
+    REQUIRE(session);
+    REQUIRE(session->upsert_institution({
+        .id = "bank", .name = "Bank", .created_at = "2026-07-30T00:00:00Z"}));
+    REQUIRE(session->upsert_account({
+        .id = "account",
+        .institution_id = "bank",
+        .external_id = "old-external",
+        .name = "Old card",
+        .account_type = "card",
+        .currency = "RUB",
+        .created_at = "2026-07-30T00:00:00Z",
+    }));
+    REQUIRE(session->upsert_account({
+        .id = "account",
+        .institution_id = "bank",
+        .external_id = "current-external",
+        .name = "Current account",
+        .account_type = "checking",
+        .currency = "USD",
+        .opened_at = "2026-01-01",
+        .created_at = "2026-07-30T00:00:00Z",
+    }));
+    REQUIRE(session->commit("2026-07-30T00:01:00Z", 0));
+
+    REQUIRE(database->scalar_text(
+        "SELECT external_id FROM accounts WHERE id = 'account';") == "current-external");
+    REQUIRE(database->scalar_text(
+        "SELECT currency FROM accounts WHERE id = 'account';") == "USD");
+    REQUIRE(database->scalar_text(
+        "SELECT opened_at FROM accounts WHERE id = 'account';") == "2026-01-01");
 }
 
 TEST_CASE("ledger repository stores user edits as overlays", "[storage][repository]") {

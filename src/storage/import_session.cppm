@@ -67,6 +67,7 @@ struct LedgerTransactionDraft {
 
 enum class ImportInsertStatus {
     inserted,
+    updated,
     exact_duplicate,
     needs_review,
 };

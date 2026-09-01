@@ -34,7 +34,6 @@ public:
 
     [[nodiscard]] std::expected<void, Error> bind_null(int index);
     [[nodiscard]] std::expected<void, Error> bind(int index, std::int64_t value);
-    [[nodiscard]] std::expected<void, Error> bind(int index, double value);
     [[nodiscard]] std::expected<void, Error> bind(int index, std::string_view value);
     [[nodiscard]] std::expected<void, Error> bind(int index, std::span<const std::byte> value);
     [[nodiscard]] std::expected<StepResult, Error> step();
@@ -43,7 +42,6 @@ public:
     [[nodiscard]] int column_count() const noexcept;
     [[nodiscard]] bool column_is_null(int index) const noexcept;
     [[nodiscard]] std::int64_t column_int64(int index) const noexcept;
-    [[nodiscard]] double column_double(int index) const noexcept;
     [[nodiscard]] std::string column_text(int index) const;
     [[nodiscard]] std::vector<std::byte> column_blob(int index) const;
 
