@@ -77,6 +77,9 @@ jobs:
       - name: Test
         run: ctest --preset ${{ matrix.preset }} --output-on-failure
 
+      - name: Stage application bundle
+        run: cmake --install build/${{ matrix.preset }} --prefix build/stage/${{ matrix.preset }}
+
   checks:
     runs-on: ubuntu-24.04
     steps:
@@ -87,7 +90,7 @@ jobs:
           python-version: "3.12"
 
       - name: Install analysis tools
-        run: python -m pip install conan==2.19.1 reuse==5.0.2
+        run: python -m pip install conan==2.19.1
 
       - name: Validate Conan recipe
         run: conan inspect .
@@ -109,3 +112,8 @@ jobs:
 
       - name: Verify task files are ignored
         run: git check-ignore tasks/todo.md tasks/lessons.md
+
+      - name: Validate script syntax
+        run: |
+          sh -n scripts/bootstrap.sh scripts/configure.sh
+          node --check scripts/zen_plugin_host.mjs

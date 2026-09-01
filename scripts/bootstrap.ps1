@@ -2,6 +2,15 @@ $ErrorActionPreference = "Stop"
 
 $ProjectDir = Split-Path -Parent $PSScriptRoot
 $ToolDir = Join-Path $ProjectDir "build/tooling"
+$QtMirror = if ($env:WT_QT_MIRROR) {
+    $env:WT_QT_MIRROR
+} else {
+    "https://ftp.fau.de/qtproject/"
+}
+$QtMirrorUri = [Uri]$QtMirror
+if (-not $QtMirrorUri.IsAbsoluteUri -or $QtMirrorUri.Scheme -ne "https") {
+    throw "WT_QT_MIRROR must be an absolute HTTPS URL."
+}
 
 python -m venv $ToolDir
 & "$ToolDir/Scripts/python.exe" -m pip install `
@@ -13,6 +22,7 @@ python -m venv $ToolDir
 & "$ToolDir/Scripts/aqt.exe" install-qt `
     windows desktop 6.11.1 win64_msvc2022_64 `
     --modules qtwebview `
+    --base $QtMirrorUri.AbsoluteUri `
     -O "$ProjectDir/build/qt"
 
 Write-Host "Tools installed under $ToolDir"

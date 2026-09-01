@@ -4,6 +4,12 @@ set -eu
 project_dir=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
 tool_dir="${project_dir}/build/tooling"
 
+if [ "$(uname -s)" != "Darwin" ]; then
+  echo "Automatic bootstrap is supported on macOS only." >&2
+  echo "Use scripts/bootstrap.ps1 on Windows; Linux builds require a manual Qt toolchain." >&2
+  exit 1
+fi
+
 python_command=${WT_BOOTSTRAP_PYTHON:-}
 if [ -z "${python_command}" ]; then
   for candidate in python3.13 python3.12 python3.11 python3.10 python3; do
@@ -40,23 +46,8 @@ esac
   "cmake==4.1.2" \
   "ninja==1.13.0"
 
-case "$(uname -s)" in
-  Darwin)
-    qt_host="mac"
-    qt_arch="clang_64"
-    ;;
-  Linux)
-    qt_host="linux"
-    qt_arch="linux_gcc_64"
-    ;;
-  *)
-    echo "Unsupported host. Use scripts/bootstrap.ps1 on Windows." >&2
-    exit 1
-    ;;
-esac
-
 "${tool_dir}/bin/aqt" -c "${project_dir}/scripts/aqt.ini" install-qt \
-  "${qt_host}" desktop 6.11.1 "${qt_arch}" \
+  mac desktop 6.11.1 clang_64 \
   --modules qtwebview \
   --base "${qt_mirror}" \
   -O "${project_dir}/build/qt"

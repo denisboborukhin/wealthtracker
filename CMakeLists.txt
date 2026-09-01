@@ -92,7 +92,7 @@ target_sources(
 target_link_libraries(platform PUBLIC libsodium::libsodium)
 set_property(TARGET platform PROPERTY CXX_SCAN_FOR_MODULES ON)
 if(APPLE)
-    target_link_libraries(platform PRIVATE "-framework Security")
+    target_link_libraries(platform PRIVATE "-framework CoreFoundation" "-framework Security")
 elseif(WIN32)
     target_link_libraries(platform PRIVATE Advapi32)
 endif()
@@ -184,66 +184,7 @@ set_property(TARGET app PROPERTY CXX_SCAN_FOR_MODULES ON)
 enable_strict_warnings(app)
 enable_sanitizers(app)
 
-qt_add_executable(wealthtracker
-    MANUAL_FINALIZATION
-    src/app/main.cpp
-)
-
-set_source_files_properties(
-    ui/qml/Theme.qml
-    PROPERTIES QT_QML_SINGLETON_TYPE TRUE
-)
-
-qt_add_qml_module(
-    wealthtracker
-    URI WealthTracker
-    VERSION 1.0
-    RESOURCE_PREFIX /qt/qml
-    NO_IMPORT_SCAN
-    QML_FILES
-        ui/qml/Main.qml
-        ui/qml/Theme.qml
-        ui/qml/components/MetricCard.qml
-        ui/qml/components/LineChart.qml
-        ui/qml/components/SectionCard.qml
-        ui/qml/components/ActionButton.qml
-        ui/qml/components/DatePickerField.qml
-        ui/qml/components/StatusBadge.qml
-        ui/qml/components/MinimalComboBox.qml
-        ui/qml/components/MinimalSwitch.qml
-        ui/qml/pages/DashboardPage.qml
-        ui/qml/pages/AccountsPage.qml
-        ui/qml/pages/TransactionsPage.qml
-        ui/qml/pages/ImportsPage.qml
-        ui/qml/pages/InvestmentsPage.qml
-        ui/qml/pages/CategoriesPage.qml
-        ui/qml/pages/ConnectionsPage.qml
-        ui/qml/pages/SettingsPage.qml
-)
-
-target_link_libraries(
-    wealthtracker
-    PRIVATE
-        app
-        Qt6::QuickControls2
-        Qt6::Concurrent
-)
-enable_strict_warnings(wealthtracker)
-enable_sanitizers(wealthtracker)
-
-set_target_properties(
-    wealthtracker
-    PROPERTIES
-        OUTPUT_NAME "WealthTracker"
-        MACOSX_BUNDLE TRUE
-        MACOSX_BUNDLE_BUNDLE_NAME "WealthTracker"
-        MACOSX_BUNDLE_GUI_IDENTIFIER "org.wealthtracker.desktop"
-        MACOSX_BUNDLE_SHORT_VERSION_STRING "${PROJECT_VERSION}"
-        MACOSX_BUNDLE_BUNDLE_VERSION "${PROJECT_VERSION}"
-        WIN32_EXECUTABLE TRUE
-)
-
-qt_finalize_executable(wealthtracker)
+add_subdirectory(ui/qml)
 
 if(BUILD_TESTING)
     find_package(Catch2 3 REQUIRED CONFIG)
@@ -331,9 +272,26 @@ install(
     RUNTIME DESTINATION "${CMAKE_INSTALL_BINDIR}"
 )
 install(
-    FILES LICENSE THIRD_PARTY_NOTICES.md
+    FILES LICENSE THIRD_PARTY_NOTICES.md conan.lock
     DESTINATION "${CMAKE_INSTALL_DATADIR}/wealthtracker"
 )
+
+get_filename_component(qt_install_prefix "${Qt6_DIR}/../../.." ABSOLUTE)
+if(EXISTS "${qt_install_prefix}/sbom")
+    install(
+        DIRECTORY "${qt_install_prefix}/sbom/"
+        DESTINATION "${CMAKE_INSTALL_DATADIR}/wealthtracker/qt-sbom"
+        FILES_MATCHING PATTERN "*.spdx"
+    )
+endif()
+
+qt_generate_deploy_qml_app_script(
+    TARGET wealthtracker
+    OUTPUT_SCRIPT deploy_script
+    NO_UNSUPPORTED_PLATFORM_ERROR
+    EXCLUDE_PLUGIN_TYPES sqldrivers
+)
+install(SCRIPT "${deploy_script}")
 
 set(CPACK_PACKAGE_NAME "WealthTracker")
 set(CPACK_PACKAGE_VENDOR "WealthTracker contributors")
