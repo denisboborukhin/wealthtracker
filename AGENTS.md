@@ -202,6 +202,10 @@ When the user corrects your approach, append a one-line rule here before ending 
   placement; closed content does not provide reliable implicit bounds.
 - Run aqt only with a supported OpenSSL-backed Python and an explicit HTTPS
   mirror policy; never recover from repository errors by weakening TLS checks.
+- Reset asynchronous login probes independently from deferred native WebView
+  cleanup so a stale callback cannot gate the next login attempt.
+- Use bank history-screen responses only to discover exact read templates;
+  publish operations only after bounded replay proves every terminal page.
 
 ---
 
