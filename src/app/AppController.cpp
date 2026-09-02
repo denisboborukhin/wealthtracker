@@ -442,6 +442,7 @@ public:
     QTimer vtb_auto_update_timer;
     QDateTime next_vtb_auto_update_at;
     bool vtb_sync_running = false;
+    bool vtb_history_snapshot_complete = false;
 };
 
 AppController::AppController(QObject* parent)
@@ -580,12 +581,18 @@ AppController::AppController(std::unique_ptr<CredentialBackend> credentials,
                 batch.warnings, [](const auto& warning) {
                     return warning.code == QStringLiteral("vtb-history-incomplete");
                 });
+            QSettings settings;
+            bool preservedCompleteHistory = false;
             if (historyIncomplete) {
                 const auto previous =
                     private_->bank_batches.constFind(QStringLiteral("vtb-retail"));
-                if (previous != private_->bank_batches.cend()) {
-                    (void)retainPreviousTransactionsForPartialHistory(
-                        batch, *previous, QDate::currentDate().addYears(-2));
+                if (private_->vtb_history_snapshot_complete &&
+                    previous != private_->bank_batches.cend()) {
+                    (void)preservePreviousCompleteTransactions(batch, *previous);
+                    preservedCompleteHistory = true;
+                } else {
+                    batch.transactions.clear();
+                    private_->vtb_history_snapshot_complete = false;
                 }
             }
             const auto transactionCount = batch.transactions.size();
@@ -599,18 +606,23 @@ AppController::AppController(std::unique_ptr<CredentialBackend> credentials,
             private_->bank_batches.insert(QStringLiteral("vtb-retail"), std::move(batch));
             rebuildBankModels();
             const auto completedAt = QDateTime::currentDateTimeUtc();
-            QSettings settings;
             settings.setValue(QStringLiteral("vtb/connected"), true);
             settings.setValue(QStringLiteral("vtb/autoUpdate"),
                               settings.value(QStringLiteral("vtb/autoUpdate"), true));
-            settings.setValue(QStringLiteral("vtb/lastSyncAt"),
-                              completedAt.toString(Qt::ISODate));
+            settings.setValue(QStringLiteral("vtb/lastAttemptAt"),
+                              completedAt.toString(Qt::ISODateWithMs));
+            if (!historyIncomplete) {
+                private_->vtb_history_snapshot_complete = true;
+                settings.setValue(QStringLiteral("vtb/lastSyncAt"),
+                                  completedAt.toString(Qt::ISODateWithMs));
+            }
             vtb_login_status_ = historyIncomplete
-                ? QStringLiteral(
-                      "Подключено частично · счетов %1 · операций %2 · "
-                      "история за 2 года неполная")
-                      .arg(accountCount)
-                      .arg(transactionCount)
+                ? (preservedCompleteHistory
+                       ? QStringLiteral(
+                             "Счета обновлены · сохранена предыдущая полная история (%1 операций)")
+                             .arg(transactionCount)
+                       : QStringLiteral(
+                             "Счета обновлены · операции не опубликованы: полная история не подтверждена"))
                 : QStringLiteral(
                       "Подключено · счетов %1 · операций %2 · история за 2 года")
                       .arg(accountCount)
@@ -638,6 +650,7 @@ AppController::AppController(std::unique_ptr<CredentialBackend> credentials,
                 vtb_connected_ = false;
                 QSettings{}.setValue(QStringLiteral("vtb/connected"), false);
                 private_->bank_batches.remove(QStringLiteral("vtb-retail"));
+                private_->vtb_history_snapshot_complete = false;
                 if (!demo_mode_) {
                     rebuildBankModels();
                 }
@@ -2961,6 +2974,7 @@ void AppController::setVtbAutoUpdate(const bool enabled) {
 void AppController::disconnectVtb() {
     private_->vtb_login->disconnectBank();
     private_->vtb_sync_running = false;
+    private_->vtb_history_snapshot_complete = false;
     vtb_connected_ = false;
     vtb_login_active_ = false;
     private_->vtb_auto_update_timer.stop();

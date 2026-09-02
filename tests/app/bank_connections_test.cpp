@@ -982,6 +982,36 @@ TEST_CASE("partial bank refresh retains distinct history inside the two-year win
     CHECK(current.transactions.back().externalId == QStringLiteral("older"));
 }
 
+TEST_CASE("incomplete refresh preserves only a previous complete transaction snapshot") {
+    using wealthtracker::app::preservePreviousCompleteTransactions;
+    using wealthtracker::connectors::ExternalAccount;
+    using wealthtracker::connectors::NormalizedBatch;
+    using wealthtracker::connectors::NormalizedTransaction;
+
+    NormalizedBatch current;
+    ExternalAccount retainedAccount;
+    retainedAccount.externalId = QStringLiteral("account-1");
+    current.accounts.push_back(retainedAccount);
+    NormalizedTransaction preview;
+    preview.externalId = QStringLiteral("preview");
+    preview.accountExternalId = retainedAccount.externalId;
+    current.transactions.push_back(preview);
+
+    NormalizedBatch previous;
+    NormalizedTransaction retained;
+    retained.externalId = QStringLiteral("complete");
+    retained.accountExternalId = retainedAccount.externalId;
+    previous.transactions.push_back(retained);
+    NormalizedTransaction removedAccount = retained;
+    removedAccount.externalId = QStringLiteral("removed");
+    removedAccount.accountExternalId = QStringLiteral("account-2");
+    previous.transactions.push_back(removedAccount);
+
+    CHECK(preservePreviousCompleteTransactions(current, previous) == 1);
+    REQUIRE(current.transactions.size() == 1);
+    CHECK(current.transactions.front().externalId == QStringLiteral("complete"));
+}
+
 TEST_CASE("T-Bank synchronization publishes balances and excludes internal transfers") {
     const TBankSettingsCleanup cleanup;
     auto credentials = std::make_unique<MemoryCredentialBackend>();

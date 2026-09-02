@@ -73,6 +73,22 @@ struct BankRuntime {
     return retained;
 }
 
+[[nodiscard]] qsizetype preservePreviousCompleteTransactions(
+    wealthtracker::connectors::NormalizedBatch& current,
+    const wealthtracker::connectors::NormalizedBatch& previous) {
+    QSet<QString> currentAccounts;
+    for (const auto& account : current.accounts) {
+        currentAccounts.insert(account.externalId);
+    }
+    current.transactions.clear();
+    for (const auto& transaction : previous.transactions) {
+        if (currentAccounts.contains(transaction.accountExternalId)) {
+            current.transactions.push_back(transaction);
+        }
+    }
+    return current.transactions.size();
+}
+
 class BankSyncCoordinator final : public QObject {
   public:
     using LoadCredential = std::function<std::expected<QByteArray, QString>()>;

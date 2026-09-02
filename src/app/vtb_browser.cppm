@@ -45,7 +45,8 @@ struct VtbFinancialProjection {
     const state = globalThis[stateKey] = { status: 'running', requestStage: 'module' }
     const maximumPayloadBytes = 8 * 1024 * 1024
     const maximumHistoryTemplates = 16
-    const maximumHistoryRequests = 128
+    const maximumHistoryRequests = 512
+    const maximumConcurrentHistoryRequests = 4
     const historyWindowDays = 31
     const historyQuietMilliseconds = 1200
     const historyTimeoutMilliseconds = 150 * 1000
@@ -108,13 +109,18 @@ struct VtbFinancialProjection {
       }
       const normalizedKey = value => String(value).replace(/[-_]/g, '').toLowerCase()
       const historyDate = (sample, value) => {
+        const source = String(sample ?? '')
         const day = String(value.getDate()).padStart(2, '0')
         const month = String(value.getMonth() + 1).padStart(2, '0')
         const year = String(value.getFullYear())
-        if (/^\d{2}\.\d{2}\.\d{4}$/.test(String(sample ?? '')))
+        if (/^\d{2}\.\d{2}\.\d{4}$/.test(source))
           return `${day}.${month}.${year}`
-        if (/^\d{4}-\d{2}-\d{2}$/.test(String(sample ?? '')))
+        if (/^\d{4}-\d{2}-\d{2}$/.test(source))
           return `${year}-${month}-${day}`
+        if (/^\d{4}-\d{2}-\d{2}T/.test(source))
+          return `${year}-${month}-${day}${source.slice(10)}`
+        if (/^\d{13}$/.test(source)) return String(value.getTime())
+        if (/^\d{10}$/.test(source)) return String(Math.floor(value.getTime() / 1000))
         return null
       }
       const parseTemplate = value => {
@@ -128,7 +134,8 @@ struct VtbFinancialProjection {
             const separator = pair.indexOf('=')
             const key = decodeURIComponent(separator < 0 ? pair : pair.slice(0, separator))
             const item = decodeURIComponent(separator < 0 ? '' : pair.slice(separator + 1))
-            if (key && !Object.prototype.hasOwnProperty.call(params, key)) params[key] = item
+            if (!key || Object.prototype.hasOwnProperty.call(params, key)) return null
+            params[key] = item
           }
           let fromKey = ''
           let toKey = ''
@@ -137,8 +144,8 @@ struct VtbFinancialProjection {
           let limitKey = ''
           for (const key of Object.keys(params)) {
             const normalized = normalizedKey(key)
-            if (normalized === 'datefrom') fromKey = key
-            if (normalized === 'dateto') toKey = key
+            if (['datefrom', 'fromdate', 'startdate'].includes(normalized)) fromKey = key
+            if (['dateto', 'todate', 'enddate'].includes(normalized)) toKey = key
             if (['page', 'pagenumber', 'pageindex'].includes(normalized)) pageKey = key
             if (['offset', 'skip', 'startindex'].includes(normalized)) offsetKey = key
             if (['limit', 'pagesize', 'pagelimit', 'itemsperpage',
@@ -151,10 +158,10 @@ struct VtbFinancialProjection {
                    key: `${url.pathname}?${stable}` }
         } catch (ignored) { return null }
       }
-      const selectedTemplates = () => {
-        const byUser = templates.filter(template => template.path.endsWith('/byUser'))
-        return byUser.length > 0 ? [byUser[0]] : templates
-      }
+      const replayable = template => template.fromKey && template.toKey &&
+        historyDate(template.params[template.fromKey], new Date()) !== null &&
+        historyDate(template.params[template.toKey], new Date()) !== null
+      const selectedTemplates = () => templates.filter(replayable)
       const requestHeaders = () => ({
         'x-request-id': globalThis.crypto &&
           typeof globalThis.crypto.randomUUID === 'function'
@@ -233,7 +240,7 @@ struct VtbFinancialProjection {
               return replayPage(template, next)
             })
         }
-        let sequence = Promise.resolve()
+        const jobs = []
         for (const template of selected) {
           if (!template.fromKey || !template.toKey ||
               historyDate(template.params[template.fromKey], rangeFrom) === null ||
@@ -249,20 +256,28 @@ struct VtbFinancialProjection {
             const pageTo = new Date(end)
             start = new Date(end)
             start.setDate(start.getDate() + 1)
-            sequence = sequence.then(() => {
-              const params = Object.assign({}, template.params)
-              params[template.fromKey] = historyDate(template.params[template.fromKey], pageFrom)
-              params[template.toKey] = historyDate(template.params[template.toKey], pageTo)
-              if (template.pageKey) {
-                const firstPage = Number(template.params[template.pageKey]) === 0 ? 0 : 1
-                params[template.pageKey] = String(firstPage)
-              }
-              if (template.offsetKey) params[template.offsetKey] = '0'
-              return replayPage(template, params)
-            })
+            const params = Object.assign({}, template.params)
+            params[template.fromKey] = historyDate(template.params[template.fromKey], pageFrom)
+            params[template.toKey] = historyDate(template.params[template.toKey], pageTo)
+            if (template.pageKey) {
+              const firstPage = Number(template.params[template.pageKey]) === 0 ? 0 : 1
+              params[template.pageKey] = String(firstPage)
+            }
+            if (template.offsetKey) params[template.offsetKey] = '0'
+            jobs.push({ template, params })
           }
         }
-        sequence.then(() => finish(null, true)).catch(error => {
+        let nextJobIndex = 0
+        const runNextJob = () => {
+          if (finished || nextJobIndex >= jobs.length) return Promise.resolve()
+          const job = jobs[nextJobIndex++]
+          return replayPage(job.template, job.params).then(runNextJob)
+        }
+        const workers = []
+        for (let index = 0;
+             index < Math.min(maximumConcurrentHistoryRequests, jobs.length); ++index)
+          workers.push(runNextJob())
+        Promise.all(workers).then(() => finish(null, true)).catch(error => {
           const status = httpStatus(error)
           if (status === 401 || status === 403 || error?.kind === 'frontend') finish(error)
           else {
@@ -299,10 +314,9 @@ struct VtbFinancialProjection {
           if (!validPayload(history) || !Array.isArray(history.operations) ||
               responseCount >= maximumHistoryTemplates)
             frontendFailure('VTB-H1')
-          operations.push(...history.operations)
-          ++responseCount
           const template = parseTemplate(request.__wealthtrackerVtbHistoryUrl)
           if (!template) frontendFailure('VTB-H1')
+          ++responseCount
           if (!templateKeys.has(template.key)) {
             templateKeys.add(template.key)
             templates.push(template)
@@ -457,7 +471,8 @@ struct VtbFinancialProjection {
         .includes(state.reason) ? state.reason : 'VTB-X1'
       return JSON.stringify(result)
     }
-    result.diagnostic = state.historyComplete === false ? 'VTB-H2' : ''
+    let projectionIncomplete = state.historyComplete === false
+    result.diagnostic = projectionIncomplete ? 'VTB-H2' : ''
 
     const text = value => {
       if (value === null || value === undefined) return ''
@@ -573,10 +588,14 @@ struct VtbFinancialProjection {
                                     7760,7761,7775,9775,5111])
     const internalCategories = new Set([101,92,103])
     const seenTransactions = new Set()
-    const operations = Array.isArray(state.history?.operations)
-      ? state.history.operations.slice(0, 20000) : []
+    const rawOperations = Array.isArray(state.history?.operations) ? state.history.operations : []
+    if (rawOperations.length > 20000) projectionIncomplete = true
+    const operations = rawOperations.slice(0, 20000)
     for (const operation of operations) {
-      if (!operation || typeof operation !== 'object') continue
+      if (!operation || typeof operation !== 'object') {
+        projectionIncomplete = true
+        continue
+      }
       const rawAccountId = identifier(operation.accountProductId ?? operation.accountId ??
                                       operation.cardProductId ?? operation.cardId)
       let accountId = accountAliases.get(rawAccountId) ?? rawAccountId
@@ -584,11 +603,17 @@ struct VtbFinancialProjection {
         accountId = result.accounts[0].id
       const date = new Date(text(operation.operationDate ?? operation.date ?? operation.createdAt))
       const amount = money(operation.transactionAmount ?? operation.operationAmount ?? operation.amount)
-      if (!seenAccounts.has(accountId) || Number.isNaN(date.getTime()) || !amount) continue
+      if (!seenAccounts.has(accountId) || Number.isNaN(date.getTime()) || !amount) {
+        projectionIncomplete = true
+        continue
+      }
       let signedMinor = amount.minor
       if (operation.debet === true && !signedMinor.startsWith('-')) signedMinor = `-${signedMinor}`
       else if (operation.debet === false && signedMinor.startsWith('-')) signedMinor = signedMinor.slice(1)
-      if (signedMinor === '0' || signedMinor === '-0') continue
+      if (signedMinor === '0' || signedMinor === '-0') {
+        projectionIncomplete = true
+        continue
+      }
       const id = identifier(operation.operationId ?? operation.internalId ?? operation.id)
       const description = text(operation.fullOperationName ?? operation.operationName ??
                                operation.description ?? operation.title)
@@ -614,6 +639,7 @@ struct VtbFinancialProjection {
         internalTransfer
       })
     }
+    if (projectionIncomplete) result.diagnostic = 'VTB-H2'
     result.stage = 'ready'
     if (typeof globalThis.TextEncoder === 'function') {
       const encoder = new TextEncoder()
