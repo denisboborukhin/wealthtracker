@@ -2492,6 +2492,11 @@ bool AppController::prepareTBankConnection() {
 }
 
 void AppController::beginTBankLogin() {
+    if (tbank_login_active_) {
+        tbank_login_status_ = QStringLiteral("Вход в Т-Банк уже выполняется");
+        emit tbankConnectionChanged();
+        return;
+    }
     if (!prepareTBankConnection()) {
         return;
     }

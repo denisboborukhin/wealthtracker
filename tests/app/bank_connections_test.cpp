@@ -404,6 +404,31 @@ TEST_CASE("T-Bank login UI embeds a coordinator-owned native WebView") {
     CHECK_FALSE(coordinator.contains(QByteArrayLiteral(
         "RedirectionTargetAttribute")));
     CHECK_FALSE(coordinator.contains(QByteArrayLiteral("cookieStore()")));
+    const auto stopOffset = coordinator.indexOf(QByteArrayLiteral(
+        "void stop(const bool invalidateGeneration, const bool cleanupWebView)"));
+    const auto stopProbeOffset = coordinator.indexOf(
+        QByteArrayLiteral("probe_timer_.stop();"), stopOffset);
+    const auto cleanupOffset = coordinator.indexOf(
+        QByteArrayLiteral("if (cleanupWebView)"), stopOffset);
+    REQUIRE(stopOffset >= 0);
+    REQUIRE(stopProbeOffset >= 0);
+    REQUIRE(cleanupOffset >= 0);
+    CHECK(stopProbeOffset < cleanupOffset);
+
+    QFile controllerSource(QStringLiteral(
+        WEALTHTRACKER_SOURCE_DIR "/src/app/AppController.cpp"));
+    REQUIRE(controllerSource.open(QIODevice::ReadOnly));
+    const auto controller = controllerSource.readAll();
+    const auto beginOffset = controller.indexOf(
+        QByteArrayLiteral("void AppController::beginTBankLogin()"));
+    const auto activeGuardOffset = controller.indexOf(
+        QByteArrayLiteral("if (tbank_login_active_)"), beginOffset);
+    const auto startOffset = controller.indexOf(
+        QByteArrayLiteral("private_->tbank_login->start"), beginOffset);
+    REQUIRE(beginOffset >= 0);
+    REQUIRE(activeGuardOffset >= 0);
+    REQUIRE(startOffset >= 0);
+    CHECK(activeGuardOffset < startOffset);
 }
 
 TEST_CASE("Alfa login UI projects bounded finance fields without reading cookies") {

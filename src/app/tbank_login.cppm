@@ -271,8 +271,6 @@ class TBankLoginCoordinator final : public QObject {
     }
 
     void scheduleWebViewCleanup() {
-        probe_timer_.stop();
-        probe_pending_ = false;
         if (!web_view_) {
             return;
         }
@@ -285,6 +283,8 @@ class TBankLoginCoordinator final : public QObject {
     }
 
     void stop(const bool invalidateGeneration, const bool cleanupWebView) {
+        probe_timer_.stop();
+        probe_pending_ = false;
         if (invalidateGeneration) {
             ++generation_;
         }
