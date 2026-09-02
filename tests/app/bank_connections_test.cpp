@@ -896,11 +896,14 @@ TEST_CASE("Alfa WebView failures distinguish certificate trust without leaking U
 
 TEST_CASE("embedded bank login accepts only exact official HTTPS origins") {
     CHECK(is_tbank_login_url(QUrl(QStringLiteral("https://www.tbank.ru/login/"))));
+    CHECK(is_tbank_login_url(QUrl(QStringLiteral("https://id.tbank.ru/auth/authorize"))));
     CHECK(is_alfa_login_url(QUrl(QStringLiteral("https://web.alfabank.ru/dashboard"))));
     CHECK(is_alfa_login_url(QUrl(QStringLiteral("https://private.auth.alfabank.ru/"))));
     CHECK(is_vtb_login_url(QUrl(QStringLiteral("https://online.vtb.ru/"))));
 
     CHECK_FALSE(is_tbank_login_url(QUrl(QStringLiteral("https://tbank.ru/login/"))));
+    CHECK_FALSE(is_tbank_login_url(
+        QUrl(QStringLiteral("https://id.tbank.ru.evil.test/auth/authorize"))));
     CHECK_FALSE(is_tbank_login_url(
         QUrl(QStringLiteral("https://user@www.tbank.ru/login/"))));
     CHECK_FALSE(is_alfa_login_url(QUrl(QStringLiteral("http://web.alfabank.ru/"))));

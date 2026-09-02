@@ -30,8 +30,10 @@ import wt.tbank_browser;
 export namespace wealthtracker::app {
 
 [[nodiscard]] bool is_tbank_login_url(const QUrl& url) noexcept {
+    const auto host = url.host();
     return url.isValid() && url.scheme() == QStringLiteral("https") &&
-           url.host() == QStringLiteral("www.tbank.ru") &&
+           (host == QStringLiteral("www.tbank.ru") ||
+            host == QStringLiteral("id.tbank.ru")) &&
            (url.port() == -1 || url.port() == 443) && url.userInfo().isEmpty();
 }
 
