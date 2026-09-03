@@ -2703,7 +2703,14 @@ bool AppController::synchronizeTBank() {
             tbank_connected_ = true;
             const auto accountCount = batch.accounts.size();
             const auto transactionCount = batch.transactions.size();
-            const auto warningCount = batch.warnings.size();
+            const bool historyUnverifiable = std::ranges::any_of(
+                batch.warnings, [](const auto& warning) {
+                    return warning.code == QStringLiteral("tbank-history-unverifiable");
+                });
+            const auto warningCount = std::ranges::count_if(
+                batch.warnings, [](const auto& warning) {
+                    return warning.code != QStringLiteral("tbank-history-unverifiable");
+                });
             private_->bank_batches.insert(QStringLiteral("tbank-retail"),
                                           std::move(batch));
             rebuildBankModels();
@@ -2712,12 +2719,15 @@ bool AppController::synchronizeTBank() {
                 QStringLiteral("tbank/lastSyncAt"),
                 completedAt.toString(Qt::ISODateWithMs));
             tbank_login_status_ = QStringLiteral(
-                "Т-Банк подключён. История запрошена за 2 года; сессия хранится "
-                "в системном хранилище.");
+                "Т-Банк подключён. История запрошена за 2 года; полноту ответа "
+                "банка проверить нельзя. Сессия хранится в системном хранилище.");
             sync_status_ = QStringLiteral(
                 "Т-Банк: счетов %1 · операций %2 · период запроса 2 года")
                 .arg(accountCount)
                 .arg(transactionCount);
+            if (historyUnverifiable) {
+                sync_status_ += QStringLiteral(" · полнота ответа банка не подтверждена");
+            }
             if (warningCount > 0) {
                 sync_status_ += QStringLiteral(" · пропущено записей %1").arg(warningCount);
             }
@@ -2730,9 +2740,8 @@ bool AppController::synchronizeTBank() {
         [this](ConnectorError error) {
             private_->tbank_sync_coordinator.clear();
             private_->tbank_sync_running = false;
-            const bool discardSession =
-                private_->tbank_session_pending_validation
-                || error.code == ErrorCode::AuthenticationFailed;
+            const bool discardSession = error.code == ErrorCode::AuthenticationFailed;
+            const bool validatedSession = private_->tbank_session_pending_validation;
             private_->tbank_session_pending_validation = false;
             if (discardSession && private_->credentials) {
                 (void)private_->credentials->remove(
@@ -2743,7 +2752,14 @@ bool AppController::synchronizeTBank() {
                     rebuildBankModels();
                 }
             }
-            tbank_login_status_ = error.message;
+            if (validatedSession && !discardSession) {
+                tbank_connected_ = true;
+                tbank_login_status_ =
+                    QStringLiteral("Т-Банк подключён, но синхронизация не завершена: %1")
+                        .arg(error.message);
+            } else {
+                tbank_login_status_ = error.message;
+            }
             sync_status_ = QStringLiteral("Т-Банк: %1").arg(error.message);
             if (tbank_connected_) {
                 scheduleTBankAutoUpdateAfter(QDateTime::currentDateTimeUtc());

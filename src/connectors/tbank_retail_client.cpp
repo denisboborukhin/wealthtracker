@@ -36,8 +36,6 @@ namespace {
 constexpr qsizetype maximumResponseBytes = 20 * 1024 * 1024;
 constexpr qsizetype maximumAccounts = 10'000;
 constexpr qsizetype maximumOperations = 100'000;
-constexpr int maximumHistoryWindows = 24;
-constexpr int historyWindowDays = 31;
 constexpr auto tbankRetailHost = "www.tbank.ru";
 constexpr auto apiPrefix = "/api/common/v1/";
 
@@ -73,14 +71,31 @@ ConnectorResult<QJsonValue> payloadFromResponse(const QByteArray& json, const QS
                            {},
                            false});
     }
+    if (resultCode == QStringLiteral("REQUEST_RATE_LIMIT_EXCEEDED")) {
+        return std::unexpected(ConnectorError{
+            ErrorCode::RateLimited,
+            QStringLiteral("Т-Банк ограничил частоту запросов %1 (TBR-RATE)").arg(operation),
+            {},
+            true});
+    }
+    if (resultCode == QStringLiteral("OPERATION_REJECTED")) {
+        return std::unexpected(ConnectorError{
+            ErrorCode::RemoteFailure,
+            QStringLiteral("Т-Банк отклонил запрос %1 (TBR-REJECTED)").arg(operation),
+            {},
+            true});
+    }
+    if (resultCode == QStringLiteral("INVALID_REQUEST_DATA")) {
+        return std::unexpected(ConnectorError{
+            ErrorCode::RemoteFailure,
+            QStringLiteral("Т-Банк отклонил формат запроса %1 (TBR-INVALID)").arg(operation),
+            {},
+            false});
+    }
     if (resultCode != QStringLiteral("OK")) {
-        auto detail = object.value(QStringLiteral("plainMessage")).toString().trimmed();
-        if (detail.isEmpty()) {
-            detail = object.value(QStringLiteral("errorMessage")).toString().trimmed();
-        }
         return std::unexpected(ConnectorError{
             ErrorCode::RemoteFailure, QStringLiteral("Т-Банк отклонил запрос %1").arg(operation),
-            detail.left(512), true});
+            {}, true});
     }
     return object.value(QStringLiteral("payload"));
 }
@@ -362,12 +377,9 @@ ConnectorResult<QNetworkReply*> TBankRetailClient::discoverAccounts(const QByteA
 
 ConnectorResult<QVector<QNetworkReply*>>
 TBankRetailClient::synchronize(const LiveSyncRequest& request, const QByteArray& sessionId) {
-    bool cursorOk = false;
-    const auto windowIndex = request.cursor.isEmpty() ? 0 : request.cursor.toInt(&cursorOk);
-    cursorOk = request.cursor.isEmpty() || cursorOk;
     if (request.accountExternalId.trimmed().isEmpty() || request.accountExternalId.size() > 256 ||
-        !cursorOk || windowIndex < 0 || windowIndex >= maximumHistoryWindows || !request.from ||
-        !request.from->isValid() || !request.to || !request.to->isValid() ||
+        !request.cursor.isEmpty() || !request.from || !request.from->isValid() || !request.to ||
+        !request.to->isValid() ||
         *request.from > *request.to || *request.to > request.from->addYears(2).addDays(1)) {
         return std::unexpected(
             ConnectorError{ErrorCode::InvalidInput,
@@ -375,23 +387,13 @@ TBankRetailClient::synchronize(const LiveSyncRequest& request, const QByteArray&
                            {},
                            false});
     }
-    const auto windowStart = request.from->addDays(windowIndex * historyWindowDays);
-    if (windowStart > *request.to) {
-        return std::unexpected(
-            ConnectorError{ErrorCode::InvalidInput,
-                           QStringLiteral("Некорректная страница истории Т-Банка"),
-                           {},
-                           false});
-    }
-    const auto candidateEnd = windowStart.addDays(historyWindowDays).addMSecs(-1);
-    const auto windowEnd = std::min(candidateEnd, *request.to);
     QUrl url(QStringLiteral("https://www.tbank.ru") + restPath(TBankRetailReadMethod::Operations));
     QUrlQuery query;
     query.addQueryItem(QStringLiteral("origin"), QStringLiteral("web,ib5,platform"));
     query.addQueryItem(QStringLiteral("sessionid"), QString::fromLatin1(sessionId));
     query.addQueryItem(QStringLiteral("account"), request.accountExternalId);
-    query.addQueryItem(QStringLiteral("start"), QString::number(windowStart.toMSecsSinceEpoch()));
-    query.addQueryItem(QStringLiteral("end"), QString::number(windowEnd.toMSecsSinceEpoch()));
+    query.addQueryItem(QStringLiteral("start"), QString::number(request.from->toMSecsSinceEpoch()));
+    query.addQueryItem(QStringLiteral("end"), QString::number(request.to->toMSecsSinceEpoch()));
     url.setQuery(query);
     auto reply = get(url, sessionId);
     if (!reply) {
@@ -475,14 +477,11 @@ ConnectorResult<NormalizedBatch>
 TBankRetailClient::parseOperationsResponse(const QByteArray& json,
                                            const QString& accountExternalId,
                                            const QByteArray& currentCursor) {
-    bool cursorOk = false;
-    const auto windowIndex = currentCursor.isEmpty() ? 0 : currentCursor.toInt(&cursorOk);
-    cursorOk = currentCursor.isEmpty() || cursorOk;
     if (accountExternalId.trimmed().isEmpty() || accountExternalId.size() > 256) {
         return std::unexpected(ConnectorError{
             ErrorCode::InvalidInput, QStringLiteral("Некорректный счёт Т-Банка"), {}, false});
     }
-    if (!cursorOk || windowIndex < 0 || windowIndex >= maximumHistoryWindows) {
+    if (!currentCursor.isEmpty()) {
         return std::unexpected(ConnectorError{
             ErrorCode::InvalidInput, QStringLiteral("Некорректная страница истории Т-Банка"),
             {}, false});
@@ -562,9 +561,9 @@ TBankRetailClient::parseOperationsResponse(const QByteArray& json,
                                       Provenance{QStringLiteral("tbank-retail"), {}, id, sourceRow},
                                       kind});
     }
-    if (windowIndex + 1 < maximumHistoryWindows) {
-        batch.nextCursor = QByteArray::number(windowIndex + 1);
-    }
+    batch.warnings.push_back(
+        {WarningSeverity::Information, QStringLiteral("tbank-history-unverifiable"),
+         QStringLiteral("Полноту ответа Т-Банка за запрошенный период нельзя подтвердить"), -1});
     return batch;
 }
 

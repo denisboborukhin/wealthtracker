@@ -143,9 +143,9 @@ class TBankNetworkFixture final : public QNetworkAccessManager {
     int operationReadCalls = 0;
     bool allRequestsDisableHttp2 = true;
     bool failOperations = false;
+    bool rejectAuthentication = false;
     bool overflowBalances = false;
     QVector<OperationRange> operationRanges;
-    QHash<QString, int> operationPages;
 
   protected:
     QNetworkReply* createRequest(const Operation operation, const QNetworkRequest& request,
@@ -157,7 +157,9 @@ class TBankNetworkFixture final : public QNetworkAccessManager {
         QByteArray body;
         int delayMilliseconds = 0;
         if (request.url().path() == QStringLiteral("/api/common/v1/accounts_light_ib")) {
-            body = overflowBalances
+            body = rejectAuthentication
+                       ? QByteArrayLiteral(R"({"resultCode":"AUTHENTICATION_FAILED"})")
+                       : overflowBalances
                        ? QByteArrayLiteral(
                              R"({"resultCode":"OK","payload":[{"id":"account-a","name":"Black","accountType":"Debit","moneyAmount":{"value":"92233720368547758.07","currency":{"name":"RUB"}}},{"id":"account-b","name":"Savings","accountType":"Deposit","moneyAmount":{"value":"2500.00","currency":{"name":"RUB"}}}]})")
                        : QByteArrayLiteral(
@@ -176,12 +178,7 @@ class TBankNetworkFixture final : public QNetworkAccessManager {
             operationRanges.push_back(
                 {account, query.queryItemValue(QStringLiteral("start")).toLongLong(),
                  query.queryItemValue(QStringLiteral("end")).toLongLong()});
-            const auto page = operationPages.value(account);
-            operationPages.insert(account, page + 1);
-            if (page > 0) {
-                body = QByteArrayLiteral(
-                    R"({"resultCode":"NO_DATA_FOUND","errorMessage":"No operations"})");
-            } else if (account == QStringLiteral("account-a")) {
+            if (account == QStringLiteral("account-a")) {
                 body =
                     QStringLiteral(
                         R"({"resultCode":"OK","payload":[{"id":"transfer-out","status":"OK","type":"Debit","isInner":true,"accountAmount":{"value":"-500.00","currency":{"name":"RUB"}},"operationTime":{"milliseconds":%1},"description":"Между своими счетами"},{"id":"expense","status":"OK","type":"Debit","accountAmount":{"value":"-200.00","currency":{"name":"RUB"}},"operationTime":{"milliseconds":%2},"description":"Кофе","spendingCategory":{"name":"Кафе"}},{"id":"bad","status":"OK","type":"Debit","accountAmount":{"value":0,"currency":{"name":"RUB"}}}]})")
@@ -1052,22 +1049,19 @@ TEST_CASE("T-Bank synchronization publishes balances and excludes internal trans
 
     CHECK(observedNetwork->allRequestsDisableHttp2);
     CHECK(observedNetwork->maximumActiveOperationRequests == 1);
-    REQUIRE(observedNetwork->operationRanges.size() == 48);
+    REQUIRE(observedNetwork->operationRanges.size() == 2);
     QHash<QString, QVector<TBankNetworkFixture::OperationRange>> rangesByAccount;
     for (const auto& range : observedNetwork->operationRanges) {
         rangesByAccount[range.accountId].push_back(range);
     }
     REQUIRE(rangesByAccount.size() == 2);
-    REQUIRE(rangesByAccount.value(QStringLiteral("account-a")).size() == 24);
-    REQUIRE(rangesByAccount.value(QStringLiteral("account-b")).size() == 24);
+    REQUIRE(rangesByAccount.value(QStringLiteral("account-a")).size() == 1);
+    REQUIRE(rangesByAccount.value(QStringLiteral("account-b")).size() == 1);
     const auto accountARanges = rangesByAccount.value(QStringLiteral("account-a"));
     const auto accountBRanges = rangesByAccount.value(QStringLiteral("account-b"));
     for (qsizetype index = 0; index < accountARanges.size(); ++index) {
         CHECK(accountARanges.at(index).start == accountBRanges.at(index).start);
         CHECK(accountARanges.at(index).end == accountBRanges.at(index).end);
-        if (index > 0) {
-            CHECK(accountARanges.at(index).start == accountARanges.at(index - 1).end + 1);
-        }
     }
     const auto historyStartMilliseconds = accountARanges.front().start;
     const auto historyEndMilliseconds = accountARanges.back().end;
@@ -1126,6 +1120,8 @@ TEST_CASE("T-Bank synchronization publishes balances and excludes internal trans
     }
     CHECK(transferRows == 2);
     CHECK(controller.syncStatus().contains(QStringLiteral("пропущено записей 1")));
+    CHECK(controller.syncStatus().contains(
+        QStringLiteral("полнота ответа банка не подтверждена")));
 
     CHECK_FALSE(controller.setReportingPeriod(
         QStringLiteral("31.02.2026"), QStringLiteral("01.03.2026")));
@@ -1161,7 +1157,27 @@ TEST_CASE("T-Bank network failures do not read a closed TLS reply") {
 
     CHECK(observedNetwork->operationReadCalls == 0);
     CHECK(controller.syncStatus().contains(QStringLiteral("банк закрыл соединение")));
+    CHECK(controller.tbankConnected());
     CHECK(controller.accounts()->rowCount() == 0);
+}
+
+TEST_CASE("T-Bank authentication failures expire the stored session") {
+    const TBankSettingsCleanup cleanup;
+    auto credentials = std::make_unique<MemoryCredentialBackend>();
+    credentials->values.insert(QStringLiteral("tbank-retail-session"),
+                               QByteArrayLiteral("expired-session-123456789"));
+    auto* observedCredentials = credentials.get();
+    auto network = std::make_unique<TBankNetworkFixture>();
+    network->rejectAuthentication = true;
+    wealthtracker::app::AppController controller(std::move(credentials), std::move(network),
+                                                 nullptr);
+
+    REQUIRE(controller.synchronizeTBank());
+    REQUIRE(waitUntil([&controller] { return !controller.tbankSyncRunning(); }));
+
+    CHECK_FALSE(controller.tbankConnected());
+    CHECK_FALSE(observedCredentials->values.contains(
+        QStringLiteral("tbank-retail-session")));
 }
 
 TEST_CASE("balance overflow does not hide valid cash-flow totals") {

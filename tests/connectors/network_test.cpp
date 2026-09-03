@@ -334,9 +334,9 @@ TEST_CASE("T-Bank retail connector permits only exact read requests")
     CHECK(QUrlQuery(network.request.url()).queryItemValue(
               QStringLiteral("start")) == QStringLiteral("1782864000000"));
     CHECK(QUrlQuery(network.request.url()).queryItemValue(
-              QStringLiteral("end")) == QStringLiteral("1785542399999"));
+              QStringLiteral("end")) == QStringLiteral("1785587696000"));
 
-    const auto secondWindow = client.synchronize(
+    CHECK_FALSE(client.synchronize(
         LiveSyncRequest{
             .accountExternalId = QStringLiteral("account-1"),
             .cursor = QByteArrayLiteral("1"),
@@ -346,18 +346,13 @@ TEST_CASE("T-Bank retail connector permits only exact read requests")
                 QStringLiteral("2026-08-26T12:34:56Z"), Qt::ISODate),
             .pageSize = 1'000,
         },
-        session);
-    REQUIRE(secondWindow);
-    CHECK(QUrlQuery(network.request.url()).queryItemValue(
-              QStringLiteral("start")) == QStringLiteral("1727308800000"));
-    CHECK(QUrlQuery(network.request.url()).queryItemValue(
-              QStringLiteral("end")) == QStringLiteral("1729987199999"));
+        session));
 
     CHECK_FALSE(client.discoverAccounts(QByteArrayLiteral("unsafe;session-value")));
     CHECK_FALSE(client.synchronize(
         LiveSyncRequest{
             .accountExternalId = QStringLiteral("account-1"),
-            .cursor = QByteArrayLiteral("24"),
+            .cursor = QByteArrayLiteral("unexpected-page"),
             .from = QDateTime::fromString(
                 QStringLiteral("2024-08-26T00:00:00Z"), Qt::ISODate),
             .to = QDateTime::fromString(
@@ -391,7 +386,7 @@ TEST_CASE("T-Bank retail responses normalize balances and operations")
         QStringLiteral("account-1"));
     REQUIRE(operations);
     REQUIRE(operations->transactions.size() == 1);
-    REQUIRE(operations->warnings.size() == 1);
+    REQUIRE(operations->warnings.size() == 2);
     const auto& operation = operations->transactions.front();
     CHECK(operation.externalId == QStringLiteral("operation-1"));
     CHECK(operation.amount == Money{-42'750, QStringLiteral("RUB")});
@@ -400,19 +395,32 @@ TEST_CASE("T-Bank retail responses normalize balances and operations")
     CHECK(operation.mcc == QStringLiteral("5814"));
     CHECK(operation.kind == NormalizedTransactionKind::InternalTransfer);
     CHECK_FALSE(operation.sourceFields.contains(QStringLiteral("hold")));
-    CHECK(operations->nextCursor == QByteArrayLiteral("1"));
+    CHECK(operations->nextCursor.isEmpty());
+    CHECK(operations->warnings.back().code ==
+          QStringLiteral("tbank-history-unverifiable"));
 
-    const auto finalWindow = TBankRetailClient::parseOperationsResponse(
+    const auto invalidCursor = TBankRetailClient::parseOperationsResponse(
         QByteArrayLiteral(R"({"resultCode":"NO_DATA_FOUND"})"),
         QStringLiteral("account-1"), QByteArrayLiteral("23"));
-    REQUIRE(finalWindow);
-    CHECK(finalWindow->nextCursor.isEmpty());
+    REQUIRE_FALSE(invalidCursor);
 
     const auto noData = TBankRetailClient::parseOperationsResponse(
         QByteArrayLiteral(R"({"resultCode":"NO_DATA_FOUND","errorMessage":"No operations"})"),
         QStringLiteral("account-1"));
     REQUIRE(noData);
     CHECK(noData->transactions.isEmpty());
+    REQUIRE(noData->warnings.size() == 1);
+    CHECK(noData->warnings.front().code ==
+          QStringLiteral("tbank-history-unverifiable"));
+
+    const auto rejected = TBankRetailClient::parseOperationsResponse(
+        QByteArrayLiteral(
+            R"({"resultCode":"OPERATION_REJECTED","plainMessage":"secret account detail"})"),
+        QStringLiteral("account-1"));
+    REQUIRE_FALSE(rejected);
+    CHECK(rejected.error().message.contains(QStringLiteral("TBR-REJECTED")));
+    CHECK_FALSE(rejected.error().message.contains(QStringLiteral("secret account detail")));
+    CHECK(rejected.error().detail.isEmpty());
 
     const auto expired = TBankRetailClient::parseAccountsResponse(
         QByteArrayLiteral(
