@@ -23,6 +23,7 @@
 #include <expected>
 #include <functional>
 #include <limits>
+#include <numeric>
 #include <optional>
 #include <span>
 #include <string>
@@ -600,6 +601,14 @@ AppController::AppController(std::unique_ptr<CredentialBackend> credentials,
                 batch.warnings, [](const auto& warning) {
                     return warning.code != QStringLiteral("vtb-history-incomplete");
                 });
+            const auto rejectedOperationCount = std::accumulate(
+                batch.warnings.cbegin(), batch.warnings.cend(), qsizetype{0},
+                [](const qsizetype total, const auto& warning) {
+                    return warning.code == QStringLiteral("vtb-history-incomplete") &&
+                                   warning.sourceRow > 0
+                               ? total + warning.sourceRow
+                               : total;
+                });
             private_->vtb_sync_running = false;
             vtb_login_active_ = false;
             vtb_connected_ = true;
@@ -632,6 +641,10 @@ AppController::AppController(std::unique_ptr<CredentialBackend> credentials,
                                .arg(transactionCount);
             if (historyIncomplete) {
                 sync_status_ += QStringLiteral(" · история за 2 года неполная");
+            }
+            if (rejectedOperationCount > 0) {
+                sync_status_ += QStringLiteral(" · не распознано операций %1")
+                                    .arg(rejectedOperationCount);
             }
             if (warningCount > 0) {
                 sync_status_ +=

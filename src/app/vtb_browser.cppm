@@ -23,6 +23,7 @@ struct VtbFinancialProjection {
     VtbProjectionStage stage{VtbProjectionStage::Authentication};
     std::optional<wealthtracker::connectors::NormalizedBatch> batch;
     QString diagnostic;
+    int rejectedTransactions = 0;
 };
 
 [[nodiscard]] const QString& vtb_sync_start_script() {
@@ -48,7 +49,7 @@ struct VtbFinancialProjection {
     const maximumHistoryRequests = 512
     const maximumConcurrentHistoryRequests = 4
     const historyWindowDays = 31
-    const historyQuietMilliseconds = 1200
+    const historyQuietMilliseconds = 3000
     const historyTimeoutMilliseconds = 150 * 1000
     const historyPrefix =
       '/msa/api-gw/private/history-hub/history-hub-homer/v1/history/'
@@ -76,7 +77,32 @@ struct VtbFinancialProjection {
         return historyKinds.has(url.pathname.slice(historyPrefix.length))
       } catch (ignored) { return false }
     }
-    const capturePageHistory = client => new Promise((resolve, reject) => {
+    const portfolioProductIds = portfolio => {
+      const ids = new Set()
+      const visit = (value, depth = 0) => {
+        if (!value || typeof value !== 'object' || depth > 6 || ids.size >= 256) return
+        if (Array.isArray(value)) {
+          for (const item of value) visit(item, depth + 1)
+          return
+        }
+        const id = String(value.publicId ?? value.productId ?? value.id ??
+                          value.accountId ?? '').trim()
+        if (id) {
+          if (id.length <= 160) ids.add(id)
+          const cards = Array.isArray(value.cards) ? value.cards :
+            value.cards && typeof value.cards === 'object' ? Object.values(value.cards) : []
+          for (const card of cards) visit(card, depth + 1)
+          return
+        }
+        for (const child of Object.values(value)) visit(child, depth + 1)
+      }
+      for (const group of [portfolio?.cards, portfolio?.accounts,
+                           portfolio?.deposits, portfolio?.saving,
+                           portfolio?.loans, portfolio?.metalAccounts,
+                           portfolio?.wallets]) visit(group)
+      return [...ids]
+    }
+    const capturePageHistory = (client, requiredProductIds) => new Promise((resolve, reject) => {
       const prototype = globalThis.XMLHttpRequest?.prototype
       if (!prototype || typeof prototype.open !== 'function' ||
           typeof prototype.send !== 'function') {
@@ -161,7 +187,66 @@ struct VtbFinancialProjection {
       const replayable = template => template.fromKey && template.toKey &&
         historyDate(template.params[template.fromKey], new Date()) !== null &&
         historyDate(template.params[template.toKey], new Date()) !== null
-      const selectedTemplates = () => templates.filter(replayable)
+      const parameterProductIds = value => {
+        const source = String(value ?? '').trim()
+        if (!source) return []
+        try {
+          const parsed = JSON.parse(source)
+          if (Array.isArray(parsed)) return parsed.map(item => String(item))
+        } catch (ignored) {}
+        return source.split(',').map(item => item.trim()).filter(Boolean)
+      }
+      const productParameter = (sample, productId) => {
+        const source = String(sample ?? '').trim()
+        try {
+          if (Array.isArray(JSON.parse(source))) return JSON.stringify([productId])
+        } catch (ignored) {}
+        return productId
+      }
+      const selectedTemplates = () => {
+        const selected = templates.filter(replayable)
+        const stableKeys = template => Object.keys(template.params).filter(
+          key => ![template.fromKey, template.toKey, template.pageKey,
+                   template.offsetKey, template.limitKey].includes(key))
+        const global = selected.filter(template =>
+          template.path.endsWith('/byUser') && stableKeys(template).length === 0)
+        if (global.length > 0) return global
+        const required = new Set(requiredProductIds)
+        const expanded = [...selected]
+        const expandedKeys = new Set(expanded.map(template => template.key))
+        for (const template of selected) {
+          if (!template.path.endsWith('/byProducts') &&
+              !template.path.endsWith('/byAccount') &&
+              !template.path.endsWith('/byCard')) continue
+          for (const key of Object.keys(template.params)) {
+            if ([template.fromKey, template.toKey, template.pageKey,
+                 template.offsetKey, template.limitKey].includes(key)) continue
+            const parameterIds = parameterProductIds(template.params[key])
+            if (parameterIds.length !== 1 || !required.has(parameterIds[0])) continue
+            for (const productId of required) {
+              const params = Object.assign({}, template.params, {
+                [key]: productParameter(template.params[key], productId)
+              })
+              const stable = Object.keys(params).filter(
+                item => item !== template.fromKey && item !== template.toKey &&
+                        item !== template.pageKey && item !== template.offsetKey)
+                .sort().map(item => `${item}=${params[item]}`).join('&')
+              const expandedKey = `${template.path}?${stable}`
+              if (expandedKeys.has(expandedKey)) continue
+              expandedKeys.add(expandedKey)
+              expanded.push(Object.assign({}, template, { params, key: expandedKey }))
+            }
+          }
+        }
+        const covered = new Set()
+        for (const template of expanded)
+          for (const value of Object.values(template.params))
+            for (const productId of parameterProductIds(value))
+              if (required.has(productId)) covered.add(productId)
+        if (required.size > 0 && [...required].some(productId => !covered.has(productId)))
+          transportFailure = true
+        return expanded
+      }
       const requestHeaders = () => ({
         'x-request-id': globalThis.crypto &&
           typeof globalThis.crypto.randomUUID === 'function'
@@ -180,6 +265,12 @@ struct VtbFinancialProjection {
         }
         return null
       }
+      const operationDate = operation => {
+        if (!operation || typeof operation !== 'object') return null
+        const date = new Date(String(operation.operationDate ?? operation.date ??
+                                     operation.createdAt ?? ''))
+        return Number.isNaN(date.getTime()) ? null : date
+      }
       const replayTwoYears = () => {
         restore()
         const selected = selectedTemplates()
@@ -192,7 +283,7 @@ struct VtbFinancialProjection {
         const rangeFrom = new Date(rangeTo)
         rangeFrom.setFullYear(rangeFrom.getFullYear() - 2)
         let requestCount = 0
-        const replayPage = (template, params) => {
+        const replayPage = (template, params, windowFrom, windowTo) => {
           if (finished) return Promise.reject({ kind: 'history-cancelled' })
           if (requestCount >= maximumHistoryRequests)
             return Promise.reject({ kind: 'history-limit' })
@@ -203,7 +294,18 @@ struct VtbFinancialProjection {
               const history = unwrap(response)
               if (!validPayload(history) || !Array.isArray(history.operations))
                 frontendFailure('VTB-H1')
-              operations.push(...history.operations)
+              const lowerBound = new Date(windowFrom)
+              lowerBound.setHours(0, 0, 0, 0)
+              const upperBound = new Date(windowTo)
+              upperBound.setHours(23, 59, 59, 999)
+              for (const operation of history.operations) {
+                const date = operationDate(operation)
+                if (!date || date < lowerBound || date > upperBound) {
+                  transportFailure = true
+                  continue
+                }
+                operations.push(operation)
+              }
               if (!validPayload({ operations })) frontendFailure('VTB-H1')
               const hint = continuationHint(history)
               const pageSize = template.limitKey
@@ -237,7 +339,7 @@ struct VtbFinancialProjection {
                 transportFailure = true
                 return
               }
-              return replayPage(template, next)
+              return replayPage(template, next, windowFrom, windowTo)
             })
         }
         const jobs = []
@@ -264,14 +366,14 @@ struct VtbFinancialProjection {
               params[template.pageKey] = String(firstPage)
             }
             if (template.offsetKey) params[template.offsetKey] = '0'
-            jobs.push({ template, params })
+            jobs.push({ template, params, pageFrom, pageTo })
           }
         }
         let nextJobIndex = 0
         const runNextJob = () => {
           if (finished || nextJobIndex >= jobs.length) return Promise.resolve()
           const job = jobs[nextJobIndex++]
-          return replayPage(job.template, job.params).then(runNextJob)
+          return replayPage(job.template, job.params, job.pageFrom, job.pageTo).then(runNextJob)
         }
         const workers = []
         for (let index = 0;
@@ -407,7 +509,7 @@ struct VtbFinancialProjection {
       })
       .then(() => {
         state.requestStage = 'history'
-        return capturePageHistory(client)
+        return capturePageHistory(client, portfolioProductIds(portfolio))
           .then(snapshot => {
             state.history = { operations: snapshot.operations }
             state.historyComplete = snapshot.complete
@@ -453,7 +555,8 @@ struct VtbFinancialProjection {
 [[nodiscard]] const QString& vtb_financial_projection_script() {
     static const QString script = QStringLiteral(R"VTB((() => {
   const result = { version: 1, stage: 'authentication', authenticated: false,
-                   diagnostic: '', accounts: [], transactions: [] }
+                   diagnostic: '', rejectedTransactions: 0,
+                   accounts: [], transactions: [] }
   try {
     const pageUrl = new URL(globalThis.location.href)
     if (pageUrl.protocol !== 'https:' || pageUrl.hostname !== 'online.vtb.ru' ||
@@ -525,10 +628,18 @@ struct VtbFinancialProjection {
     }
     const seenAccounts = new Set()
     const accountAliases = new Map()
+    const ambiguousAccountAliases = new Set()
     const accountCurrency = new Map()
     const addAlias = (aliasValue, accountId) => {
       const alias = identifier(aliasValue)
-      if (alias && !accountAliases.has(alias)) accountAliases.set(alias, accountId)
+      if (!alias || ambiguousAccountAliases.has(alias)) return
+      const existing = accountAliases.get(alias)
+      if (existing && existing !== accountId) {
+        accountAliases.delete(alias)
+        ambiguousAccountAliases.add(alias)
+        return
+      }
+      accountAliases.set(alias, accountId)
     }
     const kind = (item, fallback) => {
       const source = `${text(item?.type)} ${text(item?.productType)} ${text(item?.name)}`.toLowerCase()
@@ -559,10 +670,15 @@ struct VtbFinancialProjection {
         balanceMinor: minor
       })
       addAlias(id, id)
-      addAlias(item.accountId ?? item.accountNumber ?? item.number, id)
+      addAlias(item.accountId, id)
+      addAlias(item.accountNumber, id)
+      addAlias(item.number, id)
       for (const card of values(item.cards)) {
-        addAlias(card?.publicId ?? card?.productId ?? card?.id, id)
-        addAlias(card?.number ?? card?.maskedNumber, id)
+        addAlias(card?.publicId, id)
+        addAlias(card?.productId, id)
+        addAlias(card?.id, id)
+        addAlias(card?.number, id)
+        addAlias(card?.maskedNumber, id)
         if (!result.accounts[result.accounts.length - 1].maskedNumber) {
           const masked = lastFour(card?.number ?? card?.maskedNumber)
           if (masked) result.accounts[result.accounts.length - 1].maskedNumber = masked
@@ -572,7 +688,7 @@ struct VtbFinancialProjection {
     const portfolio = state.portfolio?.data ?? state.portfolio
     const groups = [
       [portfolio?.cards, 'checking'], [portfolio?.accounts, 'checking'],
-      [portfolio?.deposits ?? portfolio?.saving, 'deposit'],
+      [portfolio?.deposits, 'deposit'], [portfolio?.saving, 'deposit'],
       [portfolio?.loans, 'loan'], [portfolio?.metalAccounts, 'checking'],
       [portfolio?.wallets, 'wallet']
     ]
@@ -587,24 +703,33 @@ struct VtbFinancialProjection {
     const internalCodes = new Set([3154,3155,3516,3729,3953,4424,4809,6124,
                                     7760,7761,7775,9775,5111])
     const internalCategories = new Set([101,92,103])
-    const seenTransactions = new Set()
+    const seenTransactions = new Map()
     const rawOperations = Array.isArray(state.history?.operations) ? state.history.operations : []
     if (rawOperations.length > 20000) projectionIncomplete = true
     const operations = rawOperations.slice(0, 20000)
     for (const operation of operations) {
       if (!operation || typeof operation !== 'object') {
         projectionIncomplete = true
+        ++result.rejectedTransactions
         continue
       }
-      const rawAccountId = identifier(operation.accountProductId ?? operation.accountId ??
-                                      operation.cardProductId ?? operation.cardId)
-      let accountId = accountAliases.get(rawAccountId) ?? rawAccountId
-      if (!seenAccounts.has(accountId) && result.accounts.length === 1)
-        accountId = result.accounts[0].id
+      const accountCandidates = [
+        operation.accountProductId, operation.accountId, operation.cardProductId,
+        operation.cardId
+      ]
+      const resolvedAccounts = new Set()
+      for (const candidate of accountCandidates) {
+        const alias = identifier(candidate)
+        if (!alias || ambiguousAccountAliases.has(alias)) continue
+        const resolved = accountAliases.get(alias)
+        if (resolved) resolvedAccounts.add(resolved)
+      }
+      const accountId = resolvedAccounts.size === 1 ? [...resolvedAccounts][0] : ''
       const date = new Date(text(operation.operationDate ?? operation.date ?? operation.createdAt))
       const amount = money(operation.transactionAmount ?? operation.operationAmount ?? operation.amount)
       if (!seenAccounts.has(accountId) || Number.isNaN(date.getTime()) || !amount) {
         projectionIncomplete = true
+        ++result.rejectedTransactions
         continue
       }
       let signedMinor = amount.minor
@@ -612,6 +737,7 @@ struct VtbFinancialProjection {
       else if (operation.debet === false && signedMinor.startsWith('-')) signedMinor = signedMinor.slice(1)
       if (signedMinor === '0' || signedMinor === '-0') {
         projectionIncomplete = true
+        ++result.rejectedTransactions
         continue
       }
       const id = identifier(operation.operationId ?? operation.internalId ?? operation.id)
@@ -622,20 +748,36 @@ struct VtbFinancialProjection {
       const internalTransfer = internalCodes.has(operationCode) || internalCategories.has(categoryId)
       const category = internalTransfer ? 'Внутренний перевод' :
         text(operation.parentCategory?.name ?? operation.category?.name ?? operation.category)
-      const identity = `${accountId}\n${id || `${date.toISOString()}|${signedMinor}|${description}`}`
-      if (seenTransactions.has(identity)) continue
-      seenTransactions.add(identity)
+      const merchant = text(operation.merchant?.title ?? operation.merchant?.name ??
+                            operation.merchant)
+      const mcc = text(operation.merchant?.mcc ?? operation.mcc).slice(0, 8)
+      const amountCurrency = amount.currency || accountCurrency.get(accountId) || ''
+      const fallbackIdentity = [date.toISOString(), signedMinor, description,
+                                merchant, category, mcc].join('|')
+      const identity = `${accountId}\n${id || fallbackIdentity}`
+      const fingerprint = [date.toISOString(), signedMinor, amountCurrency,
+                           description, merchant, category, mcc,
+                           String(internalTransfer)].join('|')
+      const previousFingerprint = seenTransactions.get(identity)
+      if (previousFingerprint !== undefined) {
+        if (previousFingerprint !== fingerprint) {
+          projectionIncomplete = true
+          ++result.rejectedTransactions
+        }
+        continue
+      }
+      seenTransactions.set(identity, fingerprint)
       result.transactions.push({
         id,
         accountId,
         postingDate: date.toISOString().slice(0, 10),
         occurredAt: date.toISOString(),
         amountMinor: signedMinor,
-        currency: amount.currency || accountCurrency.get(accountId) || '',
+        currency: amountCurrency,
         description: description || 'Операция ВТБ',
-        merchant: text(operation.merchant?.title ?? operation.merchant?.name ?? operation.merchant),
+        merchant,
         category,
-        mcc: text(operation.merchant?.mcc ?? operation.mcc).slice(0, 8),
+        mcc,
         internalTransfer
       })
     }
@@ -723,7 +865,13 @@ parse_vtb_financial_projection(const QString& projection, const QDateTime& obser
             QStringLiteral("Готовый ответ встроенной страницы ВТБ противоречив"));
     }
     if (stage != VtbProjectionStage::Ready) {
-        return VtbFinancialProjection{stage, std::nullopt, diagnostic};
+        return VtbFinancialProjection{stage, std::nullopt, diagnostic, 0};
+    }
+    const auto rejectedValue = object.value(QStringLiteral("rejectedTransactions"));
+    const auto rejectedTransactions = rejectedValue.isUndefined() ? 0 : rejectedValue.toInt(-1);
+    if (rejectedTransactions < 0 || rejectedTransactions > 20'000) {
+        return std::unexpected(
+            QStringLiteral("Счётчик отклонённых операций ВТБ некорректен"));
     }
     auto batch = wealthtracker::connectors::VtbRetailClient::parseProjection(encoded, observedAt);
     if (!batch) {
@@ -735,9 +883,10 @@ parse_vtb_financial_projection(const QString& projection, const QDateTime& obser
              QStringLiteral("vtb-history-incomplete"),
              QStringLiteral(
                  "ВТБ вернул только часть двухлетней истории операций"),
-             -1});
+             rejectedTransactions});
     }
-    return VtbFinancialProjection{VtbProjectionStage::Ready, std::move(*batch), diagnostic};
+    return VtbFinancialProjection{VtbProjectionStage::Ready, std::move(*batch), diagnostic,
+                                  rejectedTransactions};
 }
 
 } // namespace wealthtracker::app
