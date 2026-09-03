@@ -30,10 +30,17 @@ import wt.tbank_browser;
 export namespace wealthtracker::app {
 
 [[nodiscard]] bool is_tbank_login_url(const QUrl& url) noexcept {
+    return url.isValid() && url.scheme() == QStringLiteral("https") &&
+           url.host() == QStringLiteral("www.tbank.ru") &&
+           (url.port() == -1 || url.port() == 443) && url.userInfo().isEmpty();
+}
+
+[[nodiscard]] bool is_tbank_login_navigation_url(const QUrl& url) noexcept {
     const auto host = url.host();
     return url.isValid() && url.scheme() == QStringLiteral("https") &&
            (host == QStringLiteral("www.tbank.ru") ||
-            host == QStringLiteral("id.tbank.ru")) &&
+            host == QStringLiteral("id.tbank.ru") ||
+            host == QStringLiteral("id.tinkoff.ru")) &&
            (url.port() == -1 || url.port() == 443) && url.userInfo().isEmpty();
 }
 
@@ -72,7 +79,8 @@ class TBankLoginCoordinator final : public QObject {
                                    false);
             connect(web_view_.get(), &QWebView::loadingChanged, this,
                     [this](const QWebViewLoadingInfo& information) {
-                        if (active_ && !is_tbank_login_url(information.url())) {
+                        if (active_ &&
+                            !is_tbank_login_navigation_url(information.url())) {
                             fail(QStringLiteral(
                                 "Т-Банк открыл страницу вне официального домена. "
                                 "Вход остановлен."));
