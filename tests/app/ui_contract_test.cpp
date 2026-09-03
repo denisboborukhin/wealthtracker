@@ -63,6 +63,10 @@ TEST_CASE("dashboard keeps populated summaries inside responsive surfaces") {
     CHECK(datePicker.contains(QByteArrayLiteral("DayOfWeekRow")));
     CHECK(datePicker.contains(QByteArrayLiteral("Popup")));
     CHECK(datePicker.contains(QByteArrayLiteral("height: 322")));
+    CHECK(datePicker.contains(QByteArrayLiteral("popupType: Popup.Item")));
+    CHECK(datePicker.contains(QByteArrayLiteral("margins: 12")));
+    CHECK(datePicker.contains(QByteArrayLiteral("parent: field")));
+    CHECK_FALSE(datePicker.contains(QByteArrayLiteral("mapToItem")));
     CHECK(datePicker.contains(QByteArrayLiteral("signal dateSelected")));
 }
 

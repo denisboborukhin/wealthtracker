@@ -134,25 +134,18 @@ Button {
 
     Popup {
         id: calendarPopup
-        parent: Overlay.overlay
+        parent: field
         width: 306
         height: 322
+        popupType: Popup.Item
+        margins: 12
         padding: 12
         modal: false
         focus: true
         closePolicy: Popup.CloseOnEscape | Popup.CloseOnPressOutside
 
-        x: {
-            const point = field.mapToItem(parent, 0, field.height + 6)
-            return Math.max(12, Math.min(point.x, parent.width - width - 12))
-        }
-        y: {
-            const below = field.mapToItem(parent, 0, field.height + 6).y
-            if (below + height <= parent.height - 12)
-                return below
-            const above = field.mapToItem(parent, 0, -height - 6).y
-            return Math.max(12, above)
-        }
+        x: 0
+        y: field.height + 6
 
         onAboutToShow: field.syncCalendar()
 
