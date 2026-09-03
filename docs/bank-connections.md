@@ -55,6 +55,11 @@ T-Bank API resource URLs; it does not read cookies, DOM fields, headers,
 request bodies, or local storage. C++ accepts a candidate only after `ping`
 reports `CLIENT` access.
 
+Login starts only at exact `https://www.tbank.ru`. Top-level navigation is
+limited to that origin and the exact T-ID origins `https://id.tbank.ru` and
+`https://id.tinkoff.ru`; subdomains, CDN hosts, user information, non-default
+ports, and plain HTTP are rejected.
+
 The native connector permits `GET` requests to the exact origin
 `https://www.tbank.ru` and these paths only:
 
@@ -62,17 +67,20 @@ The native connector permits `GET` requests to the exact origin
 - `/api/common/v1/operations`
 
 The login validator also calls `/api/common/v1/ping`. Cookies and redirects are
-disabled for these C++ requests. The session is removed if initial validation
-or later authentication fails. Successful connections refresh every six hours
-while the application is running when auto-update is enabled.
+disabled for these C++ requests. The session is removed only when the bank
+reports an authentication failure; a transport or history rejection keeps the
+already validated connection available for retry. Successful connections
+refresh every six hours while the application is running when auto-update is
+enabled.
 
-Each synchronization freezes one UTC two-year range. Account histories are
-requested serially in 24 non-overlapping windows of at most 31 days to avoid
-overlapping requests on the bank connection. `NO_DATA_FOUND` means an empty
-window, not a failed account. A failed window fails the synchronization.
-Malformed individual operations are skipped with a visible count while valid
-records are retained. The undocumented response has no continuation marker, so
-silent bank-side truncation inside a successful window cannot be detected.
+Each synchronization freezes one UTC two-year range and sends one observed
+`GET` request per account with that exact start and end. `NO_DATA_FOUND` means
+an empty account history, not a failed account. Malformed individual operations
+are skipped with a visible count while valid records are retained. The
+undocumented response has no cursor or terminal marker, so the application
+labels the requested period but does not claim that the bank returned a
+complete statement. It does not invent window or pagination requests that the
+bank may reject.
 Operations marked `isInner` by T-Bank appear under **Внутренний перевод** and
 do not contribute to income, spending, savings, or spending-category totals.
 
@@ -186,15 +194,21 @@ official `/history` screen, and accepts only successful same-origin `GET`
 responses whose exact final path component is `byUser`, `byProducts`,
 `byAccount`, or `byCard` under
 `/msa/api-gw/private/history-hub/history-hub-homer/v1/history/`. It captures at
-most 16 exact path and query templates, prefers `byUser` when available, and
-restores the browser API. The page-owned HTTP client then replays the selected
-template serially over inclusive 31-day windows covering two years. Non-date
-query fields are preserved; only recognized `dateFrom`, `dateTo`, page, or
-offset fields change. Continuation follows explicit `hasNext`, `hasMore`, or
-`last` metadata, or a full page with a known page size. WealthTracker supplies
-only a generated request ID and the fixed `web_history_page` and smart-update
-headers; it never copies private headers. Replay is capped at 128 requests and
-8 MiB of combined operation data.
+most 16 exact path and query templates and restores the browser API. An
+unfiltered `byUser` template covers the portfolio; otherwise an observed
+single-product `byProducts`, `byAccount`, or `byCard` template is replayed for
+every product identifier returned by the same portfolio response. The exact
+observed path and parameter name are retained.
+
+The page-owned HTTP client replays inclusive 31-day windows covering two years,
+with at most four requests in flight. Non-date query fields are preserved; only
+recognized dates, page or offset fields, and the proven single-product value
+change. Every returned operation must belong to its requested window.
+Continuation follows explicit `hasNext`, `hasMore`, or `last` metadata, or a
+short final page with a known page size. WealthTracker supplies only a generated
+request ID and the fixed `web_history_page` and smart-update headers; it never
+copies private headers. Replay is capped at 512 requests and 8 MiB of combined
+operation data.
 
 A portfolio response that is still loading is retried at most twice, matching
 the current bank frontend. The financial-summary route is an optional balance
@@ -206,7 +220,14 @@ currencies, masked numbers and balances, plus operation identifiers, accounts,
 dates, amounts, descriptions, merchants, categories, MCCs, and internal-transfer
 markers. Each bank response and the final projection are limited to 8 MiB; C++
 also limits the projection to 256 accounts and 20,000 operations and validates
-exact integer minor units, dates, currencies, identifiers, and account ownership.
+exact integer minor units, dates, currencies, identifiers, and account
+ownership. Account aliases are resolved independently; an obsolete alias does
+not hide another valid alias on the same operation. Conflicting duplicate
+identifiers, unknown account ownership, out-of-window rows, or incomplete
+product/page coverage make the snapshot partial. Partial operations are not
+published; a previously complete in-memory history is preserved when available,
+and the status shows a bounded rejected-operation count without exposing bank
+data.
 
 VTB operation codes and parent categories used by the current frontend for
 transfers between a user's own accounts are normalized as **Внутренний

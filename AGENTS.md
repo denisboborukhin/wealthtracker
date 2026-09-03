@@ -198,14 +198,20 @@ When the user corrects your approach, append a one-line rule here before ending 
 - Never stop, navigate, or destroy a `QWebView` synchronously from its
   `loadingChanged` or `runJavaScript` callback; detach it from QML and defer
   native cleanup until the event loop regains control.
-- Give first-open QML popups explicit geometry before using it for overlay
-  placement; closed content does not provide reliable implicit bounds.
+- Parent calendar popups to their field and use `Popup.Item` with margins;
+  lifecycle-sensitive `mapToItem` bindings do not reliably track the overlay.
 - Run aqt only with a supported OpenSSL-backed Python and an explicit HTTPS
   mirror policy; never recover from repository errors by weakening TLS checks.
 - Reset asynchronous login probes independently from deferred native WebView
   cleanup so a stale callback cannot gate the next login attempt.
 - Use bank history-screen responses only to discover exact read templates;
   publish operations only after bounded replay proves every terminal page.
+- Keep T-Bank's entry origin separate from its exact T-ID navigation origins;
+  permit verified identity hosts only, never CDN hosts or wildcard subdomains.
+- Do not fabricate pagination for T-Bank operations; use the observed request
+  contract and label completeness unverified until a terminal signal is proven.
+- Mark VTB history complete only after every discovered portfolio product and
+  requested date window is covered; resolve each account alias independently.
 
 ---
 

@@ -54,12 +54,18 @@ projection, checks a candidate without cookies or redirects, and accepts only
 reply, cancellation path, and candidate buffer. QML sees only the native
 window and textual status.
 
+The entry URL is restricted to exact `https://www.tbank.ru`. Subsequent
+top-level navigation permits only that origin plus exact `https://id.tbank.ru`
+and `https://id.tinkoff.ru` T-ID origins. Subdomains, CDN/resource origins,
+userinfo, non-default ports, and plain HTTP remain rejected.
+
 The synchronization connector separately permits only account and operation
-reads at `www.tbank.ru`. It freezes a two-year range and serializes 24 bounded
-history windows per account. The response exposes no continuation marker, so
-the UI describes this as a requested period rather than asserting statement
-completeness. The API is undocumented, so parse or authentication changes fail
-closed.
+reads at `www.tbank.ru`. It freezes a two-year range and sends one observed
+`GET` request per account with the exact start and end. The response exposes no
+cursor or terminal marker, so the UI describes this as a requested period and
+explicitly marks completeness as unverified. The connector never fabricates a
+pagination contract. The API is undocumented, so rejection, parsing, or
+authentication changes fail closed.
 
 ## Retail Alfa-Bank login
 
@@ -126,22 +132,31 @@ For history, a short-lived observer opens the official `/history` route. It
 accepts only same-origin `GET` responses from four fixed final paths under the
 exact VTB history prefix: `byUser`, `byProducts`, `byAccount`, and `byCard`.
 The initial page request supplies an exact path and stable non-date query
-template. After capture, the page-owned HTTP client replays inclusive 31-day
-windows over two years and follows explicit pagination or a provable full page.
-Only recognized dates and page or offset values change. The script generates
-`x-request-id` and supplies fixed `x-initiator-service` and
-`x-smart-update-request` values; it does not inspect or copy private headers.
-At most 16 templates, 128 replay requests, and 8 MiB of combined operation data
-are retained page-locally. The expression does not inspect cookies, login
-fields, request bodies, resource timing, DOM contents, or browser storage. A
-redirect to another origin is not treated as an authenticated VTB page.
+template. An unfiltered `byUser` template is portfolio-wide. Otherwise, only an
+observed single-product `byProducts`, `byAccount`, or `byCard` template may
+substitute the product value, using identifiers from the validated portfolio
+response and the same path and parameter name. The page-owned HTTP client then
+replays inclusive 31-day windows over two years, with at most four requests in
+flight, and follows explicit pagination or a provable short final page. Only
+recognized dates, page or offset values, and that proven product value change.
+Each row must fall in its requested window, and every portfolio product must be
+covered before the snapshot is complete. The script generates `x-request-id`
+and supplies fixed
+`x-initiator-service` and `x-smart-update-request` values; it does not inspect
+or copy private headers. At most 16 templates, 512 replay requests, and 8 MiB of
+combined operation data are retained page-locally. The expression does not
+inspect cookies, login fields, request bodies, resource timing, DOM contents,
+or browser storage. A redirect to another origin is not treated as an
+authenticated VTB page.
 
 Each response is checked for its expected top-level shape and an 8 MiB limit
 before it is retained page-locally. A separate allowlist projection converts
 only bounded account and operation fields. C++ revalidates an 8 MiB result,
 256-account and 20,000-operation limits, exact minor units, dates, currencies,
-duplicates, and operation ownership. Raw response objects and browser-session
-material never cross the WebView boundary.
+duplicates, and operation ownership. Aliases are resolved independently;
+ambiguous aliases and conflicting duplicates fail completeness. Only a bounded
+rejected-row count crosses the boundary for status text. Raw response objects
+and browser-session material never cross the WebView boundary.
 
 The WebView session is reused for automatic refresh and cleared on disconnect.
 Authentication errors expire the connection; missing frontend exports or schema

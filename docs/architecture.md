@@ -75,9 +75,10 @@ preview but does not commit the result.
    cookie-disabled, redirect-disabled request. Only `CLIENT` access succeeds.
 5. The opaque session is stored in the operating-system credential store.
 6. A native connector reads only `accounts_light_ib` and `operations` from the
-   exact T-Bank origin. It freezes a two-year UTC range and reads each account
-   serially in 24 non-overlapping windows of at most 31 days before validating
-   the returned records.
+   exact T-Bank origin. It freezes a two-year UTC range and sends one observed
+   request per account with the exact start and end before validating the
+   returned records. Because the response has no terminal marker, completeness
+   remains explicitly unverified.
 
 The retail API is undocumented. A schema or authentication change fails closed
 without expanding the permitted host or introducing write requests.
@@ -137,15 +138,20 @@ compatibility error. The overall synchronization is capped at 180 seconds.
 4. For history, a bounded observer opens the official `/history` route and
    accepts only the bank page's exact same-origin GET responses for its four
    known history variants. It captures exact path and query templates, then the
-   page-owned client replays inclusive 31-day windows over two years. Stable
-   query values are preserved; only recognized dates and pagination positions
+   page-owned client replays inclusive 31-day windows over two years with at
+   most four concurrent requests. An unfiltered `byUser` template is global;
+   otherwise the exact observed single-product template is expanded across all
+   validated portfolio product IDs. Stable query values are preserved; only
+   recognized dates, pagination positions, and that proven product field
    change. Explicit continuations or provable short pages are followed under a
-   128-request limit. The script supplies three fixed non-authentication headers
+   512-request limit. The script supplies three fixed non-authentication headers
    and never copies private page headers. The observer restores the XHR API
    before replay.
 5. Raw responses remain page-local. A second fixed expression maps only bounded
    account and operation fields, associates child cards with their parent
-   accounts, and marks VTB's own-account transfer codes as internal transfers.
+   accounts, resolves aliases independently, and marks VTB's own-account
+   transfer codes as internal transfers. Uncovered products, out-of-window rows,
+   ambiguous ownership, and conflicting duplicate IDs keep the batch partial.
 6. `VtbRetailClient` validates the 8 MiB projection, record limits, exact money,
    identifiers, dates, currencies, duplicates, and account ownership.
 7. The browser-owned session is reused for periodic reloads and deleted when the
