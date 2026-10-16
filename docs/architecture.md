@@ -1,183 +1,113 @@
 # Architecture
 
-WealthTracker is a Qt Quick desktop application built with C++23 named modules.
-Headers are retained only where Qt `moc` or a platform ABI requires them.
+This describes the desktop implementation. Connection setup and user-visible
+limits are in [Bank connections](bank-connections.md); trust boundaries are in
+[Security design](security-design.md).
 
 ## Boundaries
 
-- `core`: exact money values, categorization, transfers, and analytics.
-- `storage`: SQLCipher connections, migrations, import transactions, and
-  repositories.
-- `platform`: secure buffers, key wrapping, and operating-system credentials.
-- `connectors`: file parsing, network policy, bank clients, normalization, and
-  deduplication.
-- `app`: synchronization coordinators, reporting periods, cross-bank transfer
-  matching, the external-plugin runner, retail-bank WebView lifecycles, models,
-  and QML commands.
-- `ui`: QML pages and reusable visual components.
+WealthTracker is a Qt Quick desktop application built with C++23 named modules.
+Headers are retained for Qt `moc`, platform ABIs, and third-party C APIs.
 
-The QML root receives one explicit `app` property. It has no database handle,
-credential object, persisted token, T-Bank session value, or retail-bank cookie
-value. A token or external-plugin answer typed by the user temporarily exists in
-its input control until submission; the controller converts it to temporary
-bytes and the QML field is cleared. List delegates declare their roles
-explicitly so runtime binding errors are caught by QML lint.
+| Layer | Responsibility |
+| --- | --- |
+| `src/core` | Exact money values, categorization, and analytics |
+| `src/storage` | SQLCipher connections, migrations, import transactions, and repositories |
+| `src/platform` | Secure buffers, key wrapping, and operating-system credentials |
+| `src/connectors` | File parsing, network policy, bank clients, normalization, and deduplication |
+| `src/app` | Synchronization, reporting, cross-bank transfer matching, WebView lifecycles, plugin execution, and Qt models |
+| `ui/qml` | Pages and reusable visual components |
 
-## Runtime data flow
+The QML root receives one explicit `app` property. The controller exposes commands,
+status, and financial models, without a database handle or stored credential
+object. Tokens and plugin answers entered in QML exist in their input controls
+until submission; the fields are then cleared.
 
-Native token and T-Bank synchronization is:
+## Synchronization flows
 
-1. Load one credential from the operating-system store.
-2. Construct a request through the connector's exact-host policy.
-3. Clear the temporary credential bytes.
-4. Parse a bounded response into `NormalizedBatch`.
-5. Follow bounded pagination or history windows with at most four requests in
-   flight; retail T-Bank uses one serial request.
-6. Pair exact opposite operations across connected banks as own-account
-   transfers, while preserving explicit connector markers.
-7. Filter operations to the selected inclusive reporting period and project
-   the records and RUB cash-flow totals into in-memory Qt models.
+All successful flows produce a `NormalizedBatch`. The controller replaces the
+connection's in-memory batch and rebuilds the Qt models only after completion.
+A failed refresh leaves the previous batch visible. Replacing a token clears
+that connection's old batch and cancels its pending synchronization.
 
-Alfa Online and VTB Online use a separate browser-owned flow. Their fixed page
-expressions make bounded same-origin reads through the authenticated WebView,
-project allowlisted fields, and pass no session material into C++.
+| Connection | Coordinator and data path |
+| --- | --- |
+| Retail T-Bank | `TBankLoginCoordinator` validates and stores a session; `BankSyncCoordinator` fetches accounts and balances with history disabled |
+| Retail Alfa-Bank | `AlfaLoginCoordinator` projects accounts and balances from known dashboard bootstrap state in its WebView |
+| Retail VTB | `VtbLoginCoordinator` uses the authenticated page's own client for active products and an optional balance supplement |
+| T-Invest | `InvestmentSyncCoordinator` lists accounts, then requests one RUB-valued portfolio per account serially |
+| Alfa B2C, T-Bank Business, Modulbank | `BankSyncCoordinator` discovers accounts and retrieves bounded operation pages or statements |
+| External bundle | `ZenPluginRunner` validates child-process output before publishing a batch |
 
-The default reporting period is the latest month through the current date.
-Current balances and net worth are not filtered by that period. Cross-bank
-matching is deterministic and one-to-one: it requires another connector, the
-same currency, an exact opposite amount, and at most three days between the two
-operations. Matching transfers remain visible but are excluded from income,
-spending, savings, and spending-category totals.
+Native requests load credentials from the operating-system store, construct an
+exact-host request, and clear temporary credential bytes. `BankSyncCoordinator`
+bounds streamed responses to 20 MiB and supports at most four requests in flight.
+History remains enabled for the three token-based banking APIs; it is disabled
+for retail T-Bank. The desktop T-Invest path requests accounts and portfolios
+only, even though its connector library also implements operation read methods.
 
-Each connector has at most one coordinator. Removing a connection or enabling
-the privacy screen aborts its replies and discards pending work. Retail T-Bank
-has separate login and synchronization coordinators so WebView callbacks,
-network replies, timers, cancellation, and session erasure have one owner.
-Retail Alfa-Bank has one WebView coordinator for both login and two-year history
-refresh, so its browser-owned session never crosses into the C++ network stack.
-Retail VTB follows the same session boundary and uses the authenticated page's
-own read client rather than exporting session material.
+Sources: [controller](../src/app/AppController.cpp),
+[bank synchronization](../src/app/bank_sync.cppm),
+[investment synchronization](../src/app/investment_sync.cppm).
 
-The current desktop controller does not persist normalized financial batches.
-The `storage` module is tested independently and is intended for that later
-integration. Statement import likewise performs probing and parsing for a
-preview but does not commit the result.
+## Retail WebViews
 
-## Retail T-Bank
+T-Bank's official page handles credentials and MFA. A fixed resource-timing
+expression retains the eight most recently observed unique session candidates
+from exact T-Bank API URLs. C++ accepts a candidate only after `ping` confirms
+`CLIENT` access, then stores it in the OS credential backend. Balance refresh
+calls `accounts_light_ib`; it never requests operation history.
 
-1. A coordinator creates a Qt WebView and disables persistent local storage
-   and file access.
-2. The official T-Bank login page handles phone, password, and MFA.
-3. A fixed expression examines resource-timing URLs only. It returns at most
-   eight bounded session candidates from exact
-   `https://www.tbank.ru/api/common/v1/` URLs.
-4. C++ validates the projection and checks the latest candidate with a
-   cookie-disabled, redirect-disabled request. Only `CLIENT` access succeeds.
-5. The opaque session is stored in the operating-system credential store.
-6. A native connector reads only `accounts_light_ib` and `operations` from the
-   exact T-Bank origin. It freezes a two-year UTC range and sends one observed
-   request per account with the exact start and end before validating the
-   returned records. Because the response has no terminal marker, completeness
-   remains explicitly unverified.
+Alfa keeps its session in the system WebView. A fixed expression projects known
+`initialState` or inline `runApp` dashboard data into account fields. Refresh
+reloads the dashboard. The coordinator detects the bank's certificate landing
+page, bounds dashboard loading to 30 seconds once observed, and caps a refresh
+at 45 seconds. No history observer or history navigation is used.
 
-The retail API is undocumented. A schema or authentication change fails closed
-without expanding the permitted host or introducing write requests.
+VTB keeps its session in the system WebView and obtains the frontend's exported
+`./HttpClient`. It reads active products and an optional financial summary,
+retrying a loading portfolio at most twice. Refresh resets the app's page-local
+projection state and reuses the authenticated client without reloading or
+navigating to history. It is capped at 45 seconds.
 
-## Retail Alfa-Bank
+Browser-owned Alfa and VTB session material stays inside their WebViews.
+Native view cleanup is deferred out of loading and JavaScript callbacks.
+Removing a connection or enabling the privacy screen cancels active work;
+successful browser sessions are retained for subsequent refreshes while the
+app is running. A saved connected flag does not establish a live session after
+restart. Retail refresh timers use a six-hour interval.
 
-1. A coordinator opens the official Alfa Online page in a native Qt WebView.
-2. The bank page owns phone/SMS authentication and its browser session.
-3. A fixed expression checks the exact Alfa Online origin. If the bank serves
-   its static certificate-installation landing page instead of the application,
-   the coordinator pauses data probing and exposes the certificate-help action.
-4. The expression converts known
-   global or inline dashboard bootstrap state (`initialState` or `runApp`
-   `appState`) into bounded account and balance fields.
-5. After accounts are available, a short-lived bounded observer follows the
-   bank's normal `/history` route and accepts only successful same-origin
-   `/api/v1/operations-history/operations` responses. On that POST only, it
-   rewrites recognized existing date fields to two years, resets an existing
-   page or offset, and raises an existing page-size field to 100. It follows
-   serial same-path continuations inside the page and proves completion only
-   from a terminal flag or short final page. Unknown pagination remains partial.
-   Other filters, the host, and the method do not change. This happens even when
-   the dashboard bootstrap contains a short preview; that preview is not a
-   completion signal.
-6. `AlfaRetailClient` validates bounds, exact amounts, identifiers, dates,
-   currencies, duplicates, and account ownership before producing a
-   `NormalizedBatch`.
-7. The WebView session stays browser-owned for periodic dashboard reloads and
-   is deleted when the user disconnects the bank.
+Sources: [T-Bank login](../src/app/tbank_login.cppm),
+[Alfa login](../src/app/alfa_login.cppm), [Alfa projection](../src/app/alfa_browser.cppm),
+[VTB login](../src/app/vtb_login.cppm), [VTB projection](../src/app/vtb_browser.cppm).
 
-No cookie, password, OTP, authorization header, or raw page-state object is
-passed through QML or persisted by WealthTracker. The projection is an
-undocumented compatibility boundary and fails closed when either schema changes.
-The coordinator distinguishes authentication, the bank's certificate landing
-page, and a dashboard that is still loading. If no supported account state
-appears within 30 seconds after the dashboard is reached, or the operations
-response does not complete within 150 seconds, it reports an explicit
-compatibility error. The overall synchronization is capped at 180 seconds.
+## Models and persistence
 
-## Retail VTB
+Reporting defaults to the latest month through today. Calendar filters apply
+to operations; current account balances, net worth, and portfolio value are
+not filtered by that period. Aggregate dashboard and portfolio totals use RUB;
+foreign-currency balances remain visible without implicit conversion.
 
-1. A coordinator opens `https://online.vtb.ru` in a native Qt WebView with
-   local storage and file access disabled.
-2. The official page owns phone/SMS authentication and the browser session.
-3. A fixed expression verifies the exact origin, obtains the current bank
-   frontend's exported `./HttpClient`, and invokes two exact GET routes for active
-   products and an optional financial-balance supplement. It performs at most
-   two delayed portfolio retries while VTB reports
-   `loadStatus: LOADING`. An unavailable supplement does not invalidate an
-   otherwise valid active portfolio; authentication failures still stop the
-   synchronization. The authenticated client response, not the SPA pathname,
-   determines whether the post-login browser session is ready.
-   The expression records a fixed, value-free request stage and accepts common
-   numeric status-code envelopes solely to distinguish 401/403. A history
-   transport failure produces a bounded partial batch with validated accounts
-   and balances; malformed history and unknown schemas remain blocking.
-4. For history, a bounded observer opens the official `/history` route and
-   accepts only the bank page's exact same-origin GET responses for its four
-   known history variants. It captures exact path and query templates, then the
-   page-owned client replays inclusive 31-day windows over two years with at
-   most four concurrent requests. An unfiltered `byUser` template is global;
-   otherwise the exact observed single-product template is expanded across all
-   validated portfolio product IDs. Stable query values are preserved; only
-   recognized dates, pagination positions, and that proven product field
-   change. Explicit continuations or provable short pages are followed under a
-   512-request limit. The script supplies three fixed non-authentication headers
-   and never copies private page headers. The observer restores the XHR API
-   before replay.
-5. Raw responses remain page-local. A second fixed expression maps only bounded
-   account and operation fields, associates child cards with their parent
-   accounts, resolves aliases independently, and marks VTB's own-account
-   transfer codes as internal transfers. Uncovered products, out-of-window rows,
-   ambiguous ownership, and conflicting duplicate IDs keep the batch partial.
-6. `VtbRetailClient` validates the 8 MiB projection, record limits, exact money,
-   identifiers, dates, currencies, duplicates, and account ownership.
-7. The browser-owned session is reused for periodic reloads and deleted when the
-   user disconnects VTB.
+Cross-bank transfer matching is deterministic and one-to-one: opposite amounts
+must have the same currency, belong to different connectors, and occur within
+three days. Explicit bank markers are preserved. Matched transfers remain in
+the operations list but are excluded from cash-flow totals and categories.
+Balance-only retail and investment connections do not supply cash-flow history.
 
-No login field, cookie, authorization header, request body, or browser-storage
-value crosses into C++ or QML. The application labels partial history explicitly
-instead of reporting zero operations as a complete synchronization. Partial
-Alfa and VTB refreshes retain distinct prior operations only for accounts still
-present and only inside the current two-year cutoff; this is in-memory retention
-and does not survive restart. The frontend module and routes are undocumented;
-missing exports, authentication failure, unexpected origins, and response drift
-all fail closed without adding new hosts or methods.
+T-Invest portfolio value uses API portfolio totals. Holding rows use instrument
+identifiers and quantity times current price in the instrument's currency.
+Instrument names, allocation, returns, dividends, and XIRR are not calculated.
+
+Financial batches are not persisted by the controller. Settings and credentials
+are stored separately; the SQLCipher repository and key-wrapping components are
+independently tested libraries awaiting desktop integration. Statement import
+runs a parser preview and does not publish or commit imported records.
 
 ## External JavaScript plugins
 
-External bundles use a separate child-process boundary:
-
-1. C++ validates the selected path, identifier, preferences, and input size.
-2. A private temporary copy of the MIT compatibility host starts under Node.js
-   with a reduced environment.
-3. The host and application exchange bounded JSON-lines messages.
-4. C++ validates prompts, state, accounts, balances, and transactions before
-   updating models.
-5. Reusable plugin state is stored under a bundle-specific credential key;
-   sensitive prompt values are not persisted.
-
-This is process isolation, not a sandbox. External code retains the current
-user's operating-system permissions and unrestricted network behavior.
+A selected bundle runs under Node.js through a private temporary copy of the
+compatibility host. C++ validates paths, preferences, bounded JSON-lines messages,
+prompts, state, and normalized output. Reusable state uses a bundle-specific
+credential entry; non-sensitive preferences use local settings. The child has
+the current user's file and network permissions. Process separation does not
+sandbox the bundle.

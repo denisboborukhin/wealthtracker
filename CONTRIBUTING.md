@@ -11,8 +11,8 @@ bank access.
   behavior.
 - Give every network connector an exact HTTPS host policy, explicit methods,
   bounded responses, deterministic cancellation, and parser tests.
-- Do not expose credentials, session projections, bank response bodies, or
-  imported descriptions to QML or logs.
+- Do not expose credentials, session projections, or raw bank responses and
+  imported files to QML or logs. Validated financial fields belong in the models.
 - Treat external plugin bundles as arbitrary code. Do not weaken the UI warning
   or describe the child process as a sandbox.
 - Keep sample data opt-in and clearly synthetic.
@@ -22,6 +22,7 @@ or files under the ignored `tasks/` directory.
 
 ## Verification
 
+Set up and activate the toolchain using [Building](docs/building.md) first.
 Before submitting a change, run:
 
 ```sh
@@ -34,6 +35,9 @@ git diff --check
 
 Use the equivalent Windows preset when changing Windows-specific code. Add a
 regression test for every security policy, parser, limit, or lifecycle change.
+When connector behavior changes, update the connection guide, architecture,
+security design, and README together. Keep implementation claims separate from
+live-account verification. Use Git history for change records.
 
 ## Commit subjects
 

@@ -1,11 +1,17 @@
 # Bank connections
 
+Implementation reviewed on 2026-10-16 against the
+[controller](../src/app/AppController.cpp) and its synchronization coordinators.
+The matrix describes implemented data paths; it does not establish successful
+live authentication or current compatibility with every bank. Account access
+and balances still need checking against the bank using a real account.
+
 All built-in connectors expose financial data to WealthTracker as read-only.
 API tokens and the retail T-Bank session use separate entries in macOS Keychain
 or Windows Credential Manager. Alfa Online and VTB Online keep their browser
 sessions inside the operating-system WebView; WealthTracker does not extract
-them. Synchronized
-financial records currently remain in memory and disappear when the app exits.
+them. Synchronized financial records currently remain in memory and disappear
+when the app exits.
 
 ## Support matrix
 
@@ -29,9 +35,9 @@ only; foreign-currency accounts stay visible without an implicit conversion.
 Income, spending, savings, categories, and the operations list use the inclusive
 date range selected with the two calendar controls. The default range is the
 latest month through today. Savings are an amount in rubles: RUB income minus
-RUB spending. Built-in retail synchronization loads account balances only. Calendar filters
-apply to operations loaded by other connectors and never trigger bank-history
-requests.
+RUB spending. Built-in retail synchronization loads account balances only.
+Calendar filters apply to operations loaded by other connectors and never
+trigger bank-history requests.
 
 A bank's explicit own-account transfer marker is always honored. WealthTracker
 also pairs an outgoing operation with one incoming operation from another
@@ -75,7 +81,7 @@ certificates through the official procedure, restart the app and retry.
 ## Retail VTB
 
 Open **Подключения → ВТБ → Войти** and complete the official page. The app keeps
-the authenticated WebView and calls its own HTTP client only for:
+the authenticated WebView and calls the bank page's HTTP client only for:
 
 - `/msa/api-gw/private/portfolio/portfolio-main-page/portfolios/active`
 - `/msa/api-gw/private/portfolio/portfolio-balances/financial/summary`
@@ -97,9 +103,10 @@ bounded to 45 seconds even if a JavaScript callback stalls.
 These retail interfaces are undocumented and can change. Verify the account
 count and balances against each bank's own application. Synchronization does
 not retrieve transaction history. Cash-flow reporting therefore cannot be
-computed from these balance-only connections. Previously loaded balances survive
-a transport or schema failure; status text and the last successful refresh time
-identify the failed update. Explicit authentication rejection requires login.
+computed from these balance-only connections. Previously loaded balances
+survive a transport or schema failure; status text and the last successful
+refresh time identify the failed update. Explicit authentication rejection
+requires login.
 
 Built-in retail auto-update runs every six hours while the app is running.
 Disconnecting removes that connection's in-memory rows and stored session.
@@ -110,7 +117,8 @@ to QML or status messages.
 
 For each connection, obtain a token from the corresponding bank or registered
 integration, open its row in **Подключения**, save the token, then select
-**Синхронизировать**.
+**Синхронизировать**. Use a token with read-only permissions; the application
+issues read requests but does not audit the token's bank-side scopes.
 
 - Alfa-Bank B2C uses `GET /api/pp/v1/accounts` and
   `GET /api/pp/v1/operations` at `https://baas.alfabank.ru`. The desktop app
@@ -140,19 +148,12 @@ and removes that connection's in-memory rows.
 
 ## External ZenPlugins bundles
 
-WealthTracker can run a separately built modular ZenPlugins bundle:
-
-```sh
-git clone https://github.com/zenmoney/ZenPlugins.git
-cd ZenPlugins
-corepack enable
-yarn
-yarn build <plugin-id>
-```
-
-`corepack enable` installs the package-manager shims shipped with Node.js so
-the repository's pinned Yarn version is used. Node.js 18 or newer is required
-only for this external-plugin path.
+WealthTracker accepts a separately reviewed and built modular bundle. Obtain
+its source and build instructions from the
+[upstream project](https://github.com/zenmoney/ZenPlugins/blob/master/README.md),
+select an exact revision, and review the source before building. Upstream
+plugin availability and build tooling are separate from WealthTracker's built-in
+connector support. This optional compatibility host requires Node.js 18 or newer.
 
 In WealthTracker, open **Подключения → Local ZenPlugins**, select
 `build/<plugin-id>.js`, review the detected fields, and run it. The application
@@ -171,8 +172,6 @@ repository or distributed with WealthTracker.
 
 ## Unsupported retail banks
 
-The retail Sber row remains unavailable until a maintainable, reviewable
-implementation exists. ZenPlugins does not currently contain a Russian
-Alfa-Bank retail connector; similarly
-named `alfabank-by`, `alfabank-ua`, and `altabanka-rs` plugins target other
-countries or banks.
+The retail Sber row is an unavailable adapter slot. External plugin support
+does not make it a built-in connector or establish live compatibility for any
+other retail bank.

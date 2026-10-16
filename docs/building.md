@@ -1,7 +1,13 @@
 # Building WealthTracker
 
-The maintained build presets target macOS and Windows. Linux can compile the
-libraries but currently has no secure credential backend for live connections.
+The checked-in presets target macOS arm64 and Windows x86_64. Run commands from
+the repository root. Linux requires a manually supplied Qt/compiler toolchain
+and has no supported credential backend for stored-token connections.
+
+These instructions follow [CMake presets](../CMakePresets.json), the
+[Conan recipe](../conanfile.py), and the scripts under `scripts/`. Windows
+commands require a matching MSVC 194 toolchain in a developer PowerShell; they
+have not been executed as part of the macOS documentation review.
 
 ## Toolchain
 
@@ -40,8 +46,9 @@ reachable from every network. Override it when necessary without disabling TLS:
 WT_QT_MIRROR=https://mirror.netcologne.de/qtproject/ ./scripts/bootstrap.sh
 ```
 
-On Windows, run `scripts/bootstrap.ps1`, then activate
-`build/tooling/Scripts/Activate.ps1` in PowerShell.
+On Windows, bootstrap installs the pinned tools and Qt MSVC SDK. It does not
+install Visual Studio or the Windows SDK; open a developer PowerShell with the
+x64 compiler available before building.
 
 ## Debug build on macOS
 
@@ -64,14 +71,47 @@ Run the application with:
 ./build/macos-debug/WealthTracker.app/Contents/MacOS/WealthTracker
 ```
 
-Use the equivalent `windows-debug` preset and
-`conan/profiles/windows-x86_64` profile on Windows.
+Node.js is optional for running the app, but the `node --check` verification
+command requires it. The native macOS WebView lifecycle test requires access
+to a desktop display; a headless or restricted session may abort with
+`Cannot create window: no screens available`.
+
+Rerun `conan install` after dependency or shared-library option changes before
+reconfiguring. An old static-OpenSSL dependency graph cannot satisfy the current
+TLS runtime installation rules.
+
+## Debug build on Windows
+
+```powershell
+./scripts/bootstrap.ps1
+& ./build/tooling/Scripts/Activate.ps1
+conan install . `
+  --profile:host=conan/profiles/windows-x86_64 `
+  --profile:build=conan/profiles/windows-x86_64 `
+  --build=missing -s:h build_type=Debug -s:h compiler.runtime_type=Debug `
+  -c tools.env.virtualenv:powershell=powershell.exe `
+  -of build/windows-debug
+. ./build/windows-debug/generators/conanrun.ps1
+$env:PATH = "$(Resolve-Path ./build/qt/6.11.1/msvc2022_64/bin);$env:PATH"
+cmake --preset windows-debug
+cmake --build --preset windows-debug
+ctest --preset windows-debug --output-on-failure
+cmake --build --preset windows-debug --target wealthtracker_qmllint
+node --check scripts/zen_plugin_host.mjs
+& ./build/windows-debug/WealthTracker.exe
+```
+
+The Debug host settings override the profiles' Release defaults. Keep the build
+profile in Release for dependency build tools. Activate Conan's runtime
+environment and add Qt's `bin` directory before building: Catch2 test discovery
+executes binaries during the build and needs the dependency DLLs on `PATH`.
 
 ## Sanitizers
 
-For a local Clang build, add `-DENABLE_SANITIZERS=ON` during configuration,
-then rebuild and run the full test suite. Sanitizers are not enabled for the
-packaged application.
+For an already configured local Clang build, run
+`cmake --preset macos-debug -DENABLE_SANITIZERS=ON`, then rebuild and run the full
+test suite. Pass the option to CMake directly; `scripts/configure.sh` only reads
+the preset argument. Sanitizers are not enabled for the packaged application.
 
 ## TLS runtime
 
@@ -83,11 +123,44 @@ verification remain enabled. See [Qt's TLS packaging guidance](https://doc.qt.io
 
 ## Release packages
 
-Use `macos-release` or `windows-release`, run the same tests and QML lint, then
-build the `package` target. Generated packages are unsigned development
-artifacts. Public distribution additionally requires platform signing,
-notarization where applicable, dependency/SBOM review, and inclusion of all
-license notices. Do not describe an unsigned package as a production release.
+For macOS, with project tooling activated:
+
+```sh
+conan install . \
+  --profile:host=conan/profiles/macos-arm64 \
+  --profile:build=conan/profiles/macos-arm64 \
+  --build=missing -s:h build_type=Release \
+  -of build/macos-release
+./scripts/configure.sh macos-release
+cmake --build --preset macos-release
+ctest --preset macos-release --output-on-failure
+cmake --build --preset macos-release --target wealthtracker_qmllint
+cmake --build --preset macos-release --target package
+```
+
+CPack writes the DMG under `build/macos-release`. The install step runs Qt's
+QML deployment script and stages OpenSSL, the project license, third-party
+notices, the Conan lockfile, and available Qt SPDX inventory. To inspect an
+installed tree separately, use:
+
+```sh
+cmake --install build/macos-release --prefix build/stage/macos-release
+```
+
+On Windows, install dependencies with `build_type=Release` and
+`compiler.runtime_type=Release` into `build/windows-release`, retaining the
+PowerShell environment option above. Activate that configuration's generated
+`conanrun.ps1`, then configure, build, test, and lint with `windows-release`.
+Keep Qt's `bin` on `PATH`. The `package` target uses CPack's
+WIX generator and requires WiX on the build machine; bootstrap does not install
+it. The CI workflow builds, tests, lints, and stages the application, but does
+not create, sign, or publish a release package.
+
+No public-distribution signing or notarization is configured. Treat generated
+packages as development artifacts, including any local ad-hoc signature. Public
+distribution additionally requires platform signing, notarization where
+applicable, dependency/SBOM review, and inclusion of all applicable license
+texts and notices.
 
 Release dependency resolution must use the committed `conan.lock`. Qt remains
 dynamically linked so recipients retain the replacement rights required by its

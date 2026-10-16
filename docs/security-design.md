@@ -1,198 +1,159 @@
 # Security design
 
+For vulnerability reporting, see [Security policy](../SECURITY.md). This document
+describes implemented controls and their limits, rather than an audit guarantee.
+
 ## Assets and trust
 
-The sensitive assets are bank tokens, the retail T-Bank API session, Alfa
-Online and VTB Online browser sessions, external plugin state, and normalized financial
-records. The local operating system, the running application binary, and each
-bank's own login page are trusted.
-User-selected JavaScript plugins are trusted only when the user has reviewed
-them; WealthTracker cannot sandbox them.
+Sensitive assets include bank tokens, the retail T-Bank API session, Alfa and
+VTB browser sessions, external plugin state, and normalized financial records.
+The OS, running binary, and each bank's own login page are trusted. A compromised
+bank page or arbitrary code running as the same user is outside this boundary.
 
-## Credential handling
+## Credentials and stored data
 
-macOS uses Keychain items restricted to the unlocked device. Windows uses
-Credential Manager. Linux currently has no supported secure credential backend,
-so token and API-session connections that require it fail closed there.
+macOS uses Keychain with `WhenUnlockedThisDeviceOnly` accessibility. Windows
+uses Credential Manager. Linux has no supported secure credential backend, so
+connections requiring stored tokens or API sessions fail closed there.
 
-Credentials are loaded for request construction and temporary byte arrays are
-cleared immediately afterward. Persisted values are not exposed as QML
-properties or included in status text. A token or external-plugin answer typed
-in the interface exists temporarily in its QML input control, which is cleared
-after submission. Removing a connection deletes its credential entry.
-Alfa Online and VTB Online are different: the system WebView owns each browser
-session, and WealthTracker never extracts or copies cookie values into
-application memory.
+Temporary credential byte arrays are cleared after request construction. This
+does not guarantee erasure of all copies held by Qt, the browser, or the OS.
+Persisted credentials are not exposed as QML properties or status text. Tokens
+and plugin answers typed in QML exist temporarily in input controls, which are
+cleared after submission. Removing a token connection deletes its credential
+entry; replacing its token cancels pending work and clears the old snapshot.
 
-The desktop controller currently retains normalized financial data only in
-memory. The SQLCipher and Argon2id components are independently tested building
-blocks, not an active application vault. Documentation and UI must not describe
-the privacy screen as database encryption or memory protection.
+Alfa and VTB browser sessions remain owned by the system WebView. The application
+does not extract their cookies, authorization headers, or browser storage.
+Disconnecting requests cookie deletion and deferred WebView destruction.
 
-## Built-in network policy
+Normalized financial batches currently remain in process memory. SQLCipher and
+Argon2id components are tested separately and are not an active desktop vault.
+Local settings retain connection flags, refresh times, and non-sensitive plugin
+preferences. Credential storage does not encrypt the in-memory financial models.
 
-- Exact HTTPS hosts are declared by each connector.
-- Redirects are manual or rejected.
-- Only documented read methods or isolated, fixed retail read paths are
-  represented in connector APIs.
-- Responses, record counts, pagination, cursors, and concurrent requests are
-  bounded.
-- Parsers reject malformed dates, currencies, amounts, duplicate identifiers,
-  and integer overflow.
-- Removing a connection or hiding data aborts owned replies and pending pages.
+Sources: [credential backend](../src/platform/credential_store.cpp),
+[controller](../src/app/AppController.cpp).
 
-## Retail T-Bank login
+## Native network policy
 
-The operating-system WebView is embedded in the Connections dialog. Local
-storage and local-file access are disabled, cookies are cleared around each
-attempt, and normal operating-system TLS policy remains in force.
+Native connectors use exact HTTPS host allowlists, reject URL user information
+and non-default ports, and use manual redirects. Request APIs expose fixed read
+methods; there is no payment, transfer, or trading implementation. Users should
+supply read-only tokens; the app does not independently audit their bank-side
+permissions.
 
-A fixed expression reads resource-timing URL names and projects at most eight
-session candidates from exact T-Bank HTTPS API paths. C++ validates the bounded
-projection, checks a candidate without cookies or redirects, and accepts only
-`CLIENT` access. The login coordinator owns every WebView callback, timer,
-reply, cancellation path, and candidate buffer. QML sees only the native
-window and textual status.
+The executable initializes and selects Qt's OpenSSL backend. Install rules stage
+the shared OpenSSL runtime. System WebViews use their platform TLS handling.
+Neither path disables certificate or hostname verification.
 
-The entry URL is restricted to exact `https://www.tbank.ru`. Subsequent
-top-level navigation permits only that origin plus exact `https://id.tbank.ru`
-and `https://id.tinkoff.ru` T-ID origins. Subdomains, CDN/resource origins,
-userinfo, non-default ports, and plain HTTP remain rejected.
+`BankSyncCoordinator` bounds streamed responses to 20 MiB, accounts to 256,
+concurrency to four, pages to 250 per account and 1,000 per run, and transactions
+to 250,000. HTTP 401/403, throttling, server errors, and transport errors are
+classified separately. The first failure aborts remaining requests. Parsers
+validate schema and money; depending on the parser, malformed or duplicate rows
+may produce warnings and be skipped rather than failing the entire batch.
 
-The synchronization connector separately permits only account and operation
-reads at `www.tbank.ru`. It freezes a two-year range and sends one observed
-`GET` request per account with the exact start and end. The response exposes no
-cursor or terminal marker, so the UI describes this as a requested period and
-explicitly marks completeness as unverified. The connector never fabricates a
-pagination contract. The API is undocumented, so rejection, parsing, or
-authentication changes fail closed.
+Sources: [host policy](../src/connectors/network_policy.cpp),
+[bank coordinator](../src/app/bank_sync.cppm), [startup](../src/app/main.cpp).
 
-## Retail Alfa-Bank login
+## Retail T-Bank
 
-The official Alfa Online phone/SMS page runs inside a separate coordinator-owned
-system WebView. File access and persistent local storage are disabled. Standard
-operating-system TLS and browser-cookie policy remain in force; the application
-does not install certificate exceptions or inspect cookie contents.
+A coordinator-owned WebView handles login and MFA. Local storage and file access
+are disabled, and cookies are cleared around each login attempt. The entry origin
+is exact `https://www.tbank.ru`; subsequent top-level navigation also permits
+exact `https://id.tbank.ru` and `https://id.tinkoff.ru`. Other subdomains, resource
+hosts, URL user information, non-default ports, and HTTP are rejected.
 
-Alfa Online's current chain is rooted at the Russian Trusted Root CA, which may
-be absent from the operating-system trust store. A certificate-related WebView
-failure remains blocking. The UI exposes only a user-triggered link to
-`https://alfa.bank/cert`, the bank's current installation guidance; it does
-not fetch a root certificate, mutate a trust store, or accept an invalid chain.
-Failure text is derived from a fixed classification and an allowlisted hostname,
-never from a complete URL or raw renderer error that could contain login data.
-The bank can also return a static certificate landing page after authentication.
-It is recognized only on the exact Alfa Online origin by its root path, absence
-of scripts and forms, and exact `https://alfa.bank/cert` link; page text and
-input values are not read.
+A fixed expression reads resource-timing URL names and returns at most eight
+bounded API-session candidates. C++ validates the projection and accepts only a
+candidate whose cookie-disabled, redirect-disabled `ping` confirms `CLIENT`
+access. Validation uses HTTP/1.1, a 15-second transfer timeout, and a 64 KiB
+response limit. QML receives the native window and status, never the candidates.
 
-A fixed expression checks the exact `https://web.alfabank.ru` origin and reads
-only known global or inline dashboard bootstrap objects. Inline scripts are
-bounded to 64 elements, 8 MiB each, and 16 MiB total; external scripts, rendered
-DOM, fields, and storage are not read. Only the `initialState` object or
-`runApp` `appState` JSON is considered for accounts and balances.
+The desktop synchronization path uses `accounts_light_ib` for accounts and
+balances only. The connector library retains operation-reading code, but the
+controller disables history. HTTP authentication rejection expires the stored
+session. Failed refreshes retain the previous balance snapshot, which is stale
+data rather than proof of an authenticated session. This retail API is
+undocumented and can stop working after a bank-side change.
 
-For history, a short-lived observer follows the bank's normal `/history` route
-and accepts only 2xx JSON responses from the exact same-origin
-`/api/v1/operations-history/operations` path. For that POST only, it may parse a
-JSON request body of at most 64 KiB, rewrite recognized existing date fields to
-two years, reset an existing page or offset field, and raise an existing
-page-size field to 100. It constructs serial same-path continuation POSTs inside
-the page and sets only `Content-Type`. Unrelated filters, method, host, and path
-are unchanged. Bodies and values remain page-local. The observer restores the
-browser API when capture finishes.
-The coordinator always starts this route after it has accounts; dashboard
-preview operations are not trusted as evidence that history is complete. At
-most 200 responses and 8 MiB of combined response text are retained page-locally.
-The projection returns an allowlist of fields rather than raw page or response
-state, then releases its temporary response references. C++ enforces an 8 MiB
-result limit, 256-account and 20,000-operation limits, exact integer amounts,
-bounded text, valid currencies and dates, and account ownership for each
-operation. QML receives only the native window and textual status.
+Sources: [login](../src/app/tbank_login.cppm),
+[session projection](../src/app/tbank_browser.cppm),
+[retail connector](../src/connectors/tbank_retail_client.cpp).
 
-The browser session remains in the operating-system WebView for automatic
-dashboard refreshes and is cleared when the connection is removed. A redirect
-to `private.auth.alfabank.ru` during synchronization invalidates the connection.
-The page-state schema is undocumented, so missing or changed data fails closed
-without switching to direct password requests, cookie export, or write calls.
+## Retail Alfa-Bank
 
-## Retail VTB login
+The official phone/SMS page runs in a separate system WebView with local storage
+and file access disabled. Certificate failures remain blocking; the UI links
+to the fixed `https://alfa.bank/cert` help URL without installing certificates,
+changing system trust, or accepting an invalid chain. Load failures use fixed
+classifications and allowlisted hostnames rather than raw URLs or renderer text.
+The bank's certificate landing page is detected through its root path, absence
+of scripts/forms, and exact certificate-help link.
 
-The official VTB Online page runs in a coordinator-owned system WebView with
-local storage and file access disabled. Standard operating-system TLS and cookie
-policy remain in force. The app validates the exact `https://online.vtb.ru`
-origin and rejects credentials embedded in its URL.
+A fixed expression checks exact `https://web.alfabank.ru` and projects only known
+global or inline dashboard bootstrap objects. Inline scanning considers at most
+64 scripts, each limited to 8 MiB, with a 16 MiB aggregate scan budget. The script
+does not read login inputs, rendered text, cookies, or browser storage. It emits
+at most 256 accounts with identifiers, bounded names, currencies, masked numbers,
+and integer minor-unit balances. It emits no transactions and does not navigate
+to history or intercept requests. C++ revalidates the projection with an 8 MiB
+UTF-8 limit. A changed schema or unsupported dashboard state stops the refresh.
 
-A fixed expression obtains only the bank frontend's exported `./HttpClient` and
-invokes two exact GET paths for active products and an optional balance
-supplement. A non-authentication failure of the optional supplement does not
-discard balances embedded in a valid active portfolio.
+Sources: [coordinator](../src/app/alfa_login.cppm),
+[projection](../src/app/alfa_browser.cppm),
+[parser](../src/connectors/alfa_retail_client.cpp).
 
-For history, a short-lived observer opens the official `/history` route. It
-accepts only same-origin `GET` responses from four fixed final paths under the
-exact VTB history prefix: `byUser`, `byProducts`, `byAccount`, and `byCard`.
-The initial page request supplies an exact path and stable non-date query
-template. An unfiltered `byUser` template is portfolio-wide. Otherwise, only an
-observed single-product `byProducts`, `byAccount`, or `byCard` template may
-substitute the product value, using identifiers from the validated portfolio
-response and the same path and parameter name. The page-owned HTTP client then
-replays inclusive 31-day windows over two years, with at most four requests in
-flight, and follows explicit pagination or a provable short final page. Only
-recognized dates, page or offset values, and that proven product value change.
-Each row must fall in its requested window, and every portfolio product must be
-covered before the snapshot is complete. The script generates `x-request-id`
-and supplies fixed
-`x-initiator-service` and `x-smart-update-request` values; it does not inspect
-or copy private headers. At most 16 templates, 512 replay requests, and 8 MiB of
-combined operation data are retained page-locally. The expression does not
-inspect cookies, login fields, request bodies, resource timing, DOM contents,
-or browser storage. A redirect to another origin is not treated as an
-authenticated VTB page.
+## Retail VTB
 
-Each response is checked for its expected top-level shape and an 8 MiB limit
-before it is retained page-locally. A separate allowlist projection converts
-only bounded account and operation fields. C++ revalidates an 8 MiB result,
-256-account and 20,000-operation limits, exact minor units, dates, currencies,
-duplicates, and operation ownership. Aliases are resolved independently;
-ambiguous aliases and conflicting duplicates fail completeness. Only a bounded
-rejected-row count crosses the boundary for status text. Raw response objects
-and browser-session material never cross the WebView boundary.
+The official page runs in a coordinator-owned WebView with local storage and
+file access disabled. A fixed expression validates exact `https://online.vtb.ru`
+and obtains the page's exported `./HttpClient`. It invokes only the active
+portfolio and financial-summary GET routes listed in
+[Bank connections](bank-connections.md#retail-vtb). The optional balance
+supplement may fail without discarding a valid portfolio; 401/403 remain blocking.
 
-The WebView session is reused for automatic refresh and cleared on disconnect.
-Authentication errors expire the connection; missing frontend exports or schema
-changes stop with a compatibility error. The private frontend contract is
-undocumented and never expands to new hosts, routes, methods, cookie export, or
-direct credential requests at runtime.
+Responses are bounded to 8 MiB page-locally. A separate projection emits at most
+256 account records, masks card numbers, and prefers financial-summary balances
+where available. It emits no transactions, reads no private headers, and does
+not inspect login fields, cookies, resource timing, or browser storage. C++
+revalidates the 8 MiB projection and integer minor-unit balances.
 
-The expression tracks only a fixed request-stage label and accepts numeric HTTP
-status from `status`, `statusCode`, `response.status`, or
-`response.statusCode`; no response text is copied into a diagnostic. A
-non-authentication replay failure, unsupported date or continuation template,
-timeout, or request limit returns an explicitly partial batch. Compatible prior
-operations for still-present accounts are retained only in memory and only
-inside the current two-year cutoff. A malformed history payload still fails
-closed because it indicates an unknown schema rather than a temporary outage.
+Refresh reuses the authenticated page client without a reload. A stale SPA
+pathname is not treated as evidence of authentication; page-client 401/403 marks
+the connection unauthenticated. Compatibility diagnostics contain only fixed
+stage codes and no raw bank response. The frontend contract is undocumented;
+missing exports, unexpected origins, and schema changes stop synchronization.
 
-A login pathname can remain stale after MFA. WealthTracker therefore does not
-infer authentication from that presentation route. It verifies the exact origin
-and lets 401/403 from the page-owned, allowlisted read client mark the session
-as unauthenticated; no session value is extracted or copied.
+Sources: [coordinator](../src/app/vtb_login.cppm),
+[projection](../src/app/vtb_browser.cppm),
+[parser](../src/connectors/vtb_retail_client.cpp).
 
-## External plugin process
+## T-Invest
 
-The compatibility host is copied to an owner-only temporary file. Node.js
-starts with a reduced environment and exchanges bounded JSON-lines messages
-over pipes. Standard error is drained but not surfaced, and preference values
-are redacted from returned errors. C++ validates all events and normalized
-records before they reach application models.
+The desktop coordinator calls only account listing and portfolio reads at exact
+`invest-public-api.tbank.ru`. Requests are serial, limited to 20 MiB per response,
+256 accounts, 20,000 positions, and one minute per run. Tokens are bounded before
+requests; API error envelopes and invalid portfolio totals are rejected. Failed
+refreshes preserve the last complete snapshot. Locking, disconnecting, or
+replacing the token cancels pending work and prevents late publication.
 
-This process still has the current user's file and network permissions. An
-external bundle can import Node.js modules, spawn processes, or exfiltrate data
-it can access. Only reviewed source should be executed.
+Sources: [coordinator](../src/app/investment_sync.cppm),
+[client](../src/connectors/t_invest_client.cpp).
 
-## Privacy screen
+## External plugins and privacy screen
 
-Hiding data closes an active bank login and cancels plugin, investment, and
-bank synchronization work before covering the interface. Existing model data
-remains in process memory. This feature protects against casual screen viewing,
-not same-user malware, debugging, memory inspection, or screenshots.
+The compatibility host runs from an owner-only temporary file under Node.js with
+a reduced environment and bounded JSON-lines communication. Standard error is
+drained without being displayed, and preference values are redacted from errors.
+No official connector token is passed to the child. These controls validate the
+application boundary; a selected bundle still has the user's file and network
+permissions and can execute arbitrary code.
+
+The privacy screen cancels active login, synchronization, and plugin work before
+covering the UI. Existing models remain in memory. Unlocking the screen does not
+require authentication. It protects casual viewing, without providing memory
+encryption or protection against debugging, malware, or screenshots.
+
+Source: [plugin runner](../src/app/zen_plugin_runner.cppm).

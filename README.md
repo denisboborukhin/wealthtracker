@@ -87,9 +87,22 @@ plugin.
   connection is removed.
 - No telemetry or remote crash reporter is included.
 
-See [Bank connections](docs/bank-connections.md),
-[Architecture](docs/architecture.md), [Security design](docs/security-design.md),
-and [Security policy](SECURITY.md).
+## Documentation
+
+Root documents provide the repository overview, contribution and security
+policies, agent instructions, and licensing. Technical guides live in `docs/`.
+Git history records changes; there is no separate changelog to maintain.
+
+| Document | Purpose |
+| --- | --- |
+| [Bank connections](docs/bank-connections.md) | Implemented connection scope, setup, and live-verification limits |
+| [Architecture](docs/architecture.md) | Runtime data flow, module ownership, models, and persistence boundaries |
+| [Security design](docs/security-design.md) | Implemented trust boundaries, controls, and limitations |
+| [Building](docs/building.md) | Toolchain, macOS/Windows commands, verification, and packaging |
+| [Contributing](CONTRIBUTING.md) | Development rules and submission checks |
+| [Security policy](SECURITY.md) | Supported versions and private vulnerability reporting |
+| [Agent instructions](AGENTS.md) | Repository operating instructions for coding agents |
+| [Third-party notices](THIRD_PARTY_NOTICES.md) | Dependency licenses and protocol provenance |
 
 ## License
 

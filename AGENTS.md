@@ -150,7 +150,7 @@ Boris Cherny (creator of Claude Code) keeps his team's file around 100 lines. Un
 
 ### Stack
 - Language: C++23 with named modules.
-- Frameworks: Qt 6.11 (Qt Quick/QML, Network, Concurrent, WebView), CMake 3.30+, Ninja; SQLCipher, libsodium, Boost, and xlsxio.
+- Frameworks: Qt 6.11 (Qt Quick/QML, Network, Concurrent, WebView), CMake 3.30+, Ninja; SQLCipher, shared OpenSSL, libsodium, Boost, and xlsxio.
 - Dependencies: Conan 2; `scripts/bootstrap.*` installs the pinned build tools and Qt SDK under `build/`.
 - Runtime: native macOS and Windows desktop apps. Linux can build libraries but has no supported credential backend for live connections.
 
@@ -215,6 +215,8 @@ When the user corrects your approach, append a one-line rule here before ending 
 
 - Retail T-Bank, Alfa, VTB and T-Invest synchronization must prioritize account
   balances only; never make balance refresh depend on transaction history.
+- When connector scope changes, update README, bank connections, architecture,
+  and security design together; distinguish implemented behavior from live tests.
 
 ---
 
