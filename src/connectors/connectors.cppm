@@ -259,60 +259,6 @@ public:
     synchronize(const LiveSyncRequest &request, const QByteArray &readOnlyCredential) = 0;
 };
 
-enum class AuthenticationAction { CollectFields, OpenBrowser, Complete };
-enum class AuthenticationFieldKind { Phone, Login, Password, OneTimeCode, Token };
-enum class SecretRetention { Never, SessionOnly, SystemCredentialStore };
-
-struct AuthenticationField {
-    QString key;
-    QString label;
-    AuthenticationFieldKind kind{AuthenticationFieldKind::Login};
-    SecretRetention retention{SecretRetention::Never};
-    bool required{true};
-};
-
-struct AuthenticationChallenge {
-    QString sessionId;
-    QString title;
-    QString description;
-    AuthenticationAction action{AuthenticationAction::CollectFields};
-    QVector<AuthenticationField> fields;
-    QUrl authorizationUrl;
-    QDateTime expiresAt;
-};
-
-enum class BankConnectionPhase {
-    Disconnected,
-    WaitingForUser,
-    Authorizing,
-    Connected,
-    Failed,
-};
-
-struct BankConnectionSession {
-    QString connectorId;
-    QString sessionId;
-    BankConnectionPhase phase{BankConnectionPhase::Disconnected};
-    QString message;
-    std::optional<AuthenticationChallenge> challenge;
-};
-
-[[nodiscard]] ConnectorResult<void>
-validateAuthenticationChallenge(const AuthenticationChallenge &challenge);
-
-class IInteractiveBankConnector : public IConnector {
-public:
-    ~IInteractiveBankConnector() override = default;
-    [[nodiscard]] virtual ConnectorResult<BankConnectionSession>
-    beginAuthentication() = 0;
-    [[nodiscard]] virtual ConnectorResult<BankConnectionSession>
-    continueAuthentication(const QString &sessionId,
-                           QHash<QString, QByteArray> values) = 0;
-    virtual void cancelAuthentication(const QString &sessionId) = 0;
-    [[nodiscard]] virtual ConnectorResult<NormalizedBatch>
-    synchronizeAuthenticated(const LiveSyncRequest &request) = 0;
-};
-
 enum class ZenPluginPreferenceKind {
     Text,
     Password,
@@ -563,25 +509,6 @@ enum class RetailBank { Alfa, Vtb };
 [[nodiscard]] ConnectorResult<NormalizedBatch>
 parseRetailAccounts(const QJsonArray &accounts, const QDateTime &observedAt,
                     RetailBank bank);
-
-struct FxRate {
-    QDate effectiveDate;
-    QString currency;
-    int nominal{1};
-    QString rublesPerNominal;
-};
-
-class CbrFxClient final : public IConnector {
-public:
-    explicit CbrFxClient(QNetworkAccessManager &network);
-    [[nodiscard]] ConnectorManifest manifest() const override;
-    [[nodiscard]] ConnectorResult<QNetworkReply *> requestDailyRates(const QDate &date);
-    [[nodiscard]] static ConnectorResult<QVector<FxRate>> parseDailyRates(const QByteArray &xml);
-
-private:
-    QNetworkAccessManager &network_;
-    HostAllowlist allowlist_;
-};
 
 } // namespace wealthtracker::connectors
 

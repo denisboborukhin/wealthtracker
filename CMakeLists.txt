@@ -111,7 +111,6 @@ target_sources(
     PRIVATE
         src/connectors/import.cpp
         src/connectors/bank_presets.cpp
-        src/connectors/bank_sessions.cpp
         src/connectors/zen_plugin.cpp
         src/connectors/deduplication.cpp
         src/connectors/network_policy.cpp
@@ -119,7 +118,6 @@ target_sources(
         src/connectors/official_bank_clients.cpp
         src/connectors/tbank_retail_client.cpp
         src/connectors/retail_accounts.cpp
-        src/connectors/cbr_fx_client.cpp
 )
 target_link_libraries(
     connectors

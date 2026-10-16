@@ -75,49 +75,6 @@ TEST_CASE("host allowlist requires exact HTTPS origins")
           == QNetworkRequest::ManualRedirectPolicy);
 }
 
-TEST_CASE("interactive bank authentication keeps transient secrets ephemeral")
-{
-    AuthenticationChallenge challenge{
-        .sessionId = QStringLiteral("session-1"),
-        .title = QStringLiteral("Т-Банк"),
-        .description = QStringLiteral("Enter credentials locally"),
-        .action = AuthenticationAction::CollectFields,
-        .fields = {
-            {QStringLiteral("phone"), QStringLiteral("Телефон"),
-             AuthenticationFieldKind::Phone, SecretRetention::SessionOnly, true},
-            {QStringLiteral("password"), QStringLiteral("Пароль"),
-             AuthenticationFieldKind::Password, SecretRetention::Never, true},
-            {QStringLiteral("code"), QStringLiteral("Код"),
-             AuthenticationFieldKind::OneTimeCode, SecretRetention::Never, true},
-        },
-    };
-
-    CHECK(validateAuthenticationChallenge(challenge));
-
-    challenge.fields.back().retention = SecretRetention::SystemCredentialStore;
-    const auto persistentCode = validateAuthenticationChallenge(challenge);
-    REQUIRE_FALSE(persistentCode);
-    CHECK(persistentCode.error().code == ErrorCode::SecurityViolation);
-}
-
-TEST_CASE("browser bank authentication accepts only clean HTTPS URLs")
-{
-    AuthenticationChallenge challenge{
-        .sessionId = QStringLiteral("session-2"),
-        .title = QStringLiteral("Bank OAuth"),
-        .action = AuthenticationAction::OpenBrowser,
-        .authorizationUrl = QUrl(QStringLiteral("https://id.example.test/authorize")),
-    };
-
-    CHECK(validateAuthenticationChallenge(challenge));
-
-    challenge.authorizationUrl =
-        QUrl(QStringLiteral("http://user:secret@id.example.test/authorize"));
-    const auto insecure = validateAuthenticationChallenge(challenge);
-    REQUIRE_FALSE(insecure);
-    CHECK(insecure.error().code == ErrorCode::SecurityViolation);
-}
-
 TEST_CASE("T-Invest exposes only explicitly read-only REST methods")
 {
     CHECK(TInvestClient::isReadOnlyPath(TInvestClient::restPath(TInvestReadMethod::Accounts)));
@@ -583,37 +540,4 @@ TEST_CASE("official bank parsers reject unsafe or malformed responses")
         QByteArrayLiteral(R"({"balances":{}})"), QStringLiteral("account"));
     REQUIRE_FALSE(missingTBankStatement);
     CHECK(missingTBankStatement.error().code == ErrorCode::ParseFailed);
-}
-
-TEST_CASE("Bank of Russia daily XML is parsed without floating point conversion")
-{
-    const auto rates = CbrFxClient::parseDailyRates(QByteArrayLiteral(
-        R"(<?xml version="1.0" encoding="windows-1251"?>
-<ValCurs Date="30.07.2026" name="Foreign Currency Market">
-  <Valute ID="R01235"><NumCode>840</NumCode><CharCode>USD</CharCode>
-    <Nominal>1</Nominal><Name>US Dollar</Name><Value>81,2500</Value>
-  </Valute>
-  <Valute ID="R01375"><NumCode>156</NumCode><CharCode>CNY</CharCode>
-    <Nominal>10</Nominal><Name>Yuan</Name><Value>112,3750</Value>
-  </Valute>
-</ValCurs>)"));
-
-    REQUIRE(rates);
-    REQUIRE(rates->size() == 2);
-    CHECK(rates->at(0).effectiveDate == QDate(2026, 7, 30));
-    CHECK(rates->at(0).currency == QStringLiteral("USD"));
-    CHECK(rates->at(0).rublesPerNominal == QStringLiteral("81.2500"));
-    CHECK(rates->at(1).nominal == 10);
-}
-
-TEST_CASE("Bank of Russia parser rejects DTDs and oversized responses")
-{
-    const auto dtd = CbrFxClient::parseDailyRates(
-        QByteArrayLiteral("<!DOCTYPE x><ValCurs Date=\"30.07.2026\"></ValCurs>"));
-    REQUIRE_FALSE(dtd);
-    CHECK(dtd.error().code == ErrorCode::SecurityViolation);
-
-    const auto oversized = CbrFxClient::parseDailyRates(QByteArray(2 * 1024 * 1024 + 1, 'x'));
-    REQUIRE_FALSE(oversized);
-    CHECK(oversized.error().code == ErrorCode::SecurityViolation);
 }
