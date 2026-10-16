@@ -8,6 +8,7 @@ module;
 
 #include <boost/multiprecision/cpp_int.hpp>
 
+#include <algorithm>
 #include <cmath>
 #include <cstdint>
 #include <expected>
@@ -26,8 +27,10 @@ using BigInt = boost::multiprecision::cpp_int;
 
 bool validToken(const QByteArray &token)
 {
-    return token.size() >= 20 && !token.contains('\r') && !token.contains('\n')
-        && !token.contains('\0');
+    return token.size() >= 20 && token.size() <= 16 * 1024
+        && std::ranges::all_of(token, [](const unsigned char value) {
+               return value > 0x20 && value < 0x7f;
+           });
 }
 
 ConnectorResult<QJsonObject> parseObject(const QByteArray &json)
@@ -45,18 +48,29 @@ ConnectorResult<QJsonObject> parseObject(const QByteArray &json)
             ErrorCode::ParseFailed, QStringLiteral("Cannot parse the T-Invest response"),
             error.errorString(), false});
     }
-    return document.object();
+    const auto object = document.object();
+    if (object.contains(QStringLiteral("code"))
+        || object.contains(QStringLiteral("message"))
+        || object.contains(QStringLiteral("error"))) {
+        return std::unexpected(ConnectorError{
+            ErrorCode::ParseFailed, QStringLiteral("T-Invest returned an API error"), {}, false});
+    }
+    return object;
 }
 
-ConnectorResult<QJsonArray> requiredArray(const QJsonObject &object,
+ConnectorResult<QJsonArray> repeatedArray(const QJsonObject &object,
                                           const QString &key,
                                           const QString &source)
 {
     const auto value = object.value(key);
+    // ProtoJSON omits repeated fields when their value is empty.
+    if (value.isUndefined() || value.isNull()) {
+        return QJsonArray{};
+    }
     if (!value.isArray()) {
         return std::unexpected(ConnectorError{
             ErrorCode::ParseFailed,
-            QStringLiteral("%1 response omitted the required %2 array").arg(source, key),
+            QStringLiteral("%1 response has an invalid %2 array").arg(source, key),
             {}, false});
     }
     return value.toArray();
@@ -87,9 +101,6 @@ struct NanoValue {
 
 std::optional<NanoValue> nanoValue(const QJsonObject &object, const bool hasCurrency)
 {
-    if (object.isEmpty()) {
-        return std::nullopt;
-    }
     const auto units = object.contains(QStringLiteral("units"))
         ? jsonInteger(object.value(QStringLiteral("units")))
         : std::optional<std::int64_t>(0);
@@ -183,11 +194,14 @@ ConnectorResult<QNetworkReply *> TInvestClient::discoverAccounts(const QByteArra
 ConnectorResult<QVector<QNetworkReply *>>
 TInvestClient::synchronize(const LiveSyncRequest &request, const QByteArray &readOnlyToken)
 {
-    if (request.accountExternalId.trimmed().isEmpty() || request.pageSize < 1
-        || request.pageSize > 1000) {
+    if (request.accountExternalId.trimmed().isEmpty() || request.accountExternalId.size() > 256
+        || request.pageSize < 1 || request.pageSize > 1000 || request.cursor.size() > 4096
+        || (request.from && !request.from->isValid())
+        || (request.to && !request.to->isValid())
+        || (request.from && request.to && *request.from > *request.to)) {
         return std::unexpected(ConnectorError{
             ErrorCode::InvalidInput,
-            QStringLiteral("T-Invest synchronization needs an account and page size from 1 to 1000"),
+            QStringLiteral("T-Invest synchronization needs a valid account, date window and page size"),
             {}, false});
     }
     QJsonObject operations{
@@ -200,6 +214,9 @@ TInvestClient::synchronize(const LiveSyncRequest &request, const QByteArray &rea
     }
     if (request.from && request.from->isValid()) {
         operations.insert(QStringLiteral("from"), request.from->toUTC().toString(Qt::ISODateWithMs));
+    }
+    if (request.to) {
+        operations.insert(QStringLiteral("to"), request.to->toUTC().toString(Qt::ISODateWithMs));
     }
     const QJsonObject account{{QStringLiteral("accountId"), request.accountExternalId}};
 
@@ -263,7 +280,7 @@ ConnectorResult<NormalizedBatch> TInvestClient::parseAccountsResponse(const QByt
         return std::unexpected(root.error());
     }
     NormalizedBatch batch;
-    const auto accounts = requiredArray(
+    const auto accounts = repeatedArray(
         *root, QStringLiteral("accounts"), QStringLiteral("T-Invest accounts"));
     if (!accounts) {
         return std::unexpected(accounts.error());
@@ -302,10 +319,22 @@ TInvestClient::parseOperationsResponse(const QByteArray &json, const QString &ac
         return std::unexpected(root.error());
     }
     NormalizedBatch batch;
-    const auto operations = requiredArray(
+    const auto operations = repeatedArray(
         *root, QStringLiteral("items"), QStringLiteral("T-Invest operations"));
     if (!operations) {
         return std::unexpected(operations.error());
+    }
+    const auto hasNext = root->value(QStringLiteral("hasNext"));
+    const auto cursor = root->value(QStringLiteral("nextCursor"));
+    if ((!hasNext.isUndefined() && !hasNext.isNull() && !hasNext.isBool())
+        || (!cursor.isUndefined() && !cursor.isNull() && !cursor.isString())
+        || cursor.toString().toUtf8().size() > 4096
+        || (hasNext.toBool() && cursor.toString().trimmed().isEmpty())) {
+        return std::unexpected(ConnectorError{
+            ErrorCode::ParseFailed, QStringLiteral("T-Invest returned invalid pagination"), {}, false});
+    }
+    if (hasNext.toBool()) {
+        batch.nextCursor = cursor.toString().toUtf8();
     }
     for (qsizetype index = 0; index < operations->size(); ++index) {
         const auto item = operations->at(index).toObject();
@@ -320,12 +349,14 @@ TInvestClient::parseOperationsResponse(const QByteArray &json, const QString &ac
                  index});
             continue;
         }
-        NanoValue quantity;
         const auto quantityValue = item.value(QStringLiteral("quantity"));
-        if (quantityValue.isObject()) {
-            quantity = nanoValue(quantityValue.toObject(), false).value_or(NanoValue{});
-        } else if (const auto units = jsonInteger(quantityValue); units) {
-            quantity.nanos = BigInt(*units) * 1'000'000'000;
+        const auto quantity = quantityValue.isUndefined() || quantityValue.isNull()
+            ? std::optional<std::int64_t>(0) : jsonInteger(quantityValue);
+        if (!quantity) {
+            batch.warnings.push_back(
+                {WarningSeverity::RejectedRow, QStringLiteral("invalid-investment-quantity"),
+                 QStringLiteral("T-Invest returned an operation with an invalid quantity"), index});
+            continue;
         }
         batch.investmentEvents.push_back(
             {id,
@@ -334,17 +365,9 @@ TInvestClient::parseOperationsResponse(const QByteArray &json, const QString &ac
              item.value(QStringLiteral("type")).toString(),
              item.value(QStringLiteral("instrumentUid")).toString(),
              *payment,
-             bigIntString(quantity.nanos),
+             bigIntString(BigInt(*quantity) * 1'000'000'000),
              9,
              {QStringLiteral("t-invest-readonly-v1"), {}, id, index}});
-    }
-    if (root->value(QStringLiteral("hasNext")).toBool()) {
-        batch.nextCursor = root->value(QStringLiteral("nextCursor")).toString().toUtf8();
-        if (batch.nextCursor.isEmpty()) {
-            batch.warnings.push_back(
-                {WarningSeverity::ReviewRequired, QStringLiteral("missing-next-cursor"),
-                 QStringLiteral("T-Invest signaled another page but omitted the cursor"), -1});
-        }
     }
     return batch;
 }
@@ -363,7 +386,12 @@ TInvestClient::parsePortfolioResponse(const QByteArray &json, const QString &acc
         return std::unexpected(root.error());
     }
     NormalizedBatch batch;
-    const auto positions = requiredArray(
+    const auto total = moneyValue(root->value(QStringLiteral("totalAmountPortfolio")).toObject());
+    if (!total) {
+        return std::unexpected(ConnectorError{
+            ErrorCode::ParseFailed, QStringLiteral("T-Invest returned an invalid portfolio total"), {}, false});
+    }
+    const auto positions = repeatedArray(
         *root, QStringLiteral("positions"), QStringLiteral("T-Invest portfolio"));
     if (!positions) {
         return std::unexpected(positions.error());
@@ -376,7 +404,8 @@ TInvestClient::parsePortfolioResponse(const QByteArray &json, const QString &acc
         }
         const auto quantity = nanoValue(item.value(QStringLiteral("quantity")).toObject(), false);
         const auto price = nanoValue(item.value(QStringLiteral("currentPrice")).toObject(), true);
-        if (instrumentId.isEmpty() || !quantity || !price) {
+        if (instrumentId.isEmpty() || !item.value(QStringLiteral("quantity")).isObject()
+            || !quantity || !price) {
             batch.warnings.push_back(
                 {WarningSeverity::RejectedRow, QStringLiteral("invalid-portfolio-position"),
                  QStringLiteral("T-Invest returned a position with invalid required fields"),
@@ -399,13 +428,9 @@ TInvestClient::parsePortfolioResponse(const QByteArray &json, const QString &acc
              observedAt,
              {QStringLiteral("t-invest-readonly-v1"), {}, instrumentId, index}});
     }
-    if (const auto total =
-            moneyValue(root->value(QStringLiteral("totalAmountPortfolio")).toObject());
-        total) {
-        batch.balances.push_back(
-            {accountExternalId, observedAt, *total,
-             {QStringLiteral("t-invest-readonly-v1"), {}, QStringLiteral("portfolio-total"), -1}});
-    }
+    batch.balances.push_back(
+        {accountExternalId, observedAt, *total,
+         {QStringLiteral("t-invest-readonly-v1"), {}, QStringLiteral("portfolio-total"), -1}});
     return batch;
 }
 

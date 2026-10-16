@@ -2,6 +2,8 @@
 #include <QDate>
 #include <QDateTime>
 #include <QIODevice>
+#include <QJsonDocument>
+#include <QJsonObject>
 #include <QNetworkAccessManager>
 #include <QNetworkReply>
 #include <QNetworkRequest>
@@ -37,6 +39,7 @@ public:
     Operation operation = UnknownOperation;
     QNetworkRequest request;
     QByteArray body;
+    QVector<QByteArray> bodies;
 
 protected:
     QNetworkReply* createRequest(
@@ -46,6 +49,7 @@ protected:
         operation = requestedOperation;
         request = requested;
         body = outgoingData ? outgoingData->readAll() : QByteArray{};
+        bodies.push_back(body);
         return new CapturedReply(requestedOperation, requested, this);
     }
 };
@@ -166,6 +170,99 @@ TEST_CASE("T-Invest response parsers preserve cursor and exact portfolio values"
         REQUIRE(batch->balances.size() == 1);
         CHECK(batch->balances.front().balance.minorUnits == 100000);
     }
+}
+
+TEST_CASE("T-Invest accepts omitted protobuf collections and rejects error envelopes")
+{
+    const auto accounts = TInvestClient::parseAccountsResponse(QByteArrayLiteral("{}"));
+    REQUIRE(accounts);
+    CHECK(accounts->accounts.isEmpty());
+    const auto operations = TInvestClient::parseOperationsResponse(
+        QByteArrayLiteral(R"({"hasNext":false})"), QStringLiteral("account"));
+    REQUIRE(operations);
+    CHECK(operations->investmentEvents.isEmpty());
+    const auto portfolio = TInvestClient::parsePortfolioResponse(
+        QByteArrayLiteral(R"({"totalAmountPortfolio":{"currency":"rub"}})"),
+        QStringLiteral("account"), QDateTime::currentDateTimeUtc());
+    REQUIRE(portfolio);
+    CHECK(portfolio->positions.isEmpty());
+    REQUIRE(portfolio->balances.size() == 1);
+    CHECK(portfolio->balances.front().balance.minorUnits == 0);
+    CHECK_FALSE(TInvestClient::parseAccountsResponse(
+        QByteArrayLiteral(R"({"code":16,"message":"Unauthenticated"})")));
+    CHECK_FALSE(TInvestClient::parseOperationsResponse(
+        QByteArrayLiteral(R"({"items":{}})"), QStringLiteral("account")));
+}
+
+TEST_CASE("T-Invest rejects ambiguous pagination and invalid portfolio totals")
+{
+    for (const auto& json : {QByteArrayLiteral(R"({"items":[],"hasNext":true})"),
+                             QByteArrayLiteral(R"({"items":[],"hasNext":"true","nextCursor":"next"})"),
+                             QByteArrayLiteral(R"({"items":[],"hasNext":true,"nextCursor":12})")}) {
+        const auto result = TInvestClient::parseOperationsResponse(json, QStringLiteral("account"));
+        REQUIRE_FALSE(result);
+        CHECK(result.error().code == ErrorCode::ParseFailed);
+    }
+    CHECK_FALSE(TInvestClient::parsePortfolioResponse(
+        QByteArrayLiteral(R"({"positions":[]})"), QStringLiteral("account"),
+        QDateTime::currentDateTimeUtc()));
+}
+
+TEST_CASE("T-Invest rejects malformed quantities without inventing zero positions")
+{
+    const auto invalid = TInvestClient::parseOperationsResponse(
+        QByteArrayLiteral(R"({"items":[{"id":"op","date":"2026-07-30T09:15:00Z","payment":{"currency":"rub","units":"1"},"quantity":"broken"}]})"),
+        QStringLiteral("account"));
+    REQUIRE(invalid);
+    CHECK(invalid->investmentEvents.isEmpty());
+    REQUIRE(invalid->warnings.size() == 1);
+    CHECK(invalid->warnings.front().severity == WarningSeverity::RejectedRow);
+
+    const auto overflow = TInvestClient::parsePortfolioResponse(
+        QByteArrayLiteral(R"({"totalAmountPortfolio":{"currency":"rub","units":"9223372036854775807"},"positions":[]})"),
+        QStringLiteral("account"), QDateTime::currentDateTimeUtc());
+    CHECK_FALSE(overflow);
+}
+
+TEST_CASE("T-Invest synchronization preserves the requested date window")
+{
+    CapturingNetworkAccessManager network;
+    TInvestClient client(network);
+    LiveSyncRequest request;
+    request.accountExternalId = QStringLiteral("account");
+    request.from = QDateTime::fromString(QStringLiteral("2026-01-01T00:00:00Z"), Qt::ISODate);
+    request.to = QDateTime::fromString(QStringLiteral("2026-02-01T00:00:00Z"), Qt::ISODate);
+    const auto replies = client.synchronize(request, QByteArrayLiteral("readonly-token-with-safe-length"));
+    REQUIRE(replies);
+    REQUIRE(network.bodies.size() == 3);
+    const auto body = QJsonDocument::fromJson(network.bodies.front()).object();
+    CHECK(body.value(QStringLiteral("from")).toString() == QStringLiteral("2026-01-01T00:00:00.000Z"));
+    CHECK(body.value(QStringLiteral("to")).toString() == QStringLiteral("2026-02-01T00:00:00.000Z"));
+    request.to = request.from->addDays(-1);
+    CHECK_FALSE(client.synchronize(request, QByteArrayLiteral("readonly-token-with-safe-length")));
+    request.to = QDateTime{};
+    CHECK_FALSE(client.synchronize(request, QByteArrayLiteral("readonly-token-with-safe-length")));
+    CHECK(network.bodies.size() == 3);
+}
+
+TEST_CASE("T-Invest bounds credentials and cursors before issuing requests")
+{
+    CapturingNetworkAccessManager network;
+    TInvestClient client(network);
+    CHECK_FALSE(client.discoverAccounts(QByteArray(16 * 1024 + 1, 'a')));
+    CHECK_FALSE(client.discoverAccounts(QByteArrayLiteral("readonly-token with-space")));
+    CHECK_FALSE(client.discoverAccounts(QByteArrayLiteral("readonly-token\twith-tab")));
+    LiveSyncRequest request;
+    request.accountExternalId = QStringLiteral("account");
+    request.cursor = QByteArray(4097, 'a');
+    CHECK_FALSE(client.synchronize(request, QByteArrayLiteral("readonly-token-with-safe-length")));
+    CHECK(network.bodies.isEmpty());
+
+    const QJsonObject response{
+        {QStringLiteral("hasNext"), true},
+        {QStringLiteral("nextCursor"), QString(4097, QLatin1Char('a'))}};
+    CHECK_FALSE(TInvestClient::parseOperationsResponse(
+        QJsonDocument(response).toJson(), QStringLiteral("account")));
 }
 
 TEST_CASE("official bank clients expose only documented read-only methods")
@@ -476,11 +573,6 @@ TEST_CASE("official bank parsers reject unsafe or malformed responses")
         QByteArrayLiteral("{not-json}"), QStringLiteral("account"), 0, 50);
     REQUIRE_FALSE(malformed);
     CHECK(malformed.error().code == ErrorCode::ParseFailed);
-
-    const auto missingTInvestOperations = TInvestClient::parseOperationsResponse(
-        QByteArrayLiteral(R"({"hasNext":false})"), QStringLiteral("account"));
-    REQUIRE_FALSE(missingTInvestOperations);
-    CHECK(missingTInvestOperations.error().code == ErrorCode::ParseFailed);
 
     const auto missingAlfaOperations = AlfaBankClient::parseOperationsResponse(
         QByteArrayLiteral(R"({"status":"ok"})"), QStringLiteral("account"), 0, 100);
