@@ -184,82 +184,15 @@ ConnectorManifest TInvestClient::manifest() const
             {QString::fromLatin1(apiHost)}};
 }
 
-ConnectorResult<QNetworkReply *> TInvestClient::discoverAccounts(const QByteArray &readOnlyToken)
-{
-    return post(TInvestReadMethod::Accounts,
-                QJsonObject{{QStringLiteral("status"), QStringLiteral("ACCOUNT_STATUS_OPEN")}},
-                readOnlyToken);
-}
-
-ConnectorResult<QVector<QNetworkReply *>>
-TInvestClient::synchronize(const LiveSyncRequest &request, const QByteArray &readOnlyToken)
-{
-    if (request.accountExternalId.trimmed().isEmpty() || request.accountExternalId.size() > 256
-        || request.pageSize < 1 || request.pageSize > 1000 || request.cursor.size() > 4096
-        || (request.from && !request.from->isValid())
-        || (request.to && !request.to->isValid())
-        || (request.from && request.to && *request.from > *request.to)) {
-        return std::unexpected(ConnectorError{
-            ErrorCode::InvalidInput,
-            QStringLiteral("T-Invest synchronization needs a valid account, date window and page size"),
-            {}, false});
-    }
-    QJsonObject operations{
-        {QStringLiteral("accountId"), request.accountExternalId},
-        {QStringLiteral("limit"), request.pageSize},
-        {QStringLiteral("state"), QStringLiteral("OPERATION_STATE_EXECUTED")},
-    };
-    if (!request.cursor.isEmpty()) {
-        operations.insert(QStringLiteral("cursor"), QString::fromUtf8(request.cursor));
-    }
-    if (request.from && request.from->isValid()) {
-        operations.insert(QStringLiteral("from"), request.from->toUTC().toString(Qt::ISODateWithMs));
-    }
-    if (request.to) {
-        operations.insert(QStringLiteral("to"), request.to->toUTC().toString(Qt::ISODateWithMs));
-    }
-    const QJsonObject account{{QStringLiteral("accountId"), request.accountExternalId}};
-
-    auto operationReply = post(TInvestReadMethod::OperationsByCursor, operations, readOnlyToken);
-    if (!operationReply) {
-        return std::unexpected(operationReply.error());
-    }
-    auto portfolioReply = post(TInvestReadMethod::Portfolio, account, readOnlyToken);
-    if (!portfolioReply) {
-        (*operationReply)->abort();
-        (*operationReply)->deleteLater();
-        return std::unexpected(portfolioReply.error());
-    }
-    auto positionReply = post(TInvestReadMethod::Positions, account, readOnlyToken);
-    if (!positionReply) {
-        (*operationReply)->abort();
-        (*portfolioReply)->abort();
-        (*operationReply)->deleteLater();
-        (*portfolioReply)->deleteLater();
-        return std::unexpected(positionReply.error());
-    }
-    return QVector<QNetworkReply *>{*operationReply, *portfolioReply, *positionReply};
-}
-
 QString TInvestClient::restPath(const TInvestReadMethod method)
 {
     switch (method) {
     case TInvestReadMethod::Accounts:
         return QStringLiteral(
             "/rest/tinkoff.public.invest.api.contract.v1.UsersService/GetAccounts");
-    case TInvestReadMethod::OperationsByCursor:
-        return QStringLiteral(
-            "/rest/tinkoff.public.invest.api.contract.v1.OperationsService/"
-            "GetOperationsByCursor");
     case TInvestReadMethod::Portfolio:
         return QStringLiteral(
             "/rest/tinkoff.public.invest.api.contract.v1.OperationsService/GetPortfolio");
-    case TInvestReadMethod::Positions:
-        return QStringLiteral(
-            "/rest/tinkoff.public.invest.api.contract.v1.OperationsService/GetPositions");
-    case TInvestReadMethod::InstrumentBy:
-        return QStringLiteral(
-            "/rest/tinkoff.public.invest.api.contract.v1.InstrumentsService/GetInstrumentBy");
     }
     return {};
 }
@@ -267,10 +200,7 @@ QString TInvestClient::restPath(const TInvestReadMethod method)
 bool TInvestClient::isReadOnlyPath(const QStringView path)
 {
     return path == restPath(TInvestReadMethod::Accounts)
-        || path == restPath(TInvestReadMethod::OperationsByCursor)
-        || path == restPath(TInvestReadMethod::Portfolio)
-        || path == restPath(TInvestReadMethod::Positions)
-        || path == restPath(TInvestReadMethod::InstrumentBy);
+        || path == restPath(TInvestReadMethod::Portfolio);
 }
 
 ConnectorResult<NormalizedBatch> TInvestClient::parseAccountsResponse(const QByteArray &json)
@@ -302,71 +232,6 @@ ConnectorResult<NormalizedBatch> TInvestClient::parseAccountsResponse(const QByt
              QStringLiteral("RUB"),
              {},
              status == QStringLiteral("ACCOUNT_STATUS_CLOSED"),
-             {QStringLiteral("t-invest-readonly-v1"), {}, id, index}});
-    }
-    return batch;
-}
-
-ConnectorResult<NormalizedBatch>
-TInvestClient::parseOperationsResponse(const QByteArray &json, const QString &accountExternalId)
-{
-    if (accountExternalId.trimmed().isEmpty()) {
-        return std::unexpected(ConnectorError{
-            ErrorCode::InvalidInput, QStringLiteral("An account ID is required"), {}, false});
-    }
-    const auto root = parseObject(json);
-    if (!root) {
-        return std::unexpected(root.error());
-    }
-    NormalizedBatch batch;
-    const auto operations = repeatedArray(
-        *root, QStringLiteral("items"), QStringLiteral("T-Invest operations"));
-    if (!operations) {
-        return std::unexpected(operations.error());
-    }
-    const auto hasNext = root->value(QStringLiteral("hasNext"));
-    const auto cursor = root->value(QStringLiteral("nextCursor"));
-    if ((!hasNext.isUndefined() && !hasNext.isNull() && !hasNext.isBool())
-        || (!cursor.isUndefined() && !cursor.isNull() && !cursor.isString())
-        || cursor.toString().toUtf8().size() > 4096
-        || (hasNext.toBool() && cursor.toString().trimmed().isEmpty())) {
-        return std::unexpected(ConnectorError{
-            ErrorCode::ParseFailed, QStringLiteral("T-Invest returned invalid pagination"), {}, false});
-    }
-    if (hasNext.toBool()) {
-        batch.nextCursor = cursor.toString().toUtf8();
-    }
-    for (qsizetype index = 0; index < operations->size(); ++index) {
-        const auto item = operations->at(index).toObject();
-        const auto id = item.value(QStringLiteral("id")).toString().trimmed();
-        const auto occurredAt =
-            QDateTime::fromString(item.value(QStringLiteral("date")).toString(), Qt::ISODate);
-        const auto payment = moneyValue(item.value(QStringLiteral("payment")).toObject());
-        if (id.isEmpty() || !occurredAt.isValid() || !payment) {
-            batch.warnings.push_back(
-                {WarningSeverity::RejectedRow, QStringLiteral("invalid-investment-operation"),
-                 QStringLiteral("T-Invest returned an operation with invalid required fields"),
-                 index});
-            continue;
-        }
-        const auto quantityValue = item.value(QStringLiteral("quantity"));
-        const auto quantity = quantityValue.isUndefined() || quantityValue.isNull()
-            ? std::optional<std::int64_t>(0) : jsonInteger(quantityValue);
-        if (!quantity) {
-            batch.warnings.push_back(
-                {WarningSeverity::RejectedRow, QStringLiteral("invalid-investment-quantity"),
-                 QStringLiteral("T-Invest returned an operation with an invalid quantity"), index});
-            continue;
-        }
-        batch.investmentEvents.push_back(
-            {id,
-             accountExternalId,
-             occurredAt,
-             item.value(QStringLiteral("type")).toString(),
-             item.value(QStringLiteral("instrumentUid")).toString(),
-             *payment,
-             bigIntString(BigInt(*quantity) * 1'000'000'000),
-             9,
              {QStringLiteral("t-invest-readonly-v1"), {}, id, index}});
     }
     return batch;

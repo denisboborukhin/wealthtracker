@@ -56,7 +56,8 @@ class BankSyncCoordinator final : public QObject {
           failed_(std::move(failed)) {}
 
     void start(QNetworkReply* discoveryReply) {
-        if (started_ || discoveryReply == nullptr || runtime_.connector == nullptr ||
+        if (started_ || discoveryReply == nullptr ||
+            (runtime_.synchronizeHistory && runtime_.connector == nullptr) ||
             !runtime_.parseAccounts || (runtime_.synchronizeHistory && !runtime_.parsePage) || runtime_.pageSize <= 0 ||
             runtime_.maximumResponseBytes <= 0 || runtime_.maximumConcurrentRequests <= 0 ||
             runtime_.maximumConcurrentRequests > maximumSupportedConcurrentRequests ||

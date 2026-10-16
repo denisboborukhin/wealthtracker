@@ -2543,7 +2543,7 @@ bool AppController::synchronizeTBank() {
     emit tbankConnectionChanged();
 
     BankRuntime runtime{
-        &private_->tbank_retail,
+        nullptr,
         1'000,
         [](const QByteArray& body, const QDateTime& observedAt) {
             return TBankRetailClient::parseAccountsResponse(body, observedAt);

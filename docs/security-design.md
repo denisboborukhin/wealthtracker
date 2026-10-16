@@ -72,8 +72,8 @@ access. Validation uses HTTP/1.1, a 15-second transfer timeout, and a 64 KiB
 response limit. QML receives the native window and status, never the candidates.
 
 The desktop synchronization path uses `accounts_light_ib` for accounts and
-balances only. The connector library retains operation-reading code, but the
-controller disables history. HTTP authentication rejection expires the stored
+balances only; the native connector allowlist excludes `/operations`.
+HTTP authentication rejection expires the stored
 session. Failed refreshes retain the previous balance snapshot, which is stale
 data rather than proof of an authenticated session. This retail API is
 undocumented and can stop working after a bank-side change.
@@ -133,7 +133,8 @@ Sources: [coordinator](../src/app/vtb_login.cppm),
 ## T-Invest
 
 The desktop coordinator calls only account listing and portfolio reads at exact
-`invest-public-api.tbank.ru`. Requests are serial, limited to 20 MiB per response,
+`invest-public-api.tbank.ru`; the native client permits only those two methods.
+Requests are serial, limited to 20 MiB per response,
 256 accounts, 20,000 positions, and one minute per run. Tokens are bounded before
 requests; API error envelopes and invalid portfolio totals are rejected. Failed
 refreshes preserve the last complete snapshot. Locking, disconnecting, or

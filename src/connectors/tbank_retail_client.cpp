@@ -1,7 +1,6 @@
 module;
 
 #include <QByteArray>
-#include <QCryptographicHash>
 #include <QDateTime>
 #include <QJsonArray>
 #include <QJsonDocument>
@@ -14,7 +13,6 @@ module;
 #include <QRegularExpression>
 #include <QSet>
 #include <QString>
-#include <QTimeZone>
 #include <QUrl>
 #include <QUrlQuery>
 
@@ -35,16 +33,14 @@ namespace {
 
 constexpr qsizetype maximumResponseBytes = 20 * 1024 * 1024;
 constexpr qsizetype maximumAccounts = 10'000;
-constexpr qsizetype maximumOperations = 100'000;
 constexpr auto tbankRetailHost = "www.tbank.ru";
-constexpr auto apiPrefix = "/api/common/v1/";
+constexpr auto accountsPath = "/api/common/v1/accounts_light_ib";
 
 ConnectorError invalidResponse(QString message, QString detail = {}) {
     return {ErrorCode::ParseFailed, std::move(message), std::move(detail), false};
 }
 
-ConnectorResult<QJsonValue> payloadFromResponse(const QByteArray& json, const QString& operation,
-                                                const bool allowNoData = false) {
+ConnectorResult<QJsonValue> payloadFromResponse(const QByteArray& json, const QString& operation) {
     if (json.isEmpty() || json.size() > maximumResponseBytes) {
         return std::unexpected(
             ConnectorError{ErrorCode::SecurityViolation,
@@ -60,9 +56,6 @@ ConnectorResult<QJsonValue> payloadFromResponse(const QByteArray& json, const QS
     }
     const auto object = document.object();
     const auto resultCode = object.value(QStringLiteral("resultCode")).toString();
-    if (allowNoData && resultCode == QStringLiteral("NO_DATA_FOUND")) {
-        return QJsonArray{};
-    }
     if (resultCode == QStringLiteral("INSUFFICIENT_PRIVILEGES") ||
         resultCode == QStringLiteral("AUTHENTICATION_FAILED")) {
         return std::unexpected(
@@ -98,24 +91,6 @@ ConnectorResult<QJsonValue> payloadFromResponse(const QByteArray& json, const QS
             {}, true});
     }
     return object.value(QStringLiteral("payload"));
-}
-
-std::optional<std::int64_t> integerValue(const QJsonValue& value) {
-    bool ok = false;
-    if (value.isString()) {
-        const auto parsed = value.toString().toLongLong(&ok);
-        return ok ? std::optional(parsed) : std::nullopt;
-    }
-    if (!value.isDouble()) {
-        return std::nullopt;
-    }
-    const auto number = value.toDouble();
-    constexpr double largestExactJsonInteger = 9'007'199'254'740'991.0;
-    if (!std::isfinite(number) || number != std::trunc(number) ||
-        number < -largestExactJsonInteger || number > largestExactJsonInteger) {
-        return std::nullopt;
-    }
-    return static_cast<std::int64_t>(number);
 }
 
 std::optional<std::int64_t> minorUnits(const QJsonValue& value) {
@@ -246,60 +221,6 @@ QString maskedNumber(const QJsonObject& account) {
     return digits.size() >= 4 ? QStringLiteral("•••• %1").arg(digits.last(4)) : QString{};
 }
 
-std::optional<QDateTime> operationDate(const QJsonObject& operation) {
-    for (const auto& key : {QStringLiteral("operationTime"), QStringLiteral("debitingTime")}) {
-        const auto object = operation.value(key).toObject();
-        if (const auto milliseconds = integerValue(object.value(QStringLiteral("milliseconds")))) {
-            const auto date = QDateTime::fromMSecsSinceEpoch(*milliseconds, QTimeZone::UTC);
-            if (date.isValid()) {
-                return date;
-            }
-        }
-    }
-    const auto raw = operation.value(QStringLiteral("date"));
-    if (const auto milliseconds = integerValue(raw)) {
-        const auto date = QDateTime::fromMSecsSinceEpoch(*milliseconds, QTimeZone::UTC);
-        if (date.isValid()) {
-            return date;
-        }
-    }
-    auto date = QDateTime::fromString(raw.toString(), Qt::ISODateWithMs);
-    if (!date.isValid()) {
-        date = QDateTime::fromString(raw.toString(), Qt::ISODate);
-    }
-    return date.isValid() ? std::optional(date.toUTC()) : std::nullopt;
-}
-
-QString operationDescription(const QJsonObject& operation) {
-    for (const auto& candidate :
-         {operation.value(QStringLiteral("merchant")).toObject().value(QStringLiteral("name")),
-          operation.value(QStringLiteral("brand")).toObject().value(QStringLiteral("name")),
-          operation.value(QStringLiteral("description")),
-          operation.value(QStringLiteral("message"))}) {
-        const auto text = boundedText(candidate);
-        if (!text.isEmpty()) {
-            return text;
-        }
-    }
-    return QStringLiteral("Операция Т-Банка");
-}
-
-QString operationId(const QJsonObject& operation, const QString& accountId) {
-    auto result = boundedText(operation.value(QStringLiteral("id")));
-    if (result.isEmpty()) {
-        result = boundedText(operation.value(QStringLiteral("payment"))
-                                 .toObject()
-                                 .value(QStringLiteral("paymentId")));
-    }
-    if (!result.isEmpty()) {
-        return result;
-    }
-    QCryptographicHash hash(QCryptographicHash::Sha256);
-    hash.addData(accountId.toUtf8());
-    hash.addData(QJsonDocument(operation).toJson(QJsonDocument::Compact));
-    return QString::fromLatin1(hash.result().toHex());
-}
-
 } // namespace
 
 bool isValidTBankRetailSessionId(const std::string_view value) {
@@ -325,19 +246,8 @@ ConnectorManifest TBankRetailClient::manifest() const {
             allowlist_.allowedHosts()};
 }
 
-QString TBankRetailClient::restPath(const TBankRetailReadMethod method) {
-    switch (method) {
-    case TBankRetailReadMethod::Accounts:
-        return QString::fromLatin1(apiPrefix) + QStringLiteral("accounts_light_ib");
-    case TBankRetailReadMethod::Operations:
-        return QString::fromLatin1(apiPrefix) + QStringLiteral("operations");
-    }
-    return {};
-}
-
 bool TBankRetailClient::isReadOnlyPath(const QStringView path) {
-    return path == restPath(TBankRetailReadMethod::Accounts) ||
-           path == restPath(TBankRetailReadMethod::Operations);
+    return path == QLatin1StringView(accountsPath);
 }
 
 ConnectorResult<QNetworkReply*> TBankRetailClient::get(const QUrl& url,
@@ -367,39 +277,12 @@ ConnectorResult<QNetworkReply*> TBankRetailClient::get(const QUrl& url,
 }
 
 ConnectorResult<QNetworkReply*> TBankRetailClient::discoverAccounts(const QByteArray& sessionId) {
-    QUrl url(QStringLiteral("https://www.tbank.ru") + restPath(TBankRetailReadMethod::Accounts));
+    QUrl url(QStringLiteral("https://www.tbank.ru") + QString::fromLatin1(accountsPath));
     QUrlQuery query;
     query.addQueryItem(QStringLiteral("origin"), QStringLiteral("web,ib5,platform"));
     query.addQueryItem(QStringLiteral("sessionid"), QString::fromLatin1(sessionId));
     url.setQuery(query);
     return get(url, sessionId);
-}
-
-ConnectorResult<QVector<QNetworkReply*>>
-TBankRetailClient::synchronize(const LiveSyncRequest& request, const QByteArray& sessionId) {
-    if (request.accountExternalId.trimmed().isEmpty() || request.accountExternalId.size() > 256 ||
-        !request.cursor.isEmpty() || !request.from || !request.from->isValid() || !request.to ||
-        !request.to->isValid() ||
-        *request.from > *request.to || *request.to > request.from->addYears(2).addDays(1)) {
-        return std::unexpected(
-            ConnectorError{ErrorCode::InvalidInput,
-                           QStringLiteral("Некорректный период или счёт Т-Банка"),
-                           {},
-                           false});
-    }
-    QUrl url(QStringLiteral("https://www.tbank.ru") + restPath(TBankRetailReadMethod::Operations));
-    QUrlQuery query;
-    query.addQueryItem(QStringLiteral("origin"), QStringLiteral("web,ib5,platform"));
-    query.addQueryItem(QStringLiteral("sessionid"), QString::fromLatin1(sessionId));
-    query.addQueryItem(QStringLiteral("account"), request.accountExternalId);
-    query.addQueryItem(QStringLiteral("start"), QString::number(request.from->toMSecsSinceEpoch()));
-    query.addQueryItem(QStringLiteral("end"), QString::number(request.to->toMSecsSinceEpoch()));
-    url.setQuery(query);
-    auto reply = get(url, sessionId);
-    if (!reply) {
-        return std::unexpected(reply.error());
-    }
-    return QVector<QNetworkReply*>{*reply};
 }
 
 ConnectorResult<NormalizedBatch>
@@ -470,100 +353,6 @@ TBankRetailClient::parseAccountsResponse(const QByteArray& json, const QDateTime
         return std::unexpected(
             invalidResponse(QStringLiteral("Т-Банк не вернул доступных счетов")));
     }
-    return batch;
-}
-
-ConnectorResult<NormalizedBatch>
-TBankRetailClient::parseOperationsResponse(const QByteArray& json,
-                                           const QString& accountExternalId,
-                                           const QByteArray& currentCursor) {
-    if (accountExternalId.trimmed().isEmpty() || accountExternalId.size() > 256) {
-        return std::unexpected(ConnectorError{
-            ErrorCode::InvalidInput, QStringLiteral("Некорректный счёт Т-Банка"), {}, false});
-    }
-    if (!currentCursor.isEmpty()) {
-        return std::unexpected(ConnectorError{
-            ErrorCode::InvalidInput, QStringLiteral("Некорректная страница истории Т-Банка"),
-            {}, false});
-    }
-    const auto payload = payloadFromResponse(json, QStringLiteral("операций"), true);
-    if (!payload) {
-        return std::unexpected(payload.error());
-    }
-    if (!payload->isArray() || payload->toArray().size() > maximumOperations) {
-        return std::unexpected(
-            invalidResponse(QStringLiteral("Т-Банк вернул некорректный список операций")));
-    }
-
-    NormalizedBatch batch;
-    QHash<QString, int> duplicateIds;
-    const auto operations = payload->toArray();
-    for (qsizetype sourceRow = 0; sourceRow < operations.size(); ++sourceRow) {
-        const auto& value = operations.at(sourceRow);
-        if (!value.isObject()) {
-            batch.warnings.push_back(
-                {WarningSeverity::RejectedRow, QStringLiteral("tbank-operation-shape"),
-                 QStringLiteral("Пропущена некорректная операция Т-Банка"), sourceRow});
-            continue;
-        }
-        const auto operation = value.toObject();
-        if (operation.value(QStringLiteral("status")).toString() == QStringLiteral("FAILED")) {
-            continue;
-        }
-        const auto date = operationDate(operation);
-        const auto amount = minorUnits(operation.contains(QStringLiteral("accountAmount"))
-                                           ? operation.value(QStringLiteral("accountAmount"))
-                                           : operation.value(QStringLiteral("amount")));
-        const auto currency = firstCurrency(operation);
-        if (!date || !amount || *amount == 0 || currency.isEmpty() ||
-            *amount == std::numeric_limits<std::int64_t>::min()) {
-            batch.warnings.push_back(
-                {WarningSeverity::RejectedRow, QStringLiteral("tbank-operation-fields"),
-                 QStringLiteral("Пропущена операция Т-Банка с некорректной суммой или датой"),
-                 sourceRow});
-            continue;
-        }
-        auto id = operationId(operation, accountExternalId);
-        const auto duplicate = duplicateIds.value(id);
-        duplicateIds.insert(id, duplicate + 1);
-        if (duplicate > 0) {
-            id += QStringLiteral(":%1").arg(duplicate);
-        }
-        const bool credit = operation.value(QStringLiteral("type"))
-                                .toString()
-                                .compare(QStringLiteral("credit"), Qt::CaseInsensitive) == 0;
-        const auto absoluteAmount = std::abs(*amount);
-        const auto description = operationDescription(operation);
-        auto category = boundedText(operation.value(QStringLiteral("spendingCategory"))
-                                        .toObject()
-                                        .value(QStringLiteral("name")));
-        if (category.isEmpty()) {
-            category = boundedText(operation.value(QStringLiteral("category"))
-                                       .toObject()
-                                       .value(QStringLiteral("name")));
-        }
-        QString mcc;
-        if (const auto parsedMcc = integerValue(operation.value(QStringLiteral("mcc")));
-            parsedMcc && *parsedMcc > 10 && *parsedMcc <= 9999) {
-            mcc = QString::number(*parsedMcc);
-        }
-        QMap<QString, QString> fields;
-        if (!operation.contains(QStringLiteral("debitingTime")) ||
-            operation.value(QStringLiteral("debitingTime")).isNull()) {
-            fields.insert(QStringLiteral("hold"), QStringLiteral("true"));
-        }
-        const auto kind = operation.value(QStringLiteral("isInner")).toBool()
-                              ? NormalizedTransactionKind::InternalTransfer
-                              : NormalizedTransactionKind::Regular;
-        batch.transactions.push_back({id, accountExternalId, date->date(), *date,
-                                      Money{credit ? absoluteAmount : -absoluteAmount, currency},
-                                      description, description, category, mcc, std::move(fields),
-                                      Provenance{QStringLiteral("tbank-retail"), {}, id, sourceRow},
-                                      kind});
-    }
-    batch.warnings.push_back(
-        {WarningSeverity::Information, QStringLiteral("tbank-history-unverifiable"),
-         QStringLiteral("Полноту ответа Т-Банка за запрошенный период нельзя подтвердить"), -1});
     return batch;
 }
 

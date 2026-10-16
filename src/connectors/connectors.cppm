@@ -371,24 +371,18 @@ private:
     QSet<QString> hosts_;
 };
 
-enum class TInvestReadMethod { Accounts, OperationsByCursor, Portfolio, Positions, InstrumentBy };
+enum class TInvestReadMethod { Accounts, Portfolio };
 
-class TInvestClient final : public ILiveConnector {
+class TInvestClient final : public IConnector {
 public:
     explicit TInvestClient(QNetworkAccessManager &network);
     [[nodiscard]] ConnectorManifest manifest() const override;
-    [[nodiscard]] ConnectorResult<QNetworkReply *>
-    discoverAccounts(const QByteArray &readOnlyToken) override;
-    [[nodiscard]] ConnectorResult<QVector<QNetworkReply *>>
-    synchronize(const LiveSyncRequest &request, const QByteArray &readOnlyToken) override;
     [[nodiscard]] ConnectorResult<QNetworkReply *>
     post(TInvestReadMethod method, const QJsonObject &body, const QByteArray &readOnlyToken);
     [[nodiscard]] static QString restPath(TInvestReadMethod method);
     [[nodiscard]] static bool isReadOnlyPath(QStringView path);
     [[nodiscard]] static ConnectorResult<NormalizedBatch>
     parseAccountsResponse(const QByteArray &json);
-    [[nodiscard]] static ConnectorResult<NormalizedBatch>
-    parseOperationsResponse(const QByteArray &json, const QString &accountExternalId);
     [[nodiscard]] static ConnectorResult<NormalizedBatch>
     parsePortfolioResponse(const QByteArray &json, const QString &accountExternalId,
                            const QDateTime &observedAt);
@@ -476,25 +470,17 @@ private:
     HostAllowlist allowlist_;
 };
 
-enum class TBankRetailReadMethod { Accounts, Operations };
-
 [[nodiscard]] bool isValidTBankRetailSessionId(std::string_view value);
 
-class TBankRetailClient final : public ILiveConnector {
+class TBankRetailClient final : public IConnector {
 public:
     explicit TBankRetailClient(QNetworkAccessManager &network);
     [[nodiscard]] ConnectorManifest manifest() const override;
     [[nodiscard]] ConnectorResult<QNetworkReply *>
-    discoverAccounts(const QByteArray &sessionId) override;
-    [[nodiscard]] ConnectorResult<QVector<QNetworkReply *>>
-    synchronize(const LiveSyncRequest &request, const QByteArray &sessionId) override;
-    [[nodiscard]] static QString restPath(TBankRetailReadMethod method);
+    discoverAccounts(const QByteArray &sessionId);
     [[nodiscard]] static bool isReadOnlyPath(QStringView path);
     [[nodiscard]] static ConnectorResult<NormalizedBatch>
     parseAccountsResponse(const QByteArray &json, const QDateTime &observedAt);
-    [[nodiscard]] static ConnectorResult<NormalizedBatch>
-    parseOperationsResponse(const QByteArray &json, const QString &accountExternalId,
-                            const QByteArray &currentCursor = {});
 
 private:
     [[nodiscard]] ConnectorResult<QNetworkReply *>

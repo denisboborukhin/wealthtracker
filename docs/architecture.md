@@ -44,7 +44,7 @@ exact-host request, and clear temporary credential bytes. `BankSyncCoordinator`
 bounds streamed responses to 20 MiB and supports at most four requests in flight.
 History remains enabled for the three token-based banking APIs; it is disabled
 for retail T-Bank. The desktop T-Invest path requests accounts and portfolios
-only, even though its connector library also implements operation read methods.
+only. The T-Bank retail and T-Invest clients expose no history request or parsing APIs.
 
 Sources: [controller](../src/app/AppController.cpp),
 [bank synchronization](../src/app/bank_sync.cppm),

@@ -135,21 +135,12 @@ class BufferedNetworkReply final : public QNetworkReply {
 
 class TBankNetworkFixture final : public QNetworkAccessManager {
   public:
-    struct OperationRange {
-        QString accountId;
-        qint64 start = 0;
-        qint64 end = 0;
-    };
-
-    int activeOperationRequests = 0;
-    int maximumActiveOperationRequests = 0;
-    int operationReadCalls = 0;
+    int unexpectedRequests = 0;
+    int readCalls = 0;
     bool allRequestsDisableHttp2 = true;
-    bool failOperations = false;
     bool failAccounts = false;
     bool rejectAuthentication = false;
     bool overflowBalances = false;
-    QVector<OperationRange> operationRanges;
 
   protected:
     QNetworkReply* createRequest(const Operation operation, const QNetworkRequest& request,
@@ -159,7 +150,6 @@ class TBankNetworkFixture final : public QNetworkAccessManager {
             !request.attribute(QNetworkRequest::Http2AllowedAttribute).toBool();
 
         QByteArray body;
-        int delayMilliseconds = 0;
         if (request.url().path() == QStringLiteral("/api/common/v1/accounts_light_ib")) {
             body = rejectAuthentication
                        ? QByteArrayLiteral(R"({"resultCode":"AUTHENTICATION_FAILED"})")
@@ -169,48 +159,13 @@ class TBankNetworkFixture final : public QNetworkAccessManager {
                        : QByteArrayLiteral(
                              R"({"resultCode":"OK","payload":[{"id":"account-a","name":"Black","accountType":"Debit","moneyAmount":{"value":"1500.00","currency":{"name":"RUB"}}},{"id":"account-b","name":"Savings","accountType":"Deposit","moneyAmount":{"value":"2500.00","currency":{"name":"RUB"}}}]})");
         } else {
-            REQUIRE(request.url().path() == QStringLiteral("/api/common/v1/operations"));
-            ++activeOperationRequests;
-            maximumActiveOperationRequests =
-                std::max(maximumActiveOperationRequests, activeOperationRequests);
-            delayMilliseconds = 20;
-            const auto timestamp = QDateTime::currentDateTimeUtc().toMSecsSinceEpoch();
-            const auto olderTimestamp =
-                QDateTime::currentDateTimeUtc().addDays(-7).toMSecsSinceEpoch();
-            const QUrlQuery query(request.url());
-            const auto account = query.queryItemValue(QStringLiteral("account"));
-            operationRanges.push_back(
-                {account, query.queryItemValue(QStringLiteral("start")).toLongLong(),
-                 query.queryItemValue(QStringLiteral("end")).toLongLong()});
-            if (account == QStringLiteral("account-a")) {
-                body =
-                    QStringLiteral(
-                        R"({"resultCode":"OK","payload":[{"id":"transfer-out","status":"OK","type":"Debit","isInner":true,"accountAmount":{"value":"-500.00","currency":{"name":"RUB"}},"operationTime":{"milliseconds":%1},"description":"Между своими счетами"},{"id":"expense","status":"OK","type":"Debit","accountAmount":{"value":"-200.00","currency":{"name":"RUB"}},"operationTime":{"milliseconds":%2},"description":"Кофе","spendingCategory":{"name":"Кафе"}},{"id":"bad","status":"OK","type":"Debit","accountAmount":{"value":0,"currency":{"name":"RUB"}}}]})")
-                        .arg(timestamp)
-                        .arg(olderTimestamp)
-                        .toUtf8();
-            } else {
-                REQUIRE(account == QStringLiteral("account-b"));
-                body =
-                    QStringLiteral(
-                        R"({"resultCode":"OK","payload":[{"id":"transfer-in","status":"OK","type":"Credit","isInner":true,"accountAmount":{"value":"500.00","currency":{"name":"RUB"}},"operationTime":{"milliseconds":%1},"description":"Между своими счетами"},{"id":"income","status":"OK","type":"Credit","accountAmount":{"value":"1000.00","currency":{"name":"RUB"}},"operationTime":{"milliseconds":%1},"description":"Доход"}]})")
-                        .arg(timestamp)
-                        .toUtf8();
-            }
+            ++unexpectedRequests;
+            FAIL_CHECK("Retail T-Bank requested an unexpected route");
         }
-
-        const bool operationRequest =
-            request.url().path() == QStringLiteral("/api/common/v1/operations");
-        auto* reply = new BufferedNetworkReply(
-            request, failOperations && operationRequest ? QByteArray{} : std::move(body),
-            delayMilliseconds,
-            (failOperations && operationRequest) || (failAccounts && !operationRequest) ? QNetworkReply::RemoteHostClosedError
-                                               : QNetworkReply::NoError,
-            operationRequest ? &operationReadCalls : nullptr, this);
-        if (operationRequest) {
-            connect(reply, &QNetworkReply::finished, this, [this] { --activeOperationRequests; });
-        }
-        return reply;
+        return new BufferedNetworkReply(
+            request, std::move(body), 0,
+            failAccounts ? QNetworkReply::RemoteHostClosedError : QNetworkReply::NoError,
+            &readCalls, this);
     }
 };
 
@@ -218,11 +173,9 @@ class InvestmentNetworkFixture final : public QNetworkAccessManager {
 public:
     int requests = 0;
     int portfolioRequests = 0;
-    int operationRequests = 0;
+    int unexpectedRequests = 0;
     int delay = 0;
-    bool repeatCursor = false;
     bool failPortfolio = false;
-    QVector<QJsonObject> operationBodies;
 
 protected:
     QNetworkReply* createRequest(const Operation operation, const QNetworkRequest& request,
@@ -240,12 +193,9 @@ protected:
             response = R"({"totalAmountPortfolio":{"currency":"rub","units":"120","nano":500000000},"positions":[{"instrumentUid":"instrument-a","quantity":{"units":"2"},"currentPrice":{"currency":"rub","units":"60","nano":250000000}}]})";
             if (failPortfolio) error = QNetworkReply::RemoteHostClosedError;
         } else {
-            REQUIRE(request.url().path().endsWith(QStringLiteral("/GetOperationsByCursor")));
-            ++operationRequests;
-            operationBodies.push_back(body);
-            response = body.contains(QStringLiteral("cursor")) && !repeatCursor
-                ? QByteArrayLiteral(R"({"hasNext":false,"items":[]})")
-                : QByteArrayLiteral(R"({"hasNext":true,"nextCursor":"page-2","items":[{"id":"buy-a","date":"2026-01-10T10:00:00Z","type":"OPERATION_TYPE_BUY","instrumentUid":"instrument-a","quantity":"2","payment":{"currency":"rub","units":"-120","nano":-500000000}}]})");
+            ++unexpectedRequests;
+            FAIL_CHECK("T-Invest requested an unexpected route");
+            error = QNetworkReply::ContentOperationNotPermittedError;
         }
         return new BufferedNetworkReply(request, response, delay, error, nullptr, this);
     }
@@ -793,14 +743,13 @@ TEST_CASE("T-Bank balances synchronize without any history requests") {
                                QByteArrayLiteral("connected-session-123456789"));
     auto network = std::make_unique<TBankNetworkFixture>();
     auto* observed = network.get();
-    observed->failOperations = true;
     wealthtracker::app::AppController controller(std::move(credentials), std::move(network), nullptr);
     REQUIRE(controller.synchronizeTBank());
     REQUIRE(waitUntil([&] { return !controller.tbankSyncRunning(); }));
     CHECK(controller.accounts()->rowCount() == 2);
     CHECK(controller.netWorth() == QStringLiteral("4 000 ₽"));
     CHECK(controller.transactions()->rowCount() == 0);
-    CHECK(observed->operationRanges.isEmpty());
+    CHECK(observed->unexpectedRequests == 0);
     CHECK(observed->allRequestsDisableHttp2);
     CHECK(controller.syncStatus().contains(QStringLiteral("Остатки"), Qt::CaseInsensitive));
 
@@ -833,7 +782,7 @@ TEST_CASE("T-Bank network failures do not read a closed TLS reply") {
     REQUIRE(controller.synchronizeTBank());
     REQUIRE(waitUntil([&controller] { return !controller.tbankSyncRunning(); }));
 
-    CHECK(observedNetwork->operationReadCalls == 0);
+    CHECK(observedNetwork->readCalls == 0);
     CHECK(controller.syncStatus().contains(QStringLiteral("банк закрыл соединение")));
     CHECK(controller.tbankConnected());
     CHECK(controller.accounts()->rowCount() == 0);
@@ -1085,7 +1034,7 @@ TEST_CASE("T-Invest synchronizes portfolio without requesting operation history"
     CHECK(controller.holdings()->data(controller.holdings()->index(0, 0),
         wealthtracker::app::HoldingModel::ValueRole).toString() == QStringLiteral("120,50 ₽"));
     CHECK(observed->portfolioRequests == 1);
-    CHECK(observed->operationRequests == 0);
+    CHECK(observed->unexpectedRequests == 0);
     CHECK(controller.reportSpending() == QStringLiteral("0 ₽"));
 
     SECTION("Failed refresh preserves the last complete snapshot") {
