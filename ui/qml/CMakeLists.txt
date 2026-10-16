@@ -40,6 +40,7 @@ target_link_libraries(
         app
         Qt6::QuickControls2
         Qt6::Concurrent
+        OpenSSL::SSL
 )
 enable_strict_warnings(wealthtracker)
 enable_sanitizers(wealthtracker)

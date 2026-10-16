@@ -26,6 +26,7 @@ find_package(
     COMPONENTS Core Gui Qml Quick QuickControls2 Network Concurrent WebView
 )
 find_package(sqlcipher REQUIRED CONFIG)
+find_package(OpenSSL REQUIRED CONFIG)
 find_package(libsodium REQUIRED CONFIG)
 find_package(xlsxio REQUIRED CONFIG)
 
@@ -284,6 +285,23 @@ install(
     BUNDLE DESTINATION .
     RUNTIME DESTINATION "${CMAKE_INSTALL_BINDIR}"
 )
+# CMake strips build rpaths before macdeployqt runs. Stage the pinned TLS
+# libraries first so deployment resolves them without a system installation.
+string(TOUPPER "${CMAKE_BUILD_TYPE}" dependency_configuration)
+if(APPLE)
+    foreach(tls_library IN ITEMS ssl crypto)
+        unset(tls_runtime)
+        find_file(tls_runtime
+            NAMES "lib${tls_library}.3.dylib"
+            PATHS ${openssl_LIB_DIRS_${dependency_configuration}}
+            NO_DEFAULT_PATH NO_CACHE REQUIRED
+        )
+        install(FILES "${tls_runtime}" DESTINATION "WealthTracker.app/Contents/Frameworks")
+    endforeach()
+elseif(WIN32)
+    install(DIRECTORY ${openssl_BIN_DIRS_${dependency_configuration}}/
+        DESTINATION "${CMAKE_INSTALL_BINDIR}" FILES_MATCHING PATTERN "*.dll")
+endif()
 install(
     FILES LICENSE THIRD_PARTY_NOTICES.md conan.lock
     DESTINATION "${CMAKE_INSTALL_DATADIR}/wealthtracker"

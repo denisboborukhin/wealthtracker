@@ -73,6 +73,14 @@ For a local Clang build, add `-DENABLE_SANITIZERS=ON` during configuration,
 then rebuild and run the full test suite. Sanitizers are not enabled for the
 packaged application.
 
+## TLS runtime
+
+OpenSSL 3.6.3 is a direct, lockfile-pinned shared dependency. The executable
+initializes and selects Qt's OpenSSL backend, so installation does not depend
+on Homebrew or Qt's native Secure Transport backend. The package must include
+both OpenSSL libraries and Qt's OpenSSL TLS plugin. Certificate and hostname
+verification remain enabled. See [Qt's TLS packaging guidance](https://doc.qt.io/qt-6/ssl.html).
+
 ## Release packages
 
 Use `macos-release` or `windows-release`, run the same tests and QML lint, then

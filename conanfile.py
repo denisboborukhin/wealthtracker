@@ -12,6 +12,7 @@ class WealthTrackerRecipe(ConanFile):
 
     default_options = {
         "sqlcipher/*:shared": False,
+        "openssl/*:shared": True,
         "sqlcipher/*:crypto_library": "openssl",
         "sqlcipher/*:temporary_store": "default_memory",
         "libsodium/*:shared": False,
@@ -22,6 +23,7 @@ class WealthTrackerRecipe(ConanFile):
 
     def requirements(self):
         self.requires("sqlcipher/4.16.0")
+        self.requires("openssl/3.6.3")
         self.requires("libsodium/1.0.20")
         self.requires("xlsxio/0.2.34")
         self.requires("boost/1.88.0")

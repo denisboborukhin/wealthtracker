@@ -5,13 +5,21 @@
 #include <QQmlApplicationEngine>
 #include <QQuickWindow>
 #include <QQuickStyle>
+#include <QSslSocket>
 #include <QTimer>
 #include <QVariantMap>
 #include <QtWebView/QtWebView>
 
+#include <openssl/ssl.h>
+
 int main(int argc, char* argv[]) {
     QtWebView::initialize();
     QGuiApplication application(argc, argv);
+    if (OPENSSL_init_ssl(0, nullptr) != 1 ||
+        !QSslSocket::setActiveBackend(QStringLiteral("openssl"))) {
+        qCritical("The bundled OpenSSL TLS backend is unavailable");
+        return 3;
+    }
     QGuiApplication::setApplicationName(QStringLiteral("WealthTracker"));
     QGuiApplication::setOrganizationName(QStringLiteral("WealthTracker"));
     QGuiApplication::setApplicationVersion(QStringLiteral("0.1.0"));
