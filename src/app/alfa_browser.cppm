@@ -2,6 +2,7 @@ module;
 
 #include <QByteArray>
 #include <QDateTime>
+#include <QJsonArray>
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QJsonParseError>
@@ -31,7 +32,7 @@ struct AlfaFinancialProjection {
 [[nodiscard]] const QString& alfa_financial_projection_script() {
     static const QString script = QStringLiteral(R"ALFA((() => {
   const result = { version: 1, stage: 'authentication', authenticated: false,
-                   accounts: [], transactions: [] }
+                   accounts: [] }
   try {
     const pageUrl = new URL(globalThis.location.href)
     if (pageUrl.protocol !== 'https:' || pageUrl.hostname !== 'web.alfabank.ru' ||
@@ -256,6 +257,10 @@ parse_alfa_financial_projection(const QString& projection, const QDateTime& obse
     }
     QJsonParseError parseError;
     const auto encoded = projection.toUtf8();
+    if (encoded.size() > maximumProjectionCharacters) {
+        return std::unexpected(
+            QStringLiteral("Размер ответа встроенной страницы превышает безопасный лимит"));
+    }
     const auto document = QJsonDocument::fromJson(encoded, &parseError);
     if (parseError.error != QJsonParseError::NoError || !document.isObject()) {
         return std::unexpected(
@@ -291,7 +296,9 @@ parse_alfa_financial_projection(const QString& projection, const QDateTime& obse
         return std::unexpected(
             QStringLiteral("Состояние встроенной страницы Альфа-Банка противоречиво"));
     }
-    auto batch = wealthtracker::connectors::AlfaRetailClient::parseProjection(encoded, observedAt);
+    auto batch = wealthtracker::connectors::parseRetailAccounts(
+        object.value(QStringLiteral("accounts")).toArray(), observedAt,
+        wealthtracker::connectors::RetailBank::Alfa);
     if (!batch) {
         return std::unexpected(batch.error().message);
     }

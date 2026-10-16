@@ -103,7 +103,7 @@ UTF-8 limit. A changed schema or unsupported dashboard state stops the refresh.
 
 Sources: [coordinator](../src/app/alfa_login.cppm),
 [projection](../src/app/alfa_browser.cppm),
-[parser](../src/connectors/alfa_retail_client.cpp).
+[parser](../src/connectors/retail_accounts.cpp).
 
 ## Retail VTB
 
@@ -128,7 +128,7 @@ missing exports, unexpected origins, and schema changes stop synchronization.
 
 Sources: [coordinator](../src/app/vtb_login.cppm),
 [projection](../src/app/vtb_browser.cppm),
-[parser](../src/connectors/vtb_retail_client.cpp).
+[parser](../src/connectors/retail_accounts.cpp).
 
 ## T-Invest
 

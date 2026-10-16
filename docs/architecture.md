@@ -70,6 +70,9 @@ retrying a loading portfolio at most twice. Refresh resets the app's page-local
 projection state and reuses the authenticated client without reloading or
 navigating to history. It is capped at 45 seconds.
 
+The bank-specific browser adapters parse each projection once and pass account
+fields to a [shared native validator](../src/connectors/retail_accounts.cpp).
+It validates exact balances, bounds account counts, and attaches bank provenance.
 Browser-owned Alfa and VTB session material stays inside their WebViews.
 Native view cleanup is deferred out of loading and JavaScript callbacks.
 Removing a connection or enabling the privacy screen cancels active work;

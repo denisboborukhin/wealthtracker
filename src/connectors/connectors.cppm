@@ -5,6 +5,7 @@ module;
 #include <QDateTime>
 #include <QFileInfo>
 #include <QHash>
+#include <QJsonArray>
 #include <QJsonObject>
 #include <QMap>
 #include <QNetworkAccessManager>
@@ -557,19 +558,11 @@ private:
     HostAllowlist allowlist_;
 };
 
-class AlfaRetailClient final : public IConnector {
-public:
-    [[nodiscard]] ConnectorManifest manifest() const override;
-    [[nodiscard]] static ConnectorResult<NormalizedBatch>
-    parseProjection(const QByteArray &json, const QDateTime &observedAt);
-};
+enum class RetailBank { Alfa, Vtb };
 
-class VtbRetailClient final : public IConnector {
-public:
-    [[nodiscard]] ConnectorManifest manifest() const override;
-    [[nodiscard]] static ConnectorResult<NormalizedBatch>
-    parseProjection(const QByteArray &json, const QDateTime &observedAt);
-};
+[[nodiscard]] ConnectorResult<NormalizedBatch>
+parseRetailAccounts(const QJsonArray &accounts, const QDateTime &observedAt,
+                    RetailBank bank);
 
 struct FxRate {
     QDate effectiveDate;

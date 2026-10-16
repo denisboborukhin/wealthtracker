@@ -118,8 +118,7 @@ target_sources(
         src/connectors/t_invest_client.cpp
         src/connectors/official_bank_clients.cpp
         src/connectors/tbank_retail_client.cpp
-        src/connectors/alfa_retail_client.cpp
-        src/connectors/vtb_retail_client.cpp
+        src/connectors/retail_accounts.cpp
         src/connectors/cbr_fx_client.cpp
 )
 target_link_libraries(
@@ -225,8 +224,7 @@ if(BUILD_TESTING)
         tests/connectors/import_test.cpp
         tests/connectors/deduplication_test.cpp
         tests/connectors/network_test.cpp
-        tests/connectors/alfa_retail_test.cpp
-        tests/connectors/vtb_retail_test.cpp
+        tests/connectors/retail_accounts_test.cpp
         tests/connectors/zen_plugin_test.cpp
     )
     target_link_libraries(

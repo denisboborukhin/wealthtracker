@@ -2,6 +2,7 @@ module;
 
 #include <QByteArray>
 #include <QDateTime>
+#include <QJsonArray>
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QJsonParseError>
@@ -139,7 +140,7 @@ struct VtbFinancialProjection {
     static const QString script = QStringLiteral(R"VTB((() => {
   const result = { version: 1, stage: 'authentication', authenticated: false,
                    diagnostic: '',
-                   accounts: [], transactions: [] }
+                   accounts: [] }
   try {
     const pageUrl = new URL(globalThis.location.href)
     if (pageUrl.protocol !== 'https:' || pageUrl.hostname !== 'online.vtb.ru' ||
@@ -276,6 +277,10 @@ parse_vtb_financial_projection(const QString& projection, const QDateTime& obser
     }
     QJsonParseError parseError;
     const auto encoded = projection.toUtf8();
+    if (encoded.size() > maximumProjectionCharacters) {
+        return std::unexpected(
+            QStringLiteral("Размер ответа встроенной страницы превышает безопасный лимит"));
+    }
     const auto document = QJsonDocument::fromJson(encoded, &parseError);
     if (parseError.error != QJsonParseError::NoError || !document.isObject()) {
         return std::unexpected(
@@ -323,7 +328,9 @@ parse_vtb_financial_projection(const QString& projection, const QDateTime& obser
     if (stage != VtbProjectionStage::Ready) {
         return VtbFinancialProjection{stage, std::nullopt, diagnostic};
     }
-    auto batch = wealthtracker::connectors::VtbRetailClient::parseProjection(encoded, observedAt);
+    auto batch = wealthtracker::connectors::parseRetailAccounts(
+        object.value(QStringLiteral("accounts")).toArray(), observedAt,
+        wealthtracker::connectors::RetailBank::Vtb);
     if (!batch) {
         return std::unexpected(batch.error().message);
     }

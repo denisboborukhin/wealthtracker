@@ -35,6 +35,7 @@ import wt.tbank_login;
 import wt.alfa_browser;
 import wt.alfa_login;
 import wt.vtb_login;
+import wt.vtb_browser;
 import wt.bank_sync;
 import wt.connectors;
 
@@ -1128,4 +1129,27 @@ TEST_CASE("T-Invest cancellation prevents late publication and permits a fresh s
     controller.synchronizeInvestments();
     REQUIRE(waitUntil([&] { return controller.accounts()->rowCount() == 1; }));
     CHECK(observed->portfolioRequests == 1);
+}
+
+TEST_CASE("Retail browser projections enforce authentication and UTF-8 byte limits") {
+    const auto verify = [](const auto& parse) {
+        const auto now = QDateTime::currentDateTimeUtc();
+        CHECK_FALSE(parse(QStringLiteral("not-json"), now));
+        CHECK_FALSE(parse(QStringLiteral(
+            R"({"version":2,"stage":"ready","authenticated":true,"accounts":[]})"), now));
+        CHECK_FALSE(parse(QStringLiteral(
+            R"({"version":1,"stage":"ready","authenticated":false,"accounts":[]})"), now));
+        CHECK_FALSE(parse(QStringLiteral(
+            R"({"version":1,"stage":"authentication","authenticated":true,"accounts":[]})"), now));
+        CHECK_FALSE(parse(QStringLiteral(
+            R"({"version":1,"stage":"ready","authenticated":true,"accounts":[{"id":"a","currency":"RUB","balanceMinor":100}]})"), now));
+        const auto oversized = QStringLiteral(
+            R"({"version":1,"stage":"ready","authenticated":true,"accounts":[{"id":"a","currency":"RUB","balanceMinor":"100","name":")")
+            + QString(5 * 1024 * 1024, QChar(0x0410)) + QStringLiteral("\"}]}");
+        REQUIRE(oversized.size() < 8 * 1024 * 1024);
+        REQUIRE(oversized.toUtf8().size() > 8 * 1024 * 1024);
+        CHECK_FALSE(parse(oversized, now));
+    };
+    verify(wealthtracker::app::parse_alfa_financial_projection);
+    verify(wealthtracker::app::parse_vtb_financial_projection);
 }
