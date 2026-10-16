@@ -32,7 +32,6 @@ it is not included in WealthTracker packages. ZenPlugins source and generated
 bundles are GPL-3.0, are not included in this repository or release packages,
 and remain separately obtained works selected by the user.
 
-Development packages include the pinned Conan lockfile and the Qt SDK's SPDX
-inventory. Public releases must additionally include the complete applicable
-license texts and attribution notices for every shipped component. Qt libraries
-are distributed dynamically and must remain replaceable by the user.
+Packages include the pinned Conan lockfile and Qt SPDX files when available in
+the SDK. Qt libraries are distributed dynamically and must remain replaceable
+by the user.

@@ -215,8 +215,9 @@ When the user corrects your approach, append a one-line rule here before ending 
 
 - Retail T-Bank, Alfa, VTB and T-Invest synchronization must prioritize account
   balances only; never make balance refresh depend on transaction history.
-- When connector scope changes, update README, bank connections, architecture,
-  and security design together; distinguish implemented behavior from live tests.
+- Document implemented code and runnable commands only; omit placeholder
+  integrations and future features. Update affected guides together and keep
+  automated verification distinct from live-bank checks.
 
 ---
 

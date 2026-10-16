@@ -1,51 +1,25 @@
 # Contributing
 
-Contributions must preserve local execution, least privilege, and read-only
-bank access.
-
-## Development rules
-
-- Use C++23 named modules for new non-Qt boundaries. Keep headers for Qt `moc`,
-  platform ABIs, or third-party C APIs.
-- Do not add payment, transfer, trading, card-management, or credential-export
-  behavior.
-- Give every network connector an exact HTTPS host policy, explicit methods,
-  bounded responses, deterministic cancellation, and parser tests.
-- Do not expose credentials, session projections, or raw bank responses and
-  imported files to QML or logs. Validated financial fields belong in the models.
-- Treat external plugin bundles as arbitrary code. Do not weaken the UI warning
-  or describe the child process as a sandbox.
-- Keep sample data opt-in and clearly synthetic.
+Follow the repository's [coding instructions](AGENTS.md). Keep changes scoped,
+use C++23 named modules outside Qt/platform boundaries, and preserve read-only
+bank access, strict origin policies, credential handling, and opt-in sample data.
 
 Do not commit real exports, credentials, tokens, databases, generated packages,
-or files under the ignored `tasks/` directory.
+or ignored `tasks/` files.
 
 ## Verification
 
-Set up and activate the toolchain using [Building](docs/building.md) first.
-Before submitting a change, run:
+Use [Building](docs/building.md) for the platform's build, test, QML lint, and
+plugin-host syntax commands. Run `git diff --check` before committing. Parser,
+security-policy, limit, and lifecycle changes need regression coverage.
 
-```sh
-cmake --build --preset macos-debug
-ctest --preset macos-debug --output-on-failure
-cmake --build --preset macos-debug --target wealthtracker_qmllint
-node --check scripts/zen_plugin_host.mjs
-git diff --check
-```
+Documentation describes code that exists and commands provided by the
+repository. Keep setup details in the connection guide, runtime structure in
+architecture, and controls in security design. Update affected guides together
+when behavior changes, and distinguish automated tests from live-bank checks.
 
-Use the equivalent Windows preset when changing Windows-specific code. Add a
-regression test for every security policy, parser, limit, or lifecycle change.
-When connector behavior changes, update the connection guide, architecture,
-security design, and README together. Keep implementation claims separate from
-live-account verification. Use Git history for change records.
+## Commits
 
-## Commit subjects
-
-Each commit must use one of these forms:
-
-- `feat(<module>): short description`
-- `fix(<module>): short description`
-- `refactor(<module>): short description`
-
-Keep commits scoped to one reviewable concern. Common scopes are `core`,
-`storage`, `connectors`, `tbank`, `app`, `ui`, `build`, `docs`, and `ci`.
+Keep each commit focused. Use `feat(<module>):`, `fix(<module>):`, or
+`refactor(<module>):` with a subject under 72 characters and a body explaining
+why the change is needed. Git history is the change record.

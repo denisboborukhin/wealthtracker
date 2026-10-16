@@ -6,8 +6,7 @@ and has no supported credential backend for stored-token connections.
 
 These instructions follow [CMake presets](../CMakePresets.json), the
 [Conan recipe](../conanfile.py), and the scripts under `scripts/`. Windows
-commands require a matching MSVC 194 toolchain in a developer PowerShell; they
-have not been executed as part of the macOS documentation review.
+commands require a matching MSVC 194 toolchain in a developer PowerShell.
 
 ## Toolchain
 
@@ -111,7 +110,7 @@ executes binaries during the build and needs the dependency DLLs on `PATH`.
 For an already configured local Clang build, run
 `cmake --preset macos-debug -DENABLE_SANITIZERS=ON`, then rebuild and run the full
 test suite. Pass the option to CMake directly; `scripts/configure.sh` only reads
-the preset argument. Sanitizers are not enabled for the packaged application.
+the preset argument. Sanitizers are off by default.
 
 ## TLS runtime
 
@@ -140,8 +139,8 @@ cmake --build --preset macos-release --target package
 
 CPack writes the DMG under `build/macos-release`. The install step runs Qt's
 QML deployment script and stages OpenSSL, the project license, third-party
-notices, the Conan lockfile, and available Qt SPDX inventory. To inspect an
-installed tree separately, use:
+notices, the Conan lockfile, and Qt SPDX files when present in the SDK. To inspect
+an installed tree separately, use:
 
 ```sh
 cmake --install build/macos-release --prefix build/stage/macos-release
@@ -156,12 +155,4 @@ WIX generator and requires WiX on the build machine; bootstrap does not install
 it. The CI workflow builds, tests, lints, and stages the application, but does
 not create, sign, or publish a release package.
 
-No public-distribution signing or notarization is configured. Treat generated
-packages as development artifacts, including any local ad-hoc signature. Public
-distribution additionally requires platform signing, notarization where
-applicable, dependency/SBOM review, and inclusion of all applicable license
-texts and notices.
-
-Release dependency resolution must use the committed `conan.lock`. Qt remains
-dynamically linked so recipients retain the replacement rights required by its
-LGPL terms.
+No signing, notarization, or release-publishing automation is configured.

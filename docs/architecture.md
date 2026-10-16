@@ -1,116 +1,70 @@
 # Architecture
 
-This describes the desktop implementation. Connection setup and user-visible
-limits are in [Bank connections](bank-connections.md); trust boundaries are in
-[Security design](security-design.md).
+WealthTracker uses C++23 named modules and Qt Quick. Headers remain at Qt `moc`,
+platform ABI, and third-party C API boundaries.
 
-## Boundaries
+## Code ownership
 
-WealthTracker is a Qt Quick desktop application built with C++23 named modules.
-Headers are retained for Qt `moc`, platform ABIs, and third-party C APIs.
-
-| Layer | Responsibility |
+| Directory | Implemented components |
 | --- | --- |
-| `src/core` | Exact money values, categorization, and analytics |
-| `src/storage` | SQLCipher connections, migrations, import transactions, and repositories |
-| `src/platform` | Secure buffers, key wrapping, and operating-system credentials |
-| `src/connectors` | File parsing, network policy, bank clients, normalization, and deduplication |
-| `src/app` | Synchronization, reporting, cross-bank transfer matching, WebView lifecycles, plugin execution, and Qt models |
-| `ui/qml` | Pages and reusable visual components |
+| `src/core` | Money values, categorization, and analytics |
+| `src/storage` | SQLCipher connections, migrations, and repositories |
+| `src/platform` | Secure buffers, key wrapping, and OS credential storage |
+| `src/connectors` | Statement parsers, bank clients, network policy, normalization, and deduplication |
+| `src/app` | Controller, synchronization, reporting, transfer matching, WebViews, plugin runner, and Qt models |
+| `include/app` | Qt `moc` boundary headers |
+| `ui/qml` | Pages and reusable UI components |
+| `tests` | Catch2 tests and synthetic fixtures |
 
-The QML root receives one explicit `app` property. The controller exposes commands,
-status, and financial models, without a database handle or stored credential
-object. Tokens and plugin answers entered in QML exist in their input controls
-until submission; the fields are then cleared.
+## Runtime data flow
 
-## Synchronization flows
+The QML root receives an explicit `app` property backed by
+[AppController](../src/app/AppController.cpp). The controller owns connection
+state and financial models; it exposes commands, model roles, and status text.
 
-All successful flows produce a `NormalizedBatch`. The controller replaces the
-connection's in-memory batch and rebuilds the Qt models only after completion.
-A failed refresh leaves the previous batch visible. Replacing a token clears
-that connection's old batch and cancels its pending synchronization.
+Each completed synchronization produces a `NormalizedBatch`. The controller
+replaces that connection's in-memory batch and rebuilds the models. A failed
+refresh preserves the previous snapshot. Replacing a token cancels pending
+work and clears that connection's old data.
 
-| Connection | Coordinator and data path |
+| Integration | Runtime path |
 | --- | --- |
-| Retail T-Bank | `TBankLoginCoordinator` validates and stores a session; `BankSyncCoordinator` fetches accounts and balances with history disabled |
-| Retail Alfa-Bank | `AlfaLoginCoordinator` projects accounts and balances from known dashboard bootstrap state in its WebView |
-| Retail VTB | `VtbLoginCoordinator` uses the authenticated page's own client for active products and an optional balance supplement |
-| T-Invest | `InvestmentSyncCoordinator` lists accounts, then requests one RUB-valued portfolio per account serially |
-| Alfa B2C, T-Bank Business, Modulbank | `BankSyncCoordinator` discovers accounts and retrieves bounded operation pages or statements |
-| External bundle | `ZenPluginRunner` validates child-process output before publishing a batch |
+| Retail T-Bank | `TBankLoginCoordinator` validates a session; `BankSyncCoordinator` reads accounts and balances |
+| Retail Alfa-Bank | `AlfaLoginCoordinator` projects accounts and balances from dashboard bootstrap data |
+| Retail VTB | `VtbLoginCoordinator` uses the authenticated page client to read products and balances |
+| T-Invest | `InvestmentSyncCoordinator` lists accounts and reads one RUB-valued portfolio per account |
+| Alfa B2C, T-Bank Business, Modulbank | `BankSyncCoordinator` reads accounts and bounded operation pages or statements |
+| External bundle | `ZenPluginRunner` validates process output and publishes a normalized batch |
 
-Native requests load credentials from the operating-system store, construct an
-exact-host request, and clear temporary credential bytes. `BankSyncCoordinator`
-bounds streamed responses to 20 MiB and supports at most four requests in flight.
-History remains enabled for the three token-based banking APIs; it is disabled
-for retail T-Bank. The desktop T-Invest path requests accounts and portfolios
-only. The T-Bank retail and T-Invest clients expose no history request or parsing APIs.
+Alfa and VTB have separate browser adapters because their page contracts differ.
+Both parse their projection once and use the same
+[account validator](../src/connectors/retail_accounts.cpp). Their browser
+sessions stay inside the WebViews. Native view cleanup is deferred out of
+loading and JavaScript callbacks.
 
-Sources: [controller](../src/app/AppController.cpp),
-[bank synchronization](../src/app/bank_sync.cppm),
-[investment synchronization](../src/app/investment_sync.cppm).
+Sources: [bank coordinator](../src/app/bank_sync.cppm),
+[investment coordinator](../src/app/investment_sync.cppm),
+[plugin runner](../src/app/zen_plugin_runner.cppm).
 
-## Retail WebViews
+## Reporting and local state
 
-T-Bank's official page handles credentials and MFA. A fixed resource-timing
-expression retains the eight most recently observed unique session candidates
-from exact T-Bank API URLs. C++ accepts a candidate only after `ping` confirms
-`CLIENT` access, then stores it in the OS credential backend. Balance refresh
-calls `accounts_light_ib`; it never requests operation history.
+[Reporting](../src/app/reporting.cppm) filters operations by an inclusive date
+range, initially the latest month through today. Current balances and portfolio
+values are independent of that range. Aggregate totals use RUB.
 
-Alfa keeps its session in the system WebView. A fixed expression projects known
-`initialState` or inline `runApp` dashboard data into account fields. Refresh
-reloads the dashboard. The coordinator detects the bank's certificate landing
-page, bounds dashboard loading to 30 seconds once observed, and caps a refresh
-at 45 seconds. No history observer or history navigation is used.
+[Transfer matching](../src/app/transfer_matching.cppm) preserves explicit bank
+markers and pairs opposite amounts in the same currency across different
+connections within three days. Matches are deterministic and one-to-one;
+ambiguous batches remain unclassified. Transfers stay visible in the operations
+list and are excluded from cash-flow and category totals.
 
-VTB keeps its session in the system WebView and obtains the frontend's exported
-`./HttpClient`. It reads active products and an optional financial summary,
-retrying a loading portfolio at most twice. Refresh resets the app's page-local
-projection state and reuses the authenticated client without reloading or
-navigating to history. It is capped at 45 seconds.
-
-The bank-specific browser adapters parse each projection once and pass account
-fields to a [shared native validator](../src/connectors/retail_accounts.cpp).
-It validates exact balances, bounds account counts, and attaches bank provenance.
-Browser-owned Alfa and VTB session material stays inside their WebViews.
-Native view cleanup is deferred out of loading and JavaScript callbacks.
-Removing a connection or enabling the privacy screen cancels active work;
-successful browser sessions are retained for subsequent refreshes while the
-app is running. A saved connected flag does not establish a live session after
-restart. Retail refresh timers use a six-hour interval.
-
-Sources: [T-Bank login](../src/app/tbank_login.cppm),
-[Alfa login](../src/app/alfa_login.cppm), [Alfa projection](../src/app/alfa_browser.cppm),
-[VTB login](../src/app/vtb_login.cppm), [VTB projection](../src/app/vtb_browser.cppm).
-
-## Models and persistence
-
-Reporting defaults to the latest month through today. Calendar filters apply
-to operations; current account balances, net worth, and portfolio value are
-not filtered by that period. Aggregate dashboard and portfolio totals use RUB;
-foreign-currency balances remain visible without implicit conversion.
-
-Cross-bank transfer matching is deterministic and one-to-one: opposite amounts
-must have the same currency, belong to different connectors, and occur within
-three days. Explicit bank markers are preserved. Matched transfers remain in
-the operations list but are excluded from cash-flow totals and categories.
-Balance-only retail and investment connections do not supply cash-flow history.
-
-T-Invest portfolio value uses API portfolio totals. Holding rows use instrument
+T-Invest portfolio value uses the API total. Holding rows use instrument
 identifiers and quantity times current price in the instrument's currency.
-Instrument names, allocation, returns, dividends, and XIRR are not calculated.
 
-Financial batches are not persisted by the controller. Settings and credentials
-are stored separately; the SQLCipher repository and key-wrapping components are
-independently tested libraries awaiting desktop integration. Statement import
-runs a parser preview and does not publish or commit imported records.
+Financial batches remain in process memory. The desktop controller does not use
+the SQLCipher repository. QSettings stores connection flags, refresh times,
+and non-sensitive plugin preferences; the OS credential backend stores tokens,
+the T-Bank API session, and reusable plugin state.
 
-## External JavaScript plugins
-
-A selected bundle runs under Node.js through a private temporary copy of the
-compatibility host. C++ validates paths, preferences, bounded JSON-lines messages,
-prompts, state, and normalized output. Reusable state uses a bundle-specific
-credential entry; non-sensitive preferences use local settings. The child has
-the current user's file and network permissions. Process separation does not
-sandbox the bundle.
+The statement-checking command selects a parser and reports sample operation
+and warning counts. It does not publish the parsed records to the models.

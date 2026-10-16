@@ -1,110 +1,55 @@
 # WealthTracker
 
-WealthTracker is an open-source C++23 desktop application for viewing accounts,
-balances, operations, spending categories, and cash-flow statistics locally.
-The interface starts empty; demonstration data is opt-in.
+A C++23 and Qt Quick desktop application for viewing bank accounts, balances,
+operations, cash-flow reports, and investment holdings locally.
 
-Income, spending, savings, categories, and the operations list use an inclusive
-date range selected from calendar controls. The default is the latest month.
-Savings are shown as the RUB amount left after spending. Matching opposite
-operations between two connected banks are kept in the history as own-account
-transfers but excluded from income, spending, savings, and category totals.
+The app starts empty. Demonstration data can be enabled in Settings.
+Synchronized financial data lives in memory and is lost when the app exits.
+Connection settings and credentials are stored separately.
 
-> **Status:** technical preview. Bank results currently live in memory and are
-> lost when the application exits. File import is a validated preview. T-Invest loads
-> accounts, portfolio balances, and positions. Retail bank connections load
-> balances only, without requesting transaction history.
-> The SQLCipher repository is implemented and tested but is not connected to
-> the desktop session yet.
+## Current functionality
 
-## Connections
+- Retail T-Bank, Alfa-Bank, and VTB: embedded bank login, accounts, and balances.
+- Alfa-Bank B2C API, T-Bank Business, and Modulbank: token-based account and
+  transaction synchronization.
+- T-Invest: token-based account, portfolio balance, and position synchronization.
+- External ZenPlugins bundles: local execution through an optional Node.js host.
+- Cash-flow reports: date-filtered income, spending, savings, and categories,
+  with own-account transfers excluded from totals.
+- Statement checking: local parsing with operation and warning counts;
+  selected files do not add records to the financial models.
+- Privacy screen: hides financial views and cancels active work.
 
-| Connection | Current behavior |
-| --- | --- |
-| Retail T-Bank | Embedded official login; accounts and balances only |
-| Retail Alfa-Bank | Embedded official login; accounts and balances only |
-| Retail VTB | Embedded official login; accounts and balances only |
-| Alfa-Bank B2C API | Accounts and operations with an already-issued integration token |
-| T-Bank Business | Accounts and statements with a T-API token |
-| Modulbank | Accounts and operations, including the public sandbox |
-| T-Invest | User-created read-only token; accounts, portfolio balances, and positions |
-| External ZenPlugins bundle | Optional compatibility host for a separately reviewed and built bundle |
-| Retail Sber | Visible adapter slot; no built-in connector |
+Retail connections and T-Invest supply balances without transaction history.
+Cash-flow reports use operations supplied by the other connectors. Aggregate
+financial totals use RUB; foreign-currency accounts remain visible separately.
 
-Retail T-Bank uses undocumented web endpoints and may stop working after a
-bank-side change. The application accepts the session only after the bank
-reports `CLIENT` access, stores it in the operating-system credential store,
-and sends it only to exact `https://www.tbank.ru` read endpoints. It never
-implements payments, transfers, card management, or trading.
-Synchronization requests account balances only. Alfa and VTB keep authentication
-inside the system WebView; VTB refreshes through its existing page client without
-reloading the authenticated page. No built-in retail connector opens history or
-waits for transaction pagination. See [Bank connections](docs/bank-connections.md)
-for scope, session behavior, and certificate requirements.
+Bank integrations are implemented, but automated tests do not establish current
+compatibility with a bank's live service. See [Bank connections](docs/bank-connections.md)
+for setup and refresh behavior. External plugins run with the current user's
+file and network permissions; review their source before running them.
 
-External JavaScript plugins are not sandboxed. They run as the current user and
-can access local files and the network. WealthTracker does not distribute
-ZenPlugins source or bundles; only run a bundle whose source and pinned commit
-you reviewed.
+## Build and run
 
-## Build and run on macOS
-
-```sh
-./scripts/bootstrap.sh
-. build/tooling/bin/activate
-conan install . \
-  --profile:host=conan/profiles/macos-arm64 \
-  --profile:build=conan/profiles/macos-arm64 \
-  --build=missing -s:h build_type=Debug \
-  -of build/macos-debug
-./scripts/configure.sh macos-debug
-cmake --build --preset macos-debug
-ctest --preset macos-debug --output-on-failure
-./build/macos-debug/WealthTracker.app/Contents/MacOS/WealthTracker
-```
-
-Keep `build/tooling` activated while Conan builds dependencies; its recipes
-invoke CMake and Ninja by name. Windows commands and release checks are in
-[Building](docs/building.md).
-
-Node.js is not required for the built-in T-Bank, Alfa-Bank, or VTB connections.
-Install Node.js 18 or newer only if you choose to run an external JavaScript
-plugin.
-
-## Project boundaries
-
-- C++23 named modules separate finance, storage, platform, connector, and
-  application code.
-- Official bank credentials and session projections are not exposed as QML
-  properties or status text. Tokens and external-plugin answers entered in the
-  interface exist in QML memory only until submission and are then cleared.
-- Official tokens and the T-Bank API session use macOS Keychain or Windows
-  Credential Manager. Alfa Online and VTB Online browser sessions stay inside
-  the operating-system WebView and are removed when a connection is deleted.
-- Built-in network connectors use exact HTTPS origins, bounded responses, and
-  read-only methods.
-- Active login and synchronization work is cancelled when data is hidden or a
-  connection is removed.
-- No telemetry or remote crash reporter is included.
+The repository provides macOS arm64 and Windows x86_64 build presets. Follow
+[Building](docs/building.md) for toolchain installation, build, test, run, and
+package commands. Node.js 18 or newer is needed only for external plugins and
+the host's syntax check.
 
 ## Documentation
 
-Root documents provide the repository overview, contribution and security
-policies, agent instructions, and licensing. Technical guides live in `docs/`.
-Git history records changes; there is no separate changelog to maintain.
-
-| Document | Purpose |
+| Document | Contents |
 | --- | --- |
-| [Bank connections](docs/bank-connections.md) | Implemented connection scope, setup, and live-verification limits |
-| [Architecture](docs/architecture.md) | Runtime data flow, module ownership, models, and persistence boundaries |
-| [Security design](docs/security-design.md) | Implemented trust boundaries, controls, and limitations |
-| [Building](docs/building.md) | Toolchain, macOS/Windows commands, verification, and packaging |
-| [Contributing](CONTRIBUTING.md) | Development rules and submission checks |
-| [Security policy](SECURITY.md) | Supported versions and private vulnerability reporting |
-| [Agent instructions](AGENTS.md) | Repository operating instructions for coding agents |
-| [Third-party notices](THIRD_PARTY_NOTICES.md) | Dependency licenses and protocol provenance |
+| [Bank connections](docs/bank-connections.md) | Available integrations and setup |
+| [Architecture](docs/architecture.md) | Code ownership and runtime data flow |
+| [Security design](docs/security-design.md) | Credential handling, network controls, and privacy |
+| [Building](docs/building.md) | Build, verification, and packaging commands |
+| [Contributing](CONTRIBUTING.md) | Development and submission rules |
+| [Security policy](SECURITY.md) | Vulnerability reporting |
+| [Agent instructions](AGENTS.md) | Coding-agent instructions |
+| [Third-party notices](THIRD_PARTY_NOTICES.md) | Dependency licenses and provenance |
 
 ## License
 
-WealthTracker is licensed under the [MIT License](LICENSE). Dependencies retain
-their own licenses; see [Third-party notices](THIRD_PARTY_NOTICES.md).
+[MIT](LICENSE). Dependencies retain their own licenses; see
+[Third-party notices](THIRD_PARTY_NOTICES.md).
