@@ -6,6 +6,7 @@ module;
 #include <QHash>
 #include <QList>
 #include <QNetworkReply>
+#include <QNetworkRequest>
 #include <QObject>
 #include <QPointer>
 #include <QSet>
@@ -16,6 +17,7 @@ module;
 #include <cstddef>
 #include <expected>
 #include <functional>
+#include <memory>
 #include <optional>
 #include <utility>
 
@@ -27,7 +29,6 @@ export namespace wealthtracker::app {
 
 struct BankRuntime {
     wealthtracker::connectors::ILiveConnector* connector = nullptr;
-    QString institution;
     int pageSize = 50;
     std::function<wealthtracker::connectors::ConnectorResult<
         wealthtracker::connectors::NormalizedBatch>(const QByteArray&, const QDateTime&)>
@@ -39,55 +40,8 @@ struct BankRuntime {
     qsizetype maximumResponseBytes = 20 * 1024 * 1024;
     int maximumConcurrentRequests = 4;
     int historyLookbackYears = 1;
+    bool synchronizeHistory = true;
 };
-
-[[nodiscard]] qsizetype retainPreviousTransactionsForPartialHistory(
-    wealthtracker::connectors::NormalizedBatch& current,
-    const wealthtracker::connectors::NormalizedBatch& previous,
-    const QDate& oldestDate) {
-    if (!oldestDate.isValid()) {
-        return 0;
-    }
-    QSet<QString> currentAccounts;
-    for (const auto& account : current.accounts) {
-        currentAccounts.insert(account.externalId);
-    }
-    QSet<QString> transactionKeys;
-    for (const auto& transaction : current.transactions) {
-        transactionKeys.insert(transaction.accountExternalId + QLatin1Char('\n') +
-                               transaction.externalId);
-    }
-    qsizetype retained = 0;
-    for (const auto& transaction : previous.transactions) {
-        const auto key = transaction.accountExternalId + QLatin1Char('\n') +
-                         transaction.externalId;
-        if (transaction.postingDate < oldestDate ||
-            !currentAccounts.contains(transaction.accountExternalId) ||
-            transactionKeys.contains(key)) {
-            continue;
-        }
-        transactionKeys.insert(key);
-        current.transactions.push_back(transaction);
-        ++retained;
-    }
-    return retained;
-}
-
-[[nodiscard]] qsizetype preservePreviousCompleteTransactions(
-    wealthtracker::connectors::NormalizedBatch& current,
-    const wealthtracker::connectors::NormalizedBatch& previous) {
-    QSet<QString> currentAccounts;
-    for (const auto& account : current.accounts) {
-        currentAccounts.insert(account.externalId);
-    }
-    current.transactions.clear();
-    for (const auto& transaction : previous.transactions) {
-        if (currentAccounts.contains(transaction.accountExternalId)) {
-            current.transactions.push_back(transaction);
-        }
-    }
-    return current.transactions.size();
-}
 
 class BankSyncCoordinator final : public QObject {
   public:
@@ -103,7 +57,7 @@ class BankSyncCoordinator final : public QObject {
 
     void start(QNetworkReply* discoveryReply) {
         if (started_ || discoveryReply == nullptr || runtime_.connector == nullptr ||
-            !runtime_.parseAccounts || !runtime_.parsePage || runtime_.pageSize <= 0 ||
+            !runtime_.parseAccounts || (runtime_.synchronizeHistory && !runtime_.parsePage) || runtime_.pageSize <= 0 ||
             runtime_.maximumResponseBytes <= 0 || runtime_.maximumConcurrentRequests <= 0 ||
             runtime_.maximumConcurrentRequests > maximumSupportedConcurrentRequests ||
             runtime_.historyLookbackYears <= 0 ||
@@ -121,29 +75,22 @@ class BankSyncCoordinator final : public QObject {
                                   QTime(0, 0), QTimeZone::UTC);
         active_replies_.push_back(discoveryReply);
         QPointer<QNetworkReply> reply = discoveryReply;
-        connect(discoveryReply, &QNetworkReply::finished, this, [this, reply] {
+        const auto response = collectResponse(discoveryReply);
+        connect(discoveryReply, &QNetworkReply::finished, this, [this, reply, response] {
             if (!reply) {
                 fail(networkFailure(QStringLiteral("Запрос счетов был отменён")));
                 finishIfReady();
                 return;
             }
-            const auto networkError = reply->error();
-            const auto body =
-                networkError == QNetworkReply::NoError ? reply->readAll() : QByteArray{};
+            auto error = responseError(reply, *response);
             active_replies_.removeAll(reply);
             reply->deleteLater();
-            if (networkError != QNetworkReply::NoError) {
-                fail(networkFailure(QStringLiteral("Не удалось получить счета"), networkError));
+            if (error) {
+                fail(std::move(*error));
                 finishIfReady();
                 return;
             }
-            if (body.size() > runtime_.maximumResponseBytes) {
-                fail(safetyLimit(QStringLiteral("Ответ со счетами превышает безопасный лимит")));
-                finishIfReady();
-                return;
-            }
-
-            auto parsed = runtime_.parseAccounts(body, QDateTime::currentDateTimeUtc());
+            auto parsed = runtime_.parseAccounts(*response, QDateTime::currentDateTimeUtc());
             if (!parsed) {
                 fail(parsed.error());
                 finishIfReady();
@@ -164,6 +111,10 @@ class BankSyncCoordinator final : public QObject {
                 batch_.balances.size() > maximumAccountsPerRun ||
                 batch_.warnings.size() > maximumWarningsPerRun) {
                 fail(safetyLimit(QStringLiteral("Список счетов превысил безопасный лимит")));
+                finishIfReady();
+                return;
+            }
+            if (!runtime_.synchronizeHistory) {
                 finishIfReady();
                 return;
             }
@@ -237,6 +188,57 @@ class BankSyncCoordinator final : public QObject {
             wealthtracker::connectors::ErrorCode::SecurityViolation, std::move(message), {}, false};
     }
 
+    std::shared_ptr<QByteArray> collectResponse(QNetworkReply* reply) {
+        auto response = std::make_shared<QByteArray>();
+        reply->setReadBufferSize(runtime_.maximumResponseBytes + 1);
+        connect(reply, &QNetworkReply::readyRead, this, [this, reply, response] {
+            if (reply->error() != QNetworkReply::NoError) {
+                return;
+            }
+            *response += reply->read(runtime_.maximumResponseBytes + 1 - response->size());
+            if (response->size() > runtime_.maximumResponseBytes) {
+                fail(safetyLimit(QStringLiteral("Ответ банка превышает безопасный лимит")));
+                finishIfReady();
+            }
+        });
+        return response;
+    }
+
+    std::optional<wealthtracker::connectors::ConnectorError>
+    responseError(QNetworkReply* reply, QByteArray& response) const {
+        using wealthtracker::connectors::ConnectorError;
+        using wealthtracker::connectors::ErrorCode;
+        const auto status = reply->attribute(QNetworkRequest::HttpStatusCodeAttribute).toInt();
+        if (status == 401 || status == 403) {
+            return ConnectorError{ErrorCode::AuthenticationFailed,
+                                  QStringLiteral("Сессия или токен отклонены банком. Войдите снова."),
+                                  {}, false};
+        }
+        if (status == 429) {
+            return ConnectorError{ErrorCode::RateLimited,
+                                  QStringLiteral("Банк ограничил частоту запросов. Повторите позже."),
+                                  {}, true};
+        }
+        if (status >= 300) {
+            return ConnectorError{ErrorCode::RemoteFailure,
+                                  QStringLiteral("Банк вернул ошибку HTTP %1").arg(status),
+                                  {}, status >= 500};
+        }
+        if (reply->error() != QNetworkReply::NoError) {
+            return networkFailure(QStringLiteral("Не удалось получить данные банка"),
+                                  reply->error());
+        }
+        if (status < 200) {
+            return ConnectorError{ErrorCode::RemoteFailure,
+                                  QStringLiteral("Банк не подтвердил успешный ответ"), {}, false};
+        }
+        response += reply->read(runtime_.maximumResponseBytes + 1 - response.size());
+        if (response.size() > runtime_.maximumResponseBytes) {
+            return safetyLimit(QStringLiteral("Ответ банка превышает безопасный лимит"));
+        }
+        return std::nullopt;
+    }
+
     void requestPage(const QString& accountId, const QByteArray& cursor) {
         if (first_error_) {
             return;
@@ -294,25 +296,21 @@ class BankSyncCoordinator final : public QObject {
             ++pending_pages_;
             active_replies_.push_back(rawReply);
             QPointer<QNetworkReply> reply = rawReply;
-            connect(rawReply, &QNetworkReply::finished, this, [this, reply, accountId, cursor] {
+            const auto response = collectResponse(rawReply);
+            connect(rawReply, &QNetworkReply::finished, this,
+                    [this, reply, response, accountId, cursor] {
                 QByteArray nextCursor;
                 if (!reply) {
                     fail(networkFailure(QStringLiteral("Запрос истории был отменён")));
                 } else {
-                    const auto networkError = reply->error();
-                    const auto body =
-                        networkError == QNetworkReply::NoError ? reply->readAll() : QByteArray{};
+                    auto error = responseError(reply, *response);
                     active_replies_.removeAll(reply);
                     reply->deleteLater();
-                    if (networkError != QNetworkReply::NoError) {
-                        fail(networkFailure(QStringLiteral("Не удалось получить операции"),
-                                            networkError));
-                    } else if (body.size() > runtime_.maximumResponseBytes) {
-                        fail(safetyLimit(
-                            QStringLiteral("Ответ с операциями превышает безопасный лимит")));
+                    if (error) {
+                        fail(std::move(*error));
                     } else {
                         auto parsed =
-                            runtime_.parsePage(body, accountId, cursor, runtime_.pageSize);
+                            runtime_.parsePage(*response, accountId, cursor, runtime_.pageSize);
                         if (!parsed) {
                             fail(parsed.error());
                         } else if (parsed->transactions.size() >
@@ -354,11 +352,20 @@ class BankSyncCoordinator final : public QObject {
     }
 
     void finishIfReady() {
-        if (finished_ || pending_pages_ != 0 || !pending_requests_.isEmpty()) {
+        if (finished_ || (!first_error_ &&
+                          (pending_pages_ != 0 || !pending_requests_.isEmpty()))) {
             return;
         }
         finished_ = true;
         if (first_error_) {
+            for (const auto& reply : std::as_const(active_replies_)) {
+                if (reply) {
+                    disconnect(reply, nullptr, this, nullptr);
+                    reply->abort();
+                    reply->deleteLater();
+                }
+            }
+            active_replies_.clear();
             failed_(std::move(*first_error_));
         } else {
             completed_(std::move(batch_));

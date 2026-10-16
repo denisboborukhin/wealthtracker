@@ -107,7 +107,7 @@ public:
 
     void synchronize(const QUrl& dashboardUrl) {
         begin(Mode::Synchronize, dashboardUrl,
-              QStringLiteral("ВТБ: загружаем счета и операции…"));
+              QStringLiteral("ВТБ: обновляем остатки по счетам…"));
     }
 
     void reload() {
@@ -127,8 +127,8 @@ public:
 private:
     enum class Mode { Login, Synchronize };
     static constexpr qint64 loginTimeoutMilliseconds = 10 * 60 * 1'000;
-    static constexpr qint64 synchronizationTimeoutMilliseconds = 180 * 1'000;
-    static constexpr qint64 loadingStateTimeoutMilliseconds = 160 * 1'000;
+    static constexpr qint64 synchronizationTimeoutMilliseconds = 45 * 1'000;
+    static constexpr qint64 loadingStateTimeoutMilliseconds = 30 * 1'000;
 
     [[nodiscard]] static QString compatibilityMessage(QString message,
                                                       const QString& diagnostic) {
@@ -153,7 +153,17 @@ private:
         elapsed_.start();
         reportStatus(std::move(status));
         auto* view = static_cast<QWebView*>(webView());
-        if (view->url() == url) {
+        if (mode == Mode::Synchronize && is_vtb_login_url(view->url())) {
+            const auto generation = generation_;
+            const QPointer<VtbLoginCoordinator> guard(this);
+            view->runJavaScript(QStringLiteral(
+                "delete globalThis.__wealthtrackerVtbSync; true"),
+                [guard, generation](const QVariant& result) {
+                    if (guard && guard->active_ && guard->generation_ == generation) {
+                        guard->load_succeeded_ = result.toBool();
+                    }
+                });
+        } else if (view->url() == url) {
             view->reload();
         } else {
             view->setUrl(url);
@@ -168,7 +178,7 @@ private:
     }
 
     void probePage() {
-        if (!active_ || !web_view_ || probe_pending_) {
+        if (!active_ || !web_view_) {
             return;
         }
         const auto timeout = mode_ == Mode::Login ? loginTimeoutMilliseconds
@@ -178,10 +188,10 @@ private:
                                        : VtbLoginFailureKind::Protocol,
                   mode_ == Mode::Login
                       ? QStringLiteral("Время входа истекло. Начните подключение ВТБ заново.")
-                      : QStringLiteral("ВТБ не завершил загрузку счетов и операций.")});
+                      : QStringLiteral("ВТБ не завершил загрузку счетов и остатков.")});
             return;
         }
-        if (!load_succeeded_) {
+        if (probe_pending_ || !load_succeeded_) {
             return;
         }
 
@@ -196,7 +206,6 @@ private:
                                      if (generation != guard->generation_) {
                                          return;
                                      }
-                                     guard->probe_pending_ = false;
                                      if (!guard->active_) {
                                          return;
                                      }
@@ -246,7 +255,7 @@ private:
             if (loading_observed_elapsed_ < 0) {
                 loading_observed_elapsed_ = elapsed_.elapsed();
                 reportStatus(QStringLiteral(
-                    "Вход выполнен. Получаем счета и операции из ВТБ Онлайн…"));
+                    "Вход выполнен. Получаем счета и остатки из ВТБ Онлайн…"));
                 return;
             }
             if (elapsed_.elapsed() - loading_observed_elapsed_ >
@@ -262,7 +271,7 @@ private:
             fail({VtbLoginFailureKind::Protocol,
                   compatibilityMessage(
                       QStringLiteral(
-                          "ВТБ Онлайн не передал счета и операции в ожидаемом "
+                          "ВТБ Онлайн не передал счета и остатки в ожидаемом "
                           "формате. Возможно, интерфейс банка изменился."),
                       projection->diagnostic)});
             return;

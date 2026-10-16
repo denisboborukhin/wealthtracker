@@ -11,13 +11,13 @@ financial records currently remain in memory and disappear when the app exits.
 
 | Connection | Accounts | Balances | Operations | Authentication |
 | --- | --- | --- | --- | --- |
-| Retail T-Bank | Yes | Yes | Windowed two-year request | Embedded official login |
-| Retail Alfa-Bank | Yes | Yes | Bounded two-year history; partial state explicit | Embedded official login |
-| Retail VTB | Yes | Yes | Bounded two-year history; partial state explicit | Embedded official login |
+| Retail T-Bank | Yes | Yes | Not requested | Embedded official login |
+| Retail Alfa-Bank | Yes | Yes | Not requested | Embedded official login |
+| Retail VTB | Yes | Yes | Not requested | Embedded official login |
 | Alfa-Bank B2C API | Yes | Yes | Yes | Issued integration token |
 | T-Bank Business | Yes | Yes | Yes | T-API token |
 | Modulbank | Yes | Yes | Yes | API token or public sandbox token |
-| T-Invest | Access check | No | No | User-created read-only token |
+| T-Invest | Yes | Portfolio total | Not requested | User-created read-only token |
 | External ZenPlugins bundle | Plugin-dependent | Plugin-dependent | Plugin-dependent | Plugin-defined |
 | Retail Sber | No | No | No | Adapter not implemented |
 
@@ -29,9 +29,9 @@ only; foreign-currency accounts stay visible without an implicit conversion.
 Income, spending, savings, categories, and the operations list use the inclusive
 date range selected with the two calendar controls. The default range is the
 latest month through today. Savings are an amount in rubles: RUB income minus
-RUB spending. Built-in retail synchronization targets the latest two years
-independently of this selection. The calendar filters operations already in
-memory; it does not start an older on-demand bank request.
+RUB spending. Built-in retail synchronization loads account balances only. Calendar filters
+apply to operations loaded by other connectors and never trigger bank-history
+requests.
 
 A bank's explicit own-account transfer marker is always honored. WealthTracker
 also pairs an outgoing operation with one incoming operation from another
@@ -45,214 +45,66 @@ batches are also left unclassified instead of making an unsafe guess.
 
 ## Retail T-Bank
 
-Open **Подключения → Т-Банк → Войти** and complete the official page inside
-the dialog. No Node.js installation is required.
+Open **Подключения → Т-Банк → Войти** and complete the official login. A bounded
+page expression reads API-session identifiers only from exact T-Bank resource
+URLs. C++ accepts a session only after `ping` confirms `CLIENT` access, then
+stores it in the operating-system credential store. Both login validation and
+account retrieval use HTTP/1.1, bounded responses, TLS validation, and no cookies
+or automatic redirects. Navigation permits only `www.tbank.ru`, `id.tbank.ru`,
+and `id.tinkoff.ru` over HTTPS with no custom port or user information.
 
-The WebView handles all login fields. Persistent local storage and file access
-are disabled, and cookies are deleted before and after the attempt. A fixed
-page expression returns only bounded session identifiers observed in exact
-T-Bank API resource URLs; it does not read cookies, DOM fields, headers,
-request bodies, or local storage. C++ accepts a candidate only after `ping`
-reports `CLIENT` access.
-
-Login starts only at exact `https://www.tbank.ru`. Top-level navigation is
-limited to that origin and the exact T-ID origins `https://id.tbank.ru` and
-`https://id.tinkoff.ru`; subdomains, CDN hosts, user information, non-default
-ports, and plain HTTP are rejected.
-
-The native connector permits `GET` requests to the exact origin
-`https://www.tbank.ru` and these paths only:
-
-- `/api/common/v1/accounts_light_ib`
-- `/api/common/v1/operations`
-
-The login validator also calls `/api/common/v1/ping`. Cookies and redirects are
-disabled for these C++ requests. The session is removed only when the bank
-reports an authentication failure; a transport or history rejection keeps the
-already validated connection available for retry. Successful connections
-refresh every six hours while the application is running when auto-update is
-enabled.
-
-Each synchronization freezes one UTC two-year range and sends one observed
-`GET` request per account with that exact start and end. `NO_DATA_FOUND` means
-an empty account history, not a failed account. Malformed individual operations
-are skipped with a visible count while valid records are retained. The
-undocumented response has no cursor or terminal marker, so the application
-labels the requested period but does not claim that the bank returned a
-complete statement. It does not invent window or pagination requests that the
-bank may reject.
-Operations marked `isInner` by T-Bank appear under **Внутренний перевод** and
-do not contribute to income, spending, savings, or spending-category totals.
-
-These retail endpoints are undocumented and unsupported by T-Bank as a public
-API. A bank-side change can break login or synchronization. WealthTracker does
-not fall back to certificate bypasses, cookie export, direct password APIs, or
-write endpoints.
+Synchronization calls `/api/common/v1/accounts_light_ib` for accounts and their
+balances. It does not call `/operations`. HTTP authentication rejection expires
+the saved session; a transport failure retains the validated connection and
+previous snapshot for retry. A timeout with HTTP 0 means no HTTP response was
+received, not that the bank rejected the login.
 
 ## Retail Alfa-Bank
 
-Open **Подключения → Альфа-Банк → Войти** and complete the official Alfa Online
-phone/SMS page inside the dialog. The page owns the phone number, password when
-requested, one-time code, TLS connection, and browser cookies. QML and C++ do
-not receive those values.
+Open **Подключения → Альфа-Банк → Войти** and complete the official phone/SMS
+page. Authentication stays inside the system WebView. The app reads only a
+bounded projection of known dashboard account and balance fields, validates
+exact integer minor units, and completes without opening history or waiting
+for operations. Refresh reloads the dashboard to obtain a new snapshot.
 
-Alfa Online uses certificates rooted at the Russian Trusted Root CA. A default
-macOS installation may not trust that root, in which case the WebView blocks the
-page before login. WealthTracker identifies the certificate failure and shows
-**Как установить сертификаты**, which opens
-[Alfa-Bank's official instructions](https://alfa.bank/cert). Installing a
-system trust anchor is an explicit operating-system security decision: the app
-does not download or install the certificate, accept the failed certificate,
-or disable TLS checks. After following the official instructions, restart
-WealthTracker and retry the connection.
-
-Alfa may complete phone/SMS authentication and then replace the dashboard with
-its static certificate-installation page. WealthTracker recognizes that exact
-same-origin page without reading its displayed text and reports the certificate
-requirement immediately instead of mislabeling it as an account-schema failure.
-
-Alfa Online does not expose a public retail account API comparable to its
-partner B2C product. The built-in connector therefore keeps the authenticated
-page in the operating-system WebView and runs a fixed projection expression.
-The expression reads only known global state or the JSON argument of the bank's
-inline `window.runApp({ appState: ... })`/`initialState` dashboard bootstrap for
-accounts and balances. It then installs a short-lived observer while Alfa's
-normal `/history` page loads. The observer accepts only successful responses
-from the exact same-origin `/api/v1/operations-history/operations` path. For
-that POST only, it parses a body of at most 64 KiB, rewrites recognized existing
-date fields to the latest two years, resets an existing page or offset field,
-and raises an existing page-size field to 100. It then follows serial page-local
-POST continuations on the same path. Unrelated filters stay unchanged, and only
-`Content-Type` is set on continuation requests. An explicit terminal flag or a
-short final page proves completion; an unknown continuation shape is partial.
-The browser API is restored when capture finishes. The history page is opened
-after every successful account projection, even if the dashboard contains a
-short preview. That preview is merged and deduplicated but is not a completion
-signal.
-The resulting projection contains only these bounded fields:
-
-- at most 256 account identifiers, names, types, currencies, masked numbers,
-  and balances;
-- at most 20,000 operations projected from the targeted two-year history with
-  account, date, amount, description,
-  merchant, category, MCC, and internal-transfer state;
-- a version and authenticated flag.
-
-It does not read cookie values, authorization headers, form fields, local
-storage, rendered text, or arbitrary DOM elements. Request rewriting and
-pagination stay inside the bank page. Inline script scanning is limited by
-count and size. History capture requires 2xx JSON, stores at most 200 responses,
-and limits their combined text to 8 MiB. Raw bootstrap, request, and response
-objects never leave the bank page. C++ limits the returned projection to 8 MiB,
-validates exact integer minor units and ISO dates, rejects malformed accounts,
-and skips malformed or duplicate operations with a visible warning count.
-Internal transfers do not contribute to income, spending, savings, or category
-totals.
-Operations carrying Alfa's `cashout` marker use the source account or masked
-card from the sender object when needed and appear under **Наличные**.
-
-After Alfa redirects back to its dashboard, the dialog shows **Вход выполнен.
-Получаем счета из Альфа-Онлайн…**. If the bank no longer exposes a supported
-bootstrap schema, synchronization stops with a compatibility error after 30
-seconds instead of leaving the login dialog waiting indefinitely. The same
-bounded failure applies if history does not finish within 150 seconds; the
-overall synchronization is capped at 180 seconds.
-
-The system WebView retains Alfa's browser session so the app can reload the
-dashboard every six hours while auto-update is enabled. Disconnecting clears
-that browser session. If Alfa redirects a refresh back to its authentication
-host, the connection is marked expired and its in-memory rows are removed.
-
-This path uses undocumented Alfa Online page state. If the two-year range or a
-terminal page cannot be proven, the UI says the history is incomplete and a
-partial refresh retains distinct operations from still-present accounts inside
-the current two-year cutoff. That retention is in memory and does not survive
-an app restart. The connector may still provide fewer operations than a bank
-statement and can stop working after a frontend change.
-WealthTracker does not bypass certificate validation, submit direct credential
-requests, extract cookies, replay private headers, or call write endpoints. The
-separate **Альфа-Банк API** row remains the supported option for users who
-already have an issued B2C integration token.
+Alfa Online uses Russian TLS certificates. If macOS does not trust the bank's
+certificate chain, the app links to [Alfa's official instructions](https://alfa.bank/cert).
+It does not install a trust anchor or disable TLS validation. After installing
+certificates through the official procedure, restart the app and retry.
 
 ## Retail VTB
 
-Open **Подключения → ВТБ → Войти** and complete the official VTB Online
-login inside the dialog. The bank page owns the phone number, password, SMS
-code, TLS connection, and browser session. WealthTracker disables local storage
-and file access and does not read cookies, form fields, authorization headers,
-or browser storage.
-
-After login, a fixed expression checks the exact `https://online.vtb.ru`
-origin and requests the bank frontend's exported `./HttpClient`. It uses that
-client only for these account and balance paths:
+Open **Подключения → ВТБ → Войти** and complete the official page. The app keeps
+the authenticated WebView and calls its own HTTP client only for:
 
 - `/msa/api-gw/private/portfolio/portfolio-main-page/portfolios/active`
 - `/msa/api-gw/private/portfolio/portfolio-balances/financial/summary`
 
-For operations, the expression temporarily observes `XMLHttpRequest`, opens the
-official `/history` screen, and accepts only successful same-origin `GET`
-responses whose exact final path component is `byUser`, `byProducts`,
-`byAccount`, or `byCard` under
-`/msa/api-gw/private/history-hub/history-hub-homer/v1/history/`. It captures at
-most 16 exact path and query templates and restores the browser API. An
-unfiltered `byUser` template covers the portfolio; otherwise an observed
-single-product `byProducts`, `byAccount`, or `byCard` template is replayed for
-every product identifier returned by the same portfolio response. The exact
-observed path and parameter name are retained.
+The portfolio's loading response is retried at most twice. The balance summary
+is an optional supplement; non-authentication failures retain balances already
+present in the portfolio. Authentication errors remain blocking. Account
+projection covers recognized cards, accounts, deposits, savings, loans, metals,
+and wallets without reading private headers, cookies, or browser storage.
 
-The page-owned HTTP client replays inclusive 31-day windows covering two years,
-with at most four requests in flight. Non-date query fields are preserved; only
-recognized dates, page or offset fields, and the proven single-product value
-change. Every returned operation must belong to its requested window.
-Continuation follows explicit `hasNext`, `hasMore`, or `last` metadata, or a
-short final page with a known page size. WealthTracker supplies only a generated
-request ID and the fixed `web_history_page` and smart-update headers; it never
-copies private headers. Replay is capped at 512 requests and 8 MiB of combined
-operation data.
+Refresh resets only the app's projection state and reuses the authenticated
+page client. It does not reload the page or navigate to history. This preserves
+session state held in page memory. A new app process may still require login;
+a saved connected flag is not proof of a live browser session. The refresh is
+bounded to 45 seconds even if a JavaScript callback stalls.
 
-A portfolio response that is still loading is retried at most twice, matching
-the current bank frontend. The financial-summary route is an optional balance
-supplement in VTB's frontend; a missing or unavailable
-supplement does not discard products and balances already present in the active
-portfolio. Authentication errors remain blocking. Raw responses stay inside
-the bank page. The expression returns only account identifiers, names, types,
-currencies, masked numbers and balances, plus operation identifiers, accounts,
-dates, amounts, descriptions, merchants, categories, MCCs, and internal-transfer
-markers. Each bank response and the final projection are limited to 8 MiB; C++
-also limits the projection to 256 accounts and 20,000 operations and validates
-exact integer minor units, dates, currencies, identifiers, and account
-ownership. Account aliases are resolved independently; an obsolete alias does
-not hide another valid alias on the same operation. Conflicting duplicate
-identifiers, unknown account ownership, out-of-window rows, or incomplete
-product/page coverage make the snapshot partial. Partial operations are not
-published; a previously complete in-memory history is preserved when available,
-and the status shows a bounded rejected-operation count without exposing bank
-data.
+## Retail balance scope and limits
 
-VTB operation codes and parent categories used by the current frontend for
-transfers between a user's own accounts are normalized as **Внутренний
-перевод**. They do not contribute to income, spending, savings, or
-spending-category totals.
+These retail interfaces are undocumented and can change. Verify the account
+count and balances against each bank's own application. Synchronization does
+not retrieve transaction history. Cash-flow reporting therefore cannot be
+computed from these balance-only connections. Previously loaded balances survive
+a transport or schema failure; status text and the last successful refresh time
+identify the failed update. Explicit authentication rejection requires login.
 
-The browser session remains in the system WebView for six-hour refreshes while
-auto-update is enabled. Disconnecting deletes that WebView session. A 401/403
-response from the page-owned read client marks the connection expired. The SPA
-pathname is not used as an authentication signal because presentation routing
-can remain unchanged after the session transition. An unknown origin, route
-contract, module shape, or response schema stops synchronization instead of
-broadening access. An unsupported date or continuation template, timeout,
-request limit, or non-authentication replay failure reports **история за 2 года
-неполная**. A partial refresh retains distinct operations from still-present
-accounts inside the current two-year cutoff; retention is in memory only.
-Authentication and malformed history schemas remain blocking.
-Compatibility errors include only fixed stage codes such as `VTB-P3` or
-`VTB-H1`; codes contain no account, operation, balance, cookie, or response
-value.
-
-VTB does not publish this retail frontend contract as a supported API. A
-bank-side frontend change can break synchronization. WealthTracker does not
-fall back to password APIs, cookie export, certificate bypasses, redirects to
-lookalike origins, or write requests.
+Built-in retail auto-update runs every six hours while the app is running.
+Disconnecting removes that connection's in-memory rows and stored session.
+No phone numbers, passwords, OTPs, cookie values, or raw page state are exposed
+to QML or status messages.
 
 ## Token-based APIs
 
@@ -268,9 +120,20 @@ integration, open its row in **Подключения**, save the token, then se
 - Modulbank uses account-info and operation-history methods at
   `https://api.modulbank.ru`. The exact token `sandboxtoken` enables the bank's
   public synthetic sandbox mode.
-- T-Invest currently calls the read-only account-list method at
-  `https://invest-public-api.tbank.ru`. Portfolio and operation import are not
-  wired into the interface yet.
+- T-Invest uses a user-created read-only token at
+  `https://invest-public-api.tbank.ru`. It lists accessible open accounts and
+  requests one RUB-valued portfolio per account. It does not request operation
+  history. Requests are serial, bounded to 20 MiB per response, 256 accounts,
+  20,000 positions, and one minute per synchronization. Failed refreshes retain
+  the previous snapshot. Locking, disconnecting, or replacing the token cancels
+  pending work.
+
+  Overall portfolio value comes from the API's `totalAmountPortfolio`. Position
+  rows show instrument identifiers and quantity times current price in the
+  instrument's currency; separate accrued coupon interest is excluded from row
+  estimates. Names, allocation, yield, dividend totals, and XIRR are not yet
+  calculated. The official contract is available in the
+  [operations schema](https://github.com/RussianInvestments/investAPI/blob/main/src/docs/contracts/operations.proto).
 
 Removing a connection deletes its credential entry, cancels active requests,
 and removes that connection's in-memory rows.

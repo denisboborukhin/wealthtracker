@@ -145,6 +145,7 @@ target_sources(
             src/app/reporting.cppm
             src/app/transfer_matching.cppm
             src/app/bank_sync.cppm
+            src/app/investment_sync.cppm
             src/app/zen_plugin_runner.cppm
             src/app/tbank_auth.cppm
             src/app/tbank_browser.cppm
@@ -251,6 +252,9 @@ if(BUILD_TESTING)
         tests/app/reporting_test.cpp
         tests/app/transfer_matching_test.cpp
         tests/app/bank_connections_test.cpp
+        tests/app/alfa_reliability_test.cpp
+        tests/app/tbank_reliability_test.cpp
+        tests/app/sync_reliability_test.cpp
         tests/app/vtb_connection_test.cpp
         tests/app/ui_contract_test.cpp
     )

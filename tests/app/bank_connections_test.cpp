@@ -9,6 +9,8 @@
 #include <QFile>
 #include <QHash>
 #include <QJSEngine>
+#include <QJsonDocument>
+#include <QJsonObject>
 #include <QNetworkAccessManager>
 #include <QNetworkReply>
 #include <QNetworkRequest>
@@ -143,6 +145,7 @@ class TBankNetworkFixture final : public QNetworkAccessManager {
     int operationReadCalls = 0;
     bool allRequestsDisableHttp2 = true;
     bool failOperations = false;
+    bool failAccounts = false;
     bool rejectAuthentication = false;
     bool overflowBalances = false;
     QVector<OperationRange> operationRanges;
@@ -200,13 +203,50 @@ class TBankNetworkFixture final : public QNetworkAccessManager {
         auto* reply = new BufferedNetworkReply(
             request, failOperations && operationRequest ? QByteArray{} : std::move(body),
             delayMilliseconds,
-            failOperations && operationRequest ? QNetworkReply::RemoteHostClosedError
+            (failOperations && operationRequest) || (failAccounts && !operationRequest) ? QNetworkReply::RemoteHostClosedError
                                                : QNetworkReply::NoError,
             operationRequest ? &operationReadCalls : nullptr, this);
         if (operationRequest) {
             connect(reply, &QNetworkReply::finished, this, [this] { --activeOperationRequests; });
         }
         return reply;
+    }
+};
+
+class InvestmentNetworkFixture final : public QNetworkAccessManager {
+public:
+    int requests = 0;
+    int portfolioRequests = 0;
+    int operationRequests = 0;
+    int delay = 0;
+    bool repeatCursor = false;
+    bool failPortfolio = false;
+    QVector<QJsonObject> operationBodies;
+
+protected:
+    QNetworkReply* createRequest(const Operation operation, const QNetworkRequest& request,
+                                 QIODevice* outgoingData) override {
+        REQUIRE(operation == PostOperation);
+        ++requests;
+        const auto body = QJsonDocument::fromJson(outgoingData->readAll()).object();
+        QByteArray response;
+        auto error = QNetworkReply::NoError;
+        if (request.url().path().endsWith(QStringLiteral("/GetAccounts"))) {
+            response = R"({"accounts":[{"id":"invest-a","name":"Brokerage","type":"ACCOUNT_TYPE_TINKOFF","status":"ACCOUNT_STATUS_OPEN"}]})";
+        } else if (request.url().path().endsWith(QStringLiteral("/GetPortfolio"))) {
+            ++portfolioRequests;
+            REQUIRE(body.value(QStringLiteral("accountId")).toString() == QStringLiteral("invest-a"));
+            response = R"({"totalAmountPortfolio":{"currency":"rub","units":"120","nano":500000000},"positions":[{"instrumentUid":"instrument-a","quantity":{"units":"2"},"currentPrice":{"currency":"rub","units":"60","nano":250000000}}]})";
+            if (failPortfolio) error = QNetworkReply::RemoteHostClosedError;
+        } else {
+            REQUIRE(request.url().path().endsWith(QStringLiteral("/GetOperationsByCursor")));
+            ++operationRequests;
+            operationBodies.push_back(body);
+            response = body.contains(QStringLiteral("cursor")) && !repeatCursor
+                ? QByteArrayLiteral(R"({"hasNext":false,"items":[]})")
+                : QByteArrayLiteral(R"({"hasNext":true,"nextCursor":"page-2","items":[{"id":"buy-a","date":"2026-01-10T10:00:00Z","type":"OPERATION_TYPE_BUY","instrumentUid":"instrument-a","quantity":"2","payment":{"currency":"rub","units":"-120","nano":-500000000}}]})");
+        }
+        return new BufferedNetworkReply(request, response, delay, error, nullptr, this);
     }
 };
 
@@ -431,7 +471,6 @@ TEST_CASE("T-Bank login UI embeds a coordinator-owned native WebView") {
 
 TEST_CASE("Alfa login UI projects bounded finance fields without reading cookies") {
     using wealthtracker::app::AlfaProjectionStage;
-    using wealthtracker::app::alfa_history_capture_script;
     using wealthtracker::app::alfa_financial_projection_script;
     using wealthtracker::app::parse_alfa_financial_projection;
 
@@ -456,24 +495,12 @@ TEST_CASE("Alfa login UI projects bounded finance fields without reading cookies
     CHECK(script.contains(QStringLiteral("certificate-required")));
     CHECK(script.contains(QStringLiteral("alfa.bank")));
     CHECK(script.contains(QStringLiteral("balanceMinor")));
-    CHECK(script.contains(QStringLiteral("internalTransfer")));
     CHECK_FALSE(script.contains(QStringLiteral("document.cookie"), Qt::CaseInsensitive));
     CHECK_FALSE(script.contains(QStringLiteral("localStorage"), Qt::CaseInsensitive));
     CHECK_FALSE(script.contains(QStringLiteral("innerHTML"), Qt::CaseInsensitive));
     CHECK_FALSE(script.contains(QStringLiteral("querySelector"), Qt::CaseInsensitive));
     CHECK(script.contains(QStringLiteral("pageUrl.password !== ''")));
     CHECK_FALSE(script.contains(QStringLiteral("password:"), Qt::CaseInsensitive));
-
-    const auto historyScript = alfa_history_capture_script();
-    CHECK(historyScript.contains(QStringLiteral(
-        "/api/v1/operations-history/operations")));
-    CHECK(historyScript.contains(QStringLiteral("XMLHttpRequest")));
-    CHECK(historyScript.contains(QStringLiteral("history.pushState")));
-    CHECK(historyScript.contains(QStringLiteral("8 * 1024 * 1024")));
-    CHECK_FALSE(historyScript.contains(QStringLiteral("document.cookie"),
-                                       Qt::CaseInsensitive));
-    CHECK_FALSE(historyScript.contains(QStringLiteral("localStorage"),
-                                       Qt::CaseInsensitive));
 
     const auto waiting = parse_alfa_financial_projection(
         QStringLiteral(
@@ -485,17 +512,13 @@ TEST_CASE("Alfa login UI projects bounded finance fields without reading cookies
 
     const auto ready = parse_alfa_financial_projection(
         QStringLiteral(
-            R"({"version":1,"stage":"ready","authenticated":true,"historyCaptured":true,"historyComplete":false,"accounts":[{"id":"account-1","name":"Альфа-Карта","kind":"checking","currency":"RUB","maskedNumber":"•••• 1234","balanceMinor":"10000"}],"transactions":[]})"),
+            R"({"version":1,"stage":"ready","authenticated":true,"accounts":[{"id":"account-1","name":"Альфа-Карта","kind":"checking","currency":"RUB","maskedNumber":"•••• 1234","balanceMinor":"10000"}],"transactions":[]})"),
         QDateTime::currentDateTimeUtc());
     REQUIRE(ready);
     CHECK(ready->stage == AlfaProjectionStage::Ready);
-    CHECK(ready->historyCaptured);
-    CHECK_FALSE(ready->historyComplete);
     REQUIRE(ready->batch);
     CHECK(ready->batch->accounts.size() == 1);
-    REQUIRE(ready->batch->warnings.size() == 1);
-    CHECK(ready->batch->warnings.front().code ==
-          QStringLiteral("alfa-history-incomplete"));
+    CHECK(ready->batch->warnings.isEmpty());
 }
 
 TEST_CASE("Alfa projection reads the current inline runApp state after hydration") {
@@ -545,34 +568,6 @@ TEST_CASE("Alfa projection reads the current inline runApp state after hydration
                 }]
             } } }) + ')'
         }] }
-        globalThis.__wealthtrackerAlfaHistory = { status: 'ready', complete: true, payload: {
-            operations: [{
-                id: 'operation-inline-1', operationId: 'operation-reference-1',
-                dateTime: '2026-08-11T08:30:00Z', direction: 'EXPENSE',
-                amount: { value: 5000, minorUnits: 100, currency: 'RUR' },
-                title: 'Coffee', category: { name: 'Cafes' },
-                actions: [{ accountNumber: 'account-number-1' }]
-            }, {
-                operationId: 'top-up-reference-1',
-                operationDate: '2026-08-12T09:15:00Z',
-                operationType: 'INCOME', productId: 'product-inline-2',
-                transactionAmount: { sum: 1500.25, currency: 'RUR' },
-                title: 'Пополнение'
-            }, {
-                operationId: 'purchase-reference-2',
-                transactionDate: '2026-08-13T10:30:00Z',
-                operationDirection: 'EXPENSE', cardId: 'product-inline-1',
-                operationAmount: { sum: 199.5, currency: 'RUR' },
-                title: 'Покупка'
-            }, {
-                id: 'cash-withdrawal-reference-1',
-                dateTime: '2026-08-14T11:45:00Z',
-                amount: { value: 100000, minorUnits: 100, currency: 'RUR' },
-                title: 'Снятие наличных', cashout: true,
-                sender: { accountNumber: 'account-number-2' },
-                terminal: { name: 'Банкомат Альфа-Банка' }
-            }]
-        } }
     )JS"));
     REQUIRE_FALSE(setup.isError());
 
@@ -582,184 +577,18 @@ TEST_CASE("Alfa projection reads the current inline runApp state after hydration
         evaluated.toString(), QDateTime::currentDateTimeUtc());
     REQUIRE(projection);
     CHECK(projection->stage == AlfaProjectionStage::Ready);
-    CHECK(projection->historyCaptured);
-    CHECK(engine.evaluate(QStringLiteral(
-              "globalThis.__wealthtrackerAlfaHistory.status === 'consumed' && "
-              "globalThis.__wealthtrackerAlfaHistory.payload === undefined"))
-              .toBool());
     REQUIRE(projection->batch);
     REQUIRE(projection->batch->accounts.size() == 2);
     CHECK(projection->batch->accounts.front().externalId ==
           QStringLiteral("product-inline-1"));
     CHECK(projection->batch->balances.front().balance.minorUnits == 125050);
-    REQUIRE(projection->batch->transactions.size() == 4);
-    CHECK(projection->batch->transactions.front().amount.minorUnits == -5000);
-    CHECK(projection->batch->transactions.front().accountExternalId ==
-          QStringLiteral("product-inline-1"));
-    CHECK(projection->batch->transactions.front().bankCategory ==
-          QStringLiteral("Cafes"));
-    CHECK(projection->batch->transactions.at(1).amount.minorUnits == 150025);
-    CHECK(projection->batch->transactions.at(1).accountExternalId ==
-          QStringLiteral("product-inline-2"));
-    CHECK(projection->batch->transactions.at(2).amount.minorUnits == -19950);
-    CHECK(projection->batch->transactions.at(3).amount.minorUnits == -100000);
-    CHECK(projection->batch->transactions.at(3).accountExternalId ==
-          QStringLiteral("product-inline-2"));
-    CHECK(projection->batch->transactions.at(3).bankCategory ==
-          QStringLiteral("Наличные"));
-}
-
-TEST_CASE("Alfa history capture requests and exhausts a bounded two-year range") {
-    using wealthtracker::app::alfa_history_capture_script;
-
-    QJSEngine engine;
-    const auto setup = engine.evaluate(QStringLiteral(R"JS(
-        var globalThis = this
-        globalThis.location = { href: 'https://web.alfabank.ru/dashboard' }
-        globalThis.URL = function(value) {
-            const text = String(value)
-            this.protocol = 'https:'
-            this.hostname = text.includes('evil.example') ? 'evil.example'
-                                                           : 'web.alfabank.ru'
-            this.port = ''
-            this.username = ''
-            this.password = ''
-            this.origin = 'https://' + this.hostname
-            this.pathname = text.includes('/api/v1/operations-history/operations')
-                ? '/api/v1/operations-history/operations' : '/dashboard'
-        }
-        globalThis.XMLHttpRequest = function() { this.listeners = {} }
-        XMLHttpRequest.prototype.addEventListener = function(name, callback) {
-            this.listeners[name] = callback
-        }
-        XMLHttpRequest.prototype.open = function() {}
-        XMLHttpRequest.prototype.setRequestHeader = function(name, value) {
-            this.requestHeader = name + ':' + value
-        }
-        XMLHttpRequest.prototype.send = function(body) {
-            this.nativeBody = body
-            if (typeof body !== 'string') return
-            globalThis.sentAlfaBodies.push(body)
-            const payload = JSON.parse(body)
-            if (payload.page === 1) {
-                this.status = 200
-                this.responseText = '{"operations":[{"id":"last-page"}]}'
-                this.listeners.loadend()
-            }
-        }
-        globalThis.sentAlfaBodies = []
-        globalThis.pendingTimers = []
-        globalThis.setTimeout = function(callback) {
-            globalThis.pendingTimers.push(callback)
-            return globalThis.pendingTimers.length
-        }
-        globalThis.originalOpen = XMLHttpRequest.prototype.open
-        globalThis.originalSend = XMLHttpRequest.prototype.send
-        globalThis.history = { pushState: function(_, __, path) {
-            globalThis.openedPath = path
-        } }
-        globalThis.PopStateEvent = function() {}
-        globalThis.dispatchEvent = function() {}
-    )JS"));
-    REQUIRE_FALSE(setup.isError());
-
-    const auto installed = engine.evaluate(alfa_history_capture_script());
-    REQUIRE_FALSE(installed.isError());
-    CHECK(installed.toString() == QStringLiteral("waiting"));
-    CHECK(engine.evaluate(QStringLiteral("globalThis.openedPath")).toString() ==
-          QStringLiteral("/history"));
-
-    const auto ignored = engine.evaluate(QStringLiteral(R"JS((() => {
-        const request = new XMLHttpRequest()
-        request.addEventListener = function(_, callback) { this.callback = callback }
-        request.open('GET', '/api/v1/operations-history/operations')
-        request.send()
-        return request.callback === undefined &&
-               globalThis.__wealthtrackerAlfaHistory.status === 'waiting'
-    })())JS"));
-    REQUIRE_FALSE(ignored.isError());
-    CHECK(ignored.toBool());
-
-    const auto completed = engine.evaluate(QStringLiteral(R"JS((() => {
-        const request = new XMLHttpRequest()
-        request.open('POST', '/api/v1/operations-history/operations')
-        request.status = 200
-        request.responseText = JSON.stringify({ operations: Array.from(
-            { length: 100 }, function(_, index) { return { id: 'first-' + index } }) })
-        request.send(JSON.stringify({
-            page: 0,
-            pageSize: 6,
-            filters: { size: 6, dateFrom: '25.07.2026', dateTo: '25.08.2026' },
-            request: { pagination: { size: '6' } }
-        }))
-        request.listeners.loadend()
-        while (globalThis.pendingTimers.length)
-            globalThis.pendingTimers.shift()()
-        const firstBody = JSON.parse(globalThis.sentAlfaBodies[0])
-        const secondBody = JSON.parse(globalThis.sentAlfaBodies[1])
-        return globalThis.__wealthtrackerAlfaHistory.status === 'ready' &&
-               globalThis.__wealthtrackerAlfaHistory.payload.responses.length === 2 &&
-               globalThis.__wealthtrackerAlfaHistory.complete === true &&
-               globalThis.sentAlfaBodies.length === 2 &&
-               firstBody.page === 0 && secondBody.page === 1 &&
-               firstBody.pageSize === 100 && firstBody.filters.size === 6 &&
-               firstBody.request.pagination.size === '100' &&
-               firstBody.filters.dateFrom !== '25.07.2026' &&
-               /^\d{2}\.\d{2}\.\d{4}$/.test(firstBody.filters.dateFrom) &&
-               /^\d{2}\.\d{2}\.\d{4}$/.test(firstBody.filters.dateTo) &&
-               XMLHttpRequest.prototype.open === globalThis.originalOpen &&
-               XMLHttpRequest.prototype.send === globalThis.originalSend
-    })())JS"));
-    REQUIRE_FALSE(completed.isError());
-    INFO(completed.toString().toStdString());
-    INFO(engine.evaluate(QStringLiteral(
-             "JSON.stringify(globalThis.__wealthtrackerAlfaHistory)"))
-             .toString()
-             .toStdString());
-    INFO(engine.evaluate(QStringLiteral(
-             "JSON.stringify(globalThis.sentAlfaBodies)"))
-             .toString()
-             .toStdString());
-    CHECK(completed.toBool());
-    CHECK(engine.evaluate(QStringLiteral(
-              "JSON.parse(globalThis.sentAlfaBodies[0]).filters.dateFrom"))
-              .toString() ==
-          QDate::currentDate().addYears(-2).toString(QStringLiteral("dd.MM.yyyy")));
-    CHECK(engine.evaluate(QStringLiteral(
-              "JSON.parse(globalThis.sentAlfaBodies[0]).filters.dateTo"))
-              .toString() ==
-          QDate::currentDate().toString(QStringLiteral("dd.MM.yyyy")));
-
-    REQUIRE_FALSE(engine.evaluate(QStringLiteral(
-        "delete globalThis.__wealthtrackerAlfaHistory; "
-        "globalThis.sentAlfaBodies = []; globalThis.pendingTimers = []"))
-                      .isError());
-    const auto restarted = engine.evaluate(alfa_history_capture_script());
-    REQUIRE_FALSE(restarted.isError());
-    REQUIRE(restarted.toString() == QStringLiteral("waiting"));
-    const auto missingRange = engine.evaluate(QStringLiteral(R"JS((() => {
-        const request = new XMLHttpRequest()
-        request.open('POST', '/api/v1/operations-history/operations')
-        request.status = 200
-        request.responseText = '{"operations":[{"id":"one-page"}]}'
-        request.send('{"page":0,"pageSize":100}')
-        request.listeners.loadend()
-        while (globalThis.pendingTimers.length)
-            globalThis.pendingTimers.shift()()
-        return globalThis.__wealthtrackerAlfaHistory.status === 'ready' &&
-               globalThis.__wealthtrackerAlfaHistory.complete === false
-    })())JS"));
-    REQUIRE_FALSE(missingRange.isError());
-    CHECK(missingRange.toBool());
+    CHECK(projection->batch->balances.at(1).balance.minorUnits == 9000);
+    CHECK(projection->batch->transactions.isEmpty());
 }
 
 TEST_CASE("Alfa projection reports post-login loading instead of waiting silently") {
     using wealthtracker::app::AlfaProjectionStage;
     using wealthtracker::app::parse_alfa_financial_projection;
-    using wealthtracker::app::should_start_alfa_history_capture;
-
-    CHECK(should_start_alfa_history_capture(false, 6));
-    CHECK_FALSE(should_start_alfa_history_capture(true, 6));
 
     const auto loading = parse_alfa_financial_projection(
         QStringLiteral(
@@ -780,15 +609,13 @@ TEST_CASE("Alfa projection reports post-login loading instead of waiting silentl
         QStringLiteral(
             R"({"version":1,"stage":"operations-loading","authenticated":false,"accounts":[],"transactions":[]})"),
         QDateTime::currentDateTimeUtc());
-    REQUIRE(operationsLoading);
-    CHECK(operationsLoading->stage == AlfaProjectionStage::OperationsLoading);
+    CHECK_FALSE(operationsLoading);
 
     const auto operationsFailed = parse_alfa_financial_projection(
         QStringLiteral(
             R"({"version":1,"stage":"operations-failed","authenticated":false,"accounts":[],"transactions":[]})"),
         QDateTime::currentDateTimeUtc());
-    REQUIRE(operationsFailed);
-    CHECK(operationsFailed->stage == AlfaProjectionStage::OperationsFailed);
+    CHECK_FALSE(operationsFailed);
 
     const auto unknown = parse_alfa_financial_projection(
         QStringLiteral(
@@ -805,8 +632,8 @@ TEST_CASE("Alfa projection reports post-login loading instead of waiting silentl
     CHECK(coordinatorSource.contains(QByteArrayLiteral(
         "dashboardStateTimeoutMilliseconds = 30 * 1'000")));
     CHECK(coordinatorSource.contains(QByteArrayLiteral(
-        "operationsStateTimeoutMilliseconds = 150 * 1'000")));
-    CHECK(coordinatorSource.contains(QByteArrayLiteral(
+        "synchronizationTimeoutMilliseconds = 45 * 1'000")));
+    CHECK_FALSE(coordinatorSource.contains(QByteArrayLiteral(
         "alfa_history_capture_script()")));
     CHECK_FALSE(coordinatorSource.contains(QByteArrayLiteral(
         "projection->batch->transactions.isEmpty()")));
@@ -958,187 +785,37 @@ TEST_CASE("T-Bank API session identifiers reject unsafe values") {
     CHECK_FALSE(isValidTBankRetailSessionId("too-short"));
 }
 
-TEST_CASE("partial bank refresh retains distinct history inside the two-year window") {
-    using wealthtracker::app::retainPreviousTransactionsForPartialHistory;
-    using wealthtracker::connectors::ExternalAccount;
-    using wealthtracker::connectors::Money;
-    using wealthtracker::connectors::NormalizedBatch;
-    using wealthtracker::connectors::NormalizedTransaction;
-
-    NormalizedBatch current;
-    ExternalAccount account;
-    account.externalId = QStringLiteral("account-1");
-    current.accounts.push_back(account);
-
-    NormalizedTransaction refreshed;
-    refreshed.externalId = QStringLiteral("shared");
-    refreshed.accountExternalId = account.externalId;
-    refreshed.postingDate = QDate{2026, 8, 20};
-    refreshed.amount = Money{-2'000, QStringLiteral("RUB")};
-    current.transactions.push_back(refreshed);
-
-    NormalizedBatch previous;
-    auto duplicate = refreshed;
-    duplicate.amount = Money{-1'000, QStringLiteral("RUB")};
-    previous.transactions.push_back(duplicate);
-    auto retained = refreshed;
-    retained.externalId = QStringLiteral("older");
-    retained.postingDate = QDate{2025, 2, 10};
-    previous.transactions.push_back(retained);
-    auto expired = refreshed;
-    expired.externalId = QStringLiteral("expired");
-    expired.postingDate = QDate{2023, 8, 20};
-    previous.transactions.push_back(expired);
-    auto removedAccount = refreshed;
-    removedAccount.externalId = QStringLiteral("removed-account");
-    removedAccount.accountExternalId = QStringLiteral("account-2");
-    previous.transactions.push_back(removedAccount);
-
-    CHECK(retainPreviousTransactionsForPartialHistory(
-              current, previous, QDate{2024, 8, 26}) == 1);
-    REQUIRE(current.transactions.size() == 2);
-    CHECK(current.transactions.front().amount.minorUnits == -2'000);
-    CHECK(current.transactions.back().externalId == QStringLiteral("older"));
-}
-
-TEST_CASE("incomplete refresh preserves only a previous complete transaction snapshot") {
-    using wealthtracker::app::preservePreviousCompleteTransactions;
-    using wealthtracker::connectors::ExternalAccount;
-    using wealthtracker::connectors::NormalizedBatch;
-    using wealthtracker::connectors::NormalizedTransaction;
-
-    NormalizedBatch current;
-    ExternalAccount retainedAccount;
-    retainedAccount.externalId = QStringLiteral("account-1");
-    current.accounts.push_back(retainedAccount);
-    NormalizedTransaction preview;
-    preview.externalId = QStringLiteral("preview");
-    preview.accountExternalId = retainedAccount.externalId;
-    current.transactions.push_back(preview);
-
-    NormalizedBatch previous;
-    NormalizedTransaction retained;
-    retained.externalId = QStringLiteral("complete");
-    retained.accountExternalId = retainedAccount.externalId;
-    previous.transactions.push_back(retained);
-    NormalizedTransaction removedAccount = retained;
-    removedAccount.externalId = QStringLiteral("removed");
-    removedAccount.accountExternalId = QStringLiteral("account-2");
-    previous.transactions.push_back(removedAccount);
-
-    CHECK(preservePreviousCompleteTransactions(current, previous) == 1);
-    REQUIRE(current.transactions.size() == 1);
-    CHECK(current.transactions.front().externalId == QStringLiteral("complete"));
-}
-
-TEST_CASE("T-Bank synchronization publishes balances and excludes internal transfers") {
+TEST_CASE("T-Bank balances synchronize without any history requests") {
     const TBankSettingsCleanup cleanup;
     auto credentials = std::make_unique<MemoryCredentialBackend>();
     credentials->values.insert(QStringLiteral("tbank-retail-session"),
                                QByteArrayLiteral("connected-session-123456789"));
     auto network = std::make_unique<TBankNetworkFixture>();
-    auto* observedNetwork = network.get();
-    wealthtracker::app::AppController controller(std::move(credentials), std::move(network),
-                                                 nullptr);
-
-    REQUIRE(controller.tbankConnected());
-    const auto earliestSyncEnd = QDateTime::currentDateTimeUtc();
+    auto* observed = network.get();
+    observed->failOperations = true;
+    wealthtracker::app::AppController controller(std::move(credentials), std::move(network), nullptr);
     REQUIRE(controller.synchronizeTBank());
-    REQUIRE(waitUntil([&controller] { return !controller.tbankSyncRunning(); }));
-    const auto latestSyncEnd = QDateTime::currentDateTimeUtc();
-
-    CHECK(observedNetwork->allRequestsDisableHttp2);
-    CHECK(observedNetwork->maximumActiveOperationRequests == 1);
-    REQUIRE(observedNetwork->operationRanges.size() == 2);
-    QHash<QString, QVector<TBankNetworkFixture::OperationRange>> rangesByAccount;
-    for (const auto& range : observedNetwork->operationRanges) {
-        rangesByAccount[range.accountId].push_back(range);
-    }
-    REQUIRE(rangesByAccount.size() == 2);
-    REQUIRE(rangesByAccount.value(QStringLiteral("account-a")).size() == 1);
-    REQUIRE(rangesByAccount.value(QStringLiteral("account-b")).size() == 1);
-    const auto accountARanges = rangesByAccount.value(QStringLiteral("account-a"));
-    const auto accountBRanges = rangesByAccount.value(QStringLiteral("account-b"));
-    for (qsizetype index = 0; index < accountARanges.size(); ++index) {
-        CHECK(accountARanges.at(index).start == accountBRanges.at(index).start);
-        CHECK(accountARanges.at(index).end == accountBRanges.at(index).end);
-    }
-    const auto historyStartMilliseconds = accountARanges.front().start;
-    const auto historyEndMilliseconds = accountARanges.back().end;
-    const auto historyEnd =
-        QDateTime::fromMSecsSinceEpoch(historyEndMilliseconds, QTimeZone::UTC);
-    CHECK(QDateTime::fromMSecsSinceEpoch(historyStartMilliseconds, QTimeZone::UTC) ==
-          QDateTime(historyEnd.date().addYears(-2), QTime(0, 0), QTimeZone::UTC));
-    CHECK(historyEnd >= earliestSyncEnd);
-    CHECK(historyEnd <= latestSyncEnd);
+    REQUIRE(waitUntil([&] { return !controller.tbankSyncRunning(); }));
     CHECK(controller.accounts()->rowCount() == 2);
-    CHECK(controller.transactions()->rowCount() == 4);
-    CHECK(controller.accounts()
-              ->data(controller.accounts()->index(0, 0),
-                     wealthtracker::app::AccountModel::NameRole)
-              .toString() == QStringLiteral("Black"));
-    CHECK(controller.transactions()
-              ->data(controller.transactions()->index(0, 0),
-                     wealthtracker::app::TransactionModel::TitleRole)
-              .toString() == QStringLiteral("Доход"));
-    CHECK(controller.transactions()
-              ->data(controller.transactions()->index(1, 0),
-                     wealthtracker::app::TransactionModel::TitleRole)
-              .toString() == QStringLiteral("Между своими счетами"));
-    const auto oldestTransaction =
-        controller.transactions()->index(controller.transactions()->rowCount() - 1, 0);
-    CHECK(controller.transactions()
-              ->data(oldestTransaction,
-                     wealthtracker::app::TransactionModel::TitleRole)
-              .toString() == QStringLiteral("Кофе"));
-    CHECK(controller.transactions()
-              ->data(oldestTransaction,
-                     wealthtracker::app::TransactionModel::DateRole)
-              .toString()
-              .contains(QString::number(QDate::currentDate().year())));
-    CHECK(controller.reportIncome() == QStringLiteral("1 000 ₽"));
-    CHECK(controller.reportSpending() == QStringLiteral("200 ₽"));
-    CHECK(controller.savings() == QStringLiteral("800 ₽"));
-    CHECK(controller.categories()->rowCount() == 1);
-    CHECK(controller.categories()
-              ->data(controller.categories()->index(0, 0),
-                     wealthtracker::app::CategoryModel::NameRole)
-              .toString() == QStringLiteral("Кафе"));
-
-    int transferRows = 0;
-    for (int row = 0; row < controller.transactions()->rowCount(); ++row) {
-        if (controller.transactions()
-                ->data(controller.transactions()->index(row, 0),
-                       wealthtracker::app::TransactionModel::CategoryRole)
-                .toString() == QStringLiteral("Внутренний перевод")) {
-            CHECK(controller.transactions()
-                      ->data(controller.transactions()->index(row, 0),
-                             wealthtracker::app::TransactionModel::TransferRole)
-                      .toBool());
-            ++transferRows;
-        }
-    }
-    CHECK(transferRows == 2);
-    CHECK(controller.syncStatus().contains(QStringLiteral("пропущено записей 1")));
-    CHECK(controller.syncStatus().contains(
-        QStringLiteral("полнота ответа банка не подтверждена")));
-
-    CHECK_FALSE(controller.setReportingPeriod(
-        QStringLiteral("31.02.2026"), QStringLiteral("01.03.2026")));
-    CHECK_FALSE(controller.reportingPeriodError().isEmpty());
-    CHECK(controller.transactions()->rowCount() == 4);
-
-    REQUIRE(controller.setReportingPeriod(
-        QStringLiteral("01.01.2020"), QStringLiteral("31.01.2020")));
-    CHECK(controller.reportingPeriodError().isEmpty());
+    CHECK(controller.netWorth() == QStringLiteral("4 000 ₽"));
     CHECK(controller.transactions()->rowCount() == 0);
-    CHECK(controller.reportIncome() == QStringLiteral("0 ₽"));
-    CHECK(controller.reportSpending() == QStringLiteral("0 ₽"));
-    CHECK(controller.savings() == QStringLiteral("0 ₽"));
+    CHECK(observed->operationRanges.isEmpty());
+    CHECK(observed->allRequestsDisableHttp2);
+    CHECK(controller.syncStatus().contains(QStringLiteral("Остатки"), Qt::CaseInsensitive));
 
-    controller.resetReportingPeriod();
-    CHECK(controller.transactions()->rowCount() == 4);
-    CHECK(controller.reportIncome() == QStringLiteral("1 000 ₽"));
+    observed->failAccounts = true;
+    REQUIRE(controller.synchronizeTBank());
+    REQUIRE(waitUntil([&] { return !controller.tbankSyncRunning(); }));
+    CHECK(controller.accounts()->rowCount() == 2);
+    CHECK(controller.netWorth() == QStringLiteral("4 000 ₽"));
+    CHECK(controller.tbankConnected());
+    observed->failAccounts = false;
+    observed->rejectAuthentication = true;
+    REQUIRE(controller.synchronizeTBank());
+    REQUIRE(waitUntil([&] { return !controller.tbankSyncRunning(); }));
+    CHECK_FALSE(controller.tbankConnected());
+    CHECK(controller.accounts()->rowCount() == 2);
+    CHECK(controller.syncStatus().contains(QStringLiteral("последние успешно загруженные")));
 }
 
 TEST_CASE("T-Bank network failures do not read a closed TLS reply") {
@@ -1147,7 +824,7 @@ TEST_CASE("T-Bank network failures do not read a closed TLS reply") {
     credentials->values.insert(QStringLiteral("tbank-retail-session"),
                                QByteArrayLiteral("connected-session-123456789"));
     auto network = std::make_unique<TBankNetworkFixture>();
-    network->failOperations = true;
+    network->failAccounts = true;
     auto* observedNetwork = network.get();
     wealthtracker::app::AppController controller(std::move(credentials), std::move(network),
                                                  nullptr);
@@ -1180,7 +857,7 @@ TEST_CASE("T-Bank authentication failures expire the stored session") {
         QStringLiteral("tbank-retail-session")));
 }
 
-TEST_CASE("balance overflow does not hide valid cash-flow totals") {
+TEST_CASE("balance overflow never wraps the displayed net worth") {
     const TBankSettingsCleanup cleanup;
     auto credentials = std::make_unique<MemoryCredentialBackend>();
     credentials->values.insert(QStringLiteral("tbank-retail-session"),
@@ -1194,9 +871,9 @@ TEST_CASE("balance overflow does not hide valid cash-flow totals") {
     REQUIRE(waitUntil([&controller] { return !controller.tbankSyncRunning(); }));
 
     CHECK(controller.netWorth() == QStringLiteral("—"));
-    CHECK(controller.reportIncome() == QStringLiteral("1 000 ₽"));
-    CHECK(controller.reportSpending() == QStringLiteral("200 ₽"));
-    CHECK(controller.savings() == QStringLiteral("800 ₽"));
+    CHECK(controller.reportIncome() == QStringLiteral("0 ₽"));
+    CHECK(controller.reportSpending() == QStringLiteral("0 ₽"));
+    CHECK(controller.savings() == QStringLiteral("0 ₽"));
 }
 
 TEST_CASE("T-Invest network failures do not read a closed TLS reply") {
@@ -1391,4 +1068,64 @@ TEST_CASE("bank connection state rejects malformed and unknown tokens") {
         QStringLiteral("modulbank-readonly")));
     CHECK_FALSE(stored->values.contains(
         QStringLiteral("alfa-b2c-readonly")));
+}
+
+TEST_CASE("T-Invest synchronizes portfolio without requesting operation history") {
+    auto network = std::make_unique<InvestmentNetworkFixture>();
+    auto* observed = network.get();
+    wealthtracker::app::AppController controller(
+        std::make_unique<MemoryCredentialBackend>(), std::move(network), nullptr);
+    REQUIRE(controller.saveInvestmentToken(QStringLiteral("readonly-token-with-safe-length")));
+    controller.synchronizeInvestments();
+    REQUIRE(waitUntil([&] { return controller.accounts()->rowCount() == 1; }));
+    CHECK(controller.portfolioValue() == QStringLiteral("120,50 ₽"));
+    CHECK(controller.netWorth() == QStringLiteral("120,50 ₽"));
+    REQUIRE(controller.holdings()->rowCount() == 1);
+    CHECK(controller.holdings()->data(controller.holdings()->index(0, 0),
+        wealthtracker::app::HoldingModel::ValueRole).toString() == QStringLiteral("120,50 ₽"));
+    CHECK(observed->portfolioRequests == 1);
+    CHECK(observed->operationRequests == 0);
+    CHECK(controller.reportSpending() == QStringLiteral("0 ₽"));
+
+    SECTION("Failed refresh preserves the last complete snapshot") {
+        observed->failPortfolio = true;
+        controller.synchronizeInvestments();
+        REQUIRE(waitUntil([&] { return controller.syncStatus().contains(QStringLiteral("Ошибка Т-Инвест")); }));
+        CHECK(controller.portfolioValue() == QStringLiteral("120,50 ₽"));
+        CHECK(controller.holdings()->rowCount() == 1);
+    }
+    SECTION("Removing connection clears the portfolio") {
+        controller.removeInvestmentToken();
+        CHECK(controller.accounts()->rowCount() == 0);
+        CHECK(controller.holdings()->rowCount() == 0);
+        CHECK(controller.portfolioValue() == QStringLiteral("0 ₽"));
+    }
+}
+
+TEST_CASE("T-Invest cancellation prevents late publication and permits a fresh sync") {
+    auto network = std::make_unique<InvestmentNetworkFixture>();
+    auto* observed = network.get();
+    observed->delay = 10;
+    wealthtracker::app::AppController controller(
+        std::make_unique<MemoryCredentialBackend>(), std::move(network), nullptr);
+    REQUIRE(controller.saveInvestmentToken(QStringLiteral("readonly-token-with-safe-length")));
+    controller.synchronizeInvestments();
+    SECTION("Privacy lock") {
+        controller.lock();
+        controller.synchronizeInvestments();
+        CHECK(observed->requests == 1);
+        REQUIRE(controller.unlock());
+    }
+    SECTION("Token replacement") {
+        REQUIRE(controller.saveInvestmentToken(QStringLiteral("replacement-readonly-token-with-safe-length")));
+    }
+    SECTION("Disconnect") {
+        controller.removeInvestmentToken();
+        REQUIRE(controller.saveInvestmentToken(QStringLiteral("replacement-readonly-token-with-safe-length")));
+    }
+    CHECK(controller.accounts()->rowCount() == 0);
+    observed->delay = 0;
+    controller.synchronizeInvestments();
+    REQUIRE(waitUntil([&] { return controller.accounts()->rowCount() == 1; }));
+    CHECK(observed->portfolioRequests == 1);
 }

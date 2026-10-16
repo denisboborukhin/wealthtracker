@@ -29,7 +29,7 @@ Item {
                 }
             }
             ActionButton {
-                text: qsTr("Проверить подключение")
+                text: qsTr("Синхронизировать")
                 primary: true
                 onClicked: page.app.synchronizeInvestments()
             }
@@ -50,7 +50,7 @@ Item {
             MetricCard {
                 Layout.fillWidth: true
                 title: qsTr("Дивиденды и купоны")
-                value: page.app.demoMode ? "86 420 ₽" : "0 ₽"
+                value: page.app.demoMode ? "86 420 ₽" : "—"
                 hint: page.app.demoMode ? qsTr("За 12 месяцев")
                                    : qsTr("Нет данных")
                 accent: Theme.positive

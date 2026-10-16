@@ -254,6 +254,7 @@ private:
     bool vtb_connected_ = false;
     bool vtb_login_active_ = false;
     QString vtb_login_status_;
+    QString live_portfolio_value_ = QStringLiteral("0 ₽");
     QString live_net_worth_ = QStringLiteral("0 ₽");
     QString live_report_income_ = QStringLiteral("0 ₽");
     QString live_report_spending_ = QStringLiteral("0 ₽");

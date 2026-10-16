@@ -133,6 +133,7 @@ class TBankLoginCoordinator final : public QObject {
         request.setRawHeader(QByteArrayLiteral("User-Agent"),
                              QByteArrayLiteral("WealthTracker/0.1"));
         request.setTransferTimeout(15'000);
+        request.setAttribute(QNetworkRequest::Http2AllowedAttribute, false);
         request.setAttribute(QNetworkRequest::CookieLoadControlAttribute, QNetworkRequest::Manual);
         request.setAttribute(QNetworkRequest::CookieSaveControlAttribute, QNetworkRequest::Manual);
         request.setAttribute(QNetworkRequest::RedirectPolicyAttribute,

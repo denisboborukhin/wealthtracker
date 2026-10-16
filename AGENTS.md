@@ -213,6 +213,9 @@ When the user corrects your approach, append a one-line rule here before ending 
 - Mark VTB history complete only after every discovered portfolio product and
   requested date window is covered; resolve each account alias independently.
 
+- Retail T-Bank, Alfa, VTB and T-Invest synchronization must prioritize account
+  balances only; never make balance refresh depend on transaction history.
+
 ---
 
 ## 12. How this file was built

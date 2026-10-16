@@ -91,12 +91,6 @@ classify_alfa_load_failure(const QUrl& failedUrl, const QString& errorString) {
         false};
 }
 
-[[nodiscard]] bool should_start_alfa_history_capture(
-    const bool historyCaptureStarted, const qsizetype dashboardOperationCount) noexcept {
-    (void)dashboardOperationCount;
-    return !historyCaptureStarted;
-}
-
 class AlfaLoginCoordinator final : public QObject {
 public:
     using StatusChanged = std::function<void(QString)>;
@@ -176,13 +170,18 @@ public:
 
     void synchronize(const QUrl& dashboardUrl) {
         begin(Mode::Synchronize, dashboardUrl,
-              QStringLiteral("Альфа-Банк: загружаем счета и операции…"));
+              QStringLiteral("Альфа-Банк: обновляем остатки по счетам…"));
     }
 
     void reload() {
         if (!active_ || !web_view_) {
             return;
         }
+        ++generation_;
+        probe_pending_ = false;
+        load_succeeded_ = false;
+        dashboard_observed_elapsed_ = -1;
+        elapsed_.restart();
         certificate_help_required_ = false;
         reportStatus(QStringLiteral("Повторно загружаем официальную страницу Альфа-Банка…"));
         web_view_->reload();
@@ -195,9 +194,8 @@ public:
 private:
     enum class Mode { Login, Synchronize };
     static constexpr qint64 loginTimeoutMilliseconds = 10 * 60 * 1'000;
-    static constexpr qint64 synchronizationTimeoutMilliseconds = 180 * 1'000;
+    static constexpr qint64 synchronizationTimeoutMilliseconds = 45 * 1'000;
     static constexpr qint64 dashboardStateTimeoutMilliseconds = 30 * 1'000;
-    static constexpr qint64 operationsStateTimeoutMilliseconds = 150 * 1'000;
 
     void begin(const Mode mode, const QUrl& url, QString status) {
         stop(false, false);
@@ -212,12 +210,14 @@ private:
         load_succeeded_ = false;
         certificate_help_required_ = false;
         dashboard_observed_elapsed_ = -1;
-        history_capture_elapsed_ = -1;
-        history_capture_started_ = false;
         elapsed_.start();
         reportStatus(std::move(status));
         auto* view = static_cast<QWebView*>(webView());
-        view->setUrl(url);
+        if (view->url() == url) {
+            view->reload();
+        } else {
+            view->setUrl(url);
+        }
         probe_timer_.start();
     }
 
@@ -228,7 +228,7 @@ private:
     }
 
     void probePage() {
-        if (!active_ || !web_view_ || probe_pending_) {
+        if (!active_ || !web_view_) {
             return;
         }
         const auto timeout = mode_ == Mode::Login ? loginTimeoutMilliseconds
@@ -244,7 +244,7 @@ private:
                             "формат данных.")});
             return;
         }
-        if (!load_succeeded_) {
+        if (!load_succeeded_ || probe_pending_) {
             return;
         }
 
@@ -304,43 +304,9 @@ private:
             }
             return;
         }
-        if (projection->stage == AlfaProjectionStage::OperationsLoading) {
-            if (!history_capture_started_) {
-                fail({AlfaLoginFailureKind::Protocol,
-                      QStringLiteral("Alfa Online вернул противоречивое состояние операций")});
-                return;
-            }
-            if (elapsed_.elapsed() - history_capture_elapsed_ >
-                operationsStateTimeoutMilliseconds) {
-                fail({AlfaLoginFailureKind::Protocol,
-                      QStringLiteral(
-                          "Альфа-Онлайн не завершил загрузку операций. Повторите "
-                          "синхронизацию.")});
-            }
-            return;
-        }
-        if (projection->stage == AlfaProjectionStage::OperationsFailed) {
-            fail({AlfaLoginFailureKind::Protocol,
-                  QStringLiteral(
-                      "Альфа-Онлайн не передал историю операций в ожидаемом формате. "
-                      "Возможно, интерфейс банка изменился.")});
-            return;
-        }
         if (!projection->batch) {
             fail({AlfaLoginFailureKind::Protocol,
                   QStringLiteral("Alfa Online не передал данные счетов")});
-            return;
-        }
-        if (should_start_alfa_history_capture(
-                history_capture_started_, projection->batch->transactions.size())) {
-            startHistoryCapture();
-            return;
-        }
-        if (history_capture_started_ && !projection->historyCaptured) {
-            fail({AlfaLoginFailureKind::Protocol,
-                  QStringLiteral(
-                      "Страница Альфа-Онлайн была перезагружена до получения операций. "
-                      "Повторите синхронизацию.")});
             return;
         }
         auto batch = std::move(*projection->batch);
@@ -348,40 +314,6 @@ private:
         if (completed_) {
             completed_(std::move(batch));
         }
-    }
-
-    void startHistoryCapture() {
-        if (!active_ || !web_view_ || history_capture_started_) {
-            return;
-        }
-        history_capture_started_ = true;
-        history_capture_elapsed_ = elapsed_.elapsed();
-        reportStatus(QStringLiteral("Счета найдены. Загружаем последние операции…"));
-        probe_pending_ = true;
-        const auto generation = generation_;
-        const QPointer<AlfaLoginCoordinator> guard(this);
-        web_view_->runJavaScript(alfa_history_capture_script(),
-                                 [guard, generation](const QVariant& value) {
-                                     if (!guard) {
-                                         return;
-                                     }
-                                     if (generation != guard->generation_) {
-                                         return;
-                                     }
-                                     guard->probe_pending_ = false;
-                                     if (!guard->active_) {
-                                         return;
-                                     }
-                                     const auto status = value.toString();
-                                     if (status != QStringLiteral("waiting") &&
-                                         status != QStringLiteral("ready")) {
-                                         guard->fail({
-                                             AlfaLoginFailureKind::Protocol,
-                                             QStringLiteral(
-                                                 "Не удалось открыть историю операций "
-                                                 "Альфа-Онлайн")});
-                                     }
-                                 });
     }
 
     void stop(const bool invalidateGeneration, const bool clearCookies) {
@@ -393,8 +325,6 @@ private:
         active_ = false;
         load_succeeded_ = false;
         dashboard_observed_elapsed_ = -1;
-        history_capture_elapsed_ = -1;
-        history_capture_started_ = false;
         elapsed_.invalidate();
         if (web_view_ && (invalidateGeneration || clearCookies)) {
             auto* view = web_view_.release();
@@ -423,12 +353,10 @@ private:
     QElapsedTimer elapsed_;
     std::uint64_t generation_ = 0;
     qint64 dashboard_observed_elapsed_ = -1;
-    qint64 history_capture_elapsed_ = -1;
     Mode mode_{Mode::Login};
     bool probe_pending_ = false;
     bool load_succeeded_ = false;
     bool certificate_help_required_ = false;
-    bool history_capture_started_ = false;
     bool active_ = false;
 };
 

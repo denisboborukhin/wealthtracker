@@ -32,10 +32,11 @@ export namespace wealthtracker::app {
       const values = url.searchParams.getAll('sessionid')
       if (values.length === 1 &&
           /^[A-Za-z0-9._-]{16,4096}$/.test(values[0])) {
+        sessions.delete(values[0])
         sessions.add(values[0])
-        if (sessions.size === 8) break
+        if (sessions.size > 8) sessions.delete(sessions.values().next().value)
       }
-    } catch {}
+    } catch (ignored) {}
   }
   return JSON.stringify([...sessions])
 })())JS");

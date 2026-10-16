@@ -11,8 +11,9 @@ operations between two connected banks are kept in the history as own-account
 transfers but excluded from income, spending, savings, and category totals.
 
 > **Status:** technical preview. Bank results currently live in memory and are
-> lost when the application exits. File import is a validated preview, and the
-> T-Invest flow currently checks account access without loading a portfolio.
+> lost when the application exits. File import is a validated preview. T-Invest loads
+> accounts, portfolio balances, and positions. Retail bank connections load
+> balances only, without requesting transaction history.
 > The SQLCipher repository is implemented and tested but is not connected to
 > the desktop session yet.
 
@@ -20,13 +21,13 @@ transfers but excluded from income, spending, savings, and category totals.
 
 | Connection | Current behavior |
 | --- | --- |
-| Retail T-Bank | Embedded official login; accounts, balances, and a windowed two-year operation request |
-| Retail Alfa-Bank | Embedded official login; accounts, balances, and bounded two-year history with explicit partial status |
-| Retail VTB | Embedded official login; accounts, balances, and bounded two-year history with explicit partial status |
+| Retail T-Bank | Embedded official login; accounts and balances only |
+| Retail Alfa-Bank | Embedded official login; accounts and balances only |
+| Retail VTB | Embedded official login; accounts and balances only |
 | Alfa-Bank B2C API | Accounts and operations with an already-issued integration token |
 | T-Bank Business | Accounts and statements with a T-API token |
 | Modulbank | Accounts and operations, including the public sandbox |
-| T-Invest | Validates a user-created read-only token and lists accessible accounts |
+| T-Invest | User-created read-only token; accounts, portfolio balances, and positions |
 | External ZenPlugins bundle | Optional compatibility host for a separately reviewed and built bundle |
 | Retail Sber | Visible adapter slot; no built-in connector |
 
@@ -35,36 +36,11 @@ bank-side change. The application accepts the session only after the bank
 reports `CLIENT` access, stores it in the operating-system credential store,
 and sends it only to exact `https://www.tbank.ru` read endpoints. It never
 implements payments, transfers, card management, or trading.
-Synchronization requests 24 serial windows covering two years. The undocumented
-operation response has no continuation marker, so silent bank-side truncation
-inside a successful window cannot be detected.
-
-Retail Alfa-Bank uses the official Alfa Online phone/SMS page. Its login is
-browser-session based: WealthTracker does not read cookie values, authorization
-headers, login fields, or web storage. A fixed page expression reads the bank's
-known dashboard state for accounts. On the history page, it rewrites only
-recognized existing date, page, offset, and page-size fields in the exact
-same-origin POST body, targets two years, and follows serial continuation pages
-inside the WebView. Completion requires an explicit terminal flag or a short
-final page; otherwise the result is labeled partial. Only bounded account,
-balance, and operation fields reach C++. The system WebView retains the browser
-session for six-hour refreshes while auto-update is enabled.
-This interface is undocumented and can break after a bank-side change. Alfa
-Online uses Russian TLS certificates; on systems that do not trust the Russian
-Trusted Root CA, the connection dialog links to
-[Alfa-Bank's official installation instructions](https://alfa.bank/cert).
-WealthTracker never installs a root certificate or disables TLS verification.
-
-Retail VTB keeps authentication inside the official VTB Online page. The app
-does not read cookies, login fields, private headers, or web storage. It invokes
-the authenticated page's own HTTP client for two fixed account and balance
-routes. On the history screen it captures an exact same-origin GET template,
-preserves its non-date query fields, and replays inclusive 31-day windows over
-two years through that page-owned client. Explicit continuation pages are
-followed under fixed request and payload limits. Incomplete retrieval preserves
-compatible prior in-memory operations and is shown as partial; authentication
-and schema failures still stop the sync. This frontend interface is undocumented
-and can break after a bank change.
+Synchronization requests account balances only. Alfa and VTB keep authentication
+inside the system WebView; VTB refreshes through its existing page client without
+reloading the authenticated page. No built-in retail connector opens history or
+waits for transaction pagination. See [Bank connections](docs/bank-connections.md)
+for scope, session behavior, and certificate requirements.
 
 External JavaScript plugins are not sandboxed. They run as the current user and
 can access local files and the network. WealthTracker does not distribute
