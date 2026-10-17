@@ -1,5 +1,7 @@
 module;
 
+#include "app/BrowserSession.hpp"
+
 #include <QDateTime>
 #include <QElapsedTimer>
 #include <QObject>
@@ -53,7 +55,7 @@ public:
         connect(&probe_timer_, &QTimer::timeout, this, [this] { probePage(); });
     }
 
-    ~VtbLoginCoordinator() override { stop(false, false); }
+    ~VtbLoginCoordinator() override { stop(false); }
 
     [[nodiscard]] bool active() const noexcept { return active_; }
     [[nodiscard]] bool synchronizing() const noexcept {
@@ -65,7 +67,8 @@ public:
         if (!web_view_) {
             web_view_ = std::make_unique<QWebView>();
             auto* settings = web_view_->settings();
-            settings->setAttribute(QWebViewSettings::WebAttribute::LocalStorageEnabled, false);
+            settings->setAttribute(QWebViewSettings::WebAttribute::LocalStorageEnabled,
+                                   persistentBankBrowserSessions);
             settings->setAttribute(QWebViewSettings::WebAttribute::AllowFileAccess, false);
             settings->setAttribute(QWebViewSettings::WebAttribute::LocalContentCanAccessFileUrls,
                                    false);
@@ -120,9 +123,20 @@ public:
         web_view_->reload();
     }
 
-    void cancel() { stop(true, mode_ == Mode::Login); }
+    void cancel() { stop(true, !persistentBankBrowserSessions && mode_ == Mode::Login); }
 
-    void disconnectBank() { stop(true, true); }
+    void disconnectBank() {
+#ifdef Q_OS_MACOS
+        clearing_browser_data_ = true;
+        const QPointer<VtbLoginCoordinator> guard(this);
+        clearBankBrowserData({QStringLiteral("vtb.ru")}, [guard] {
+            if (guard) guard->clearing_browser_data_ = false;
+        });
+        stop(true);
+#else
+        stop(true, true);
+#endif
+    }
 
 private:
     enum class Mode { Login, Synchronize };
@@ -139,7 +153,12 @@ private:
     }
 
     void begin(const Mode mode, const QUrl& url, QString status) {
-        stop(false, false);
+        if (clearing_browser_data_) {
+            fail({VtbLoginFailureKind::Protocol,
+                  QStringLiteral("Удаление данных банка ещё не завершено. Повторите вход.")});
+            return;
+        }
+        stop(false);
         if (!is_vtb_login_url(url)) {
             fail({VtbLoginFailureKind::Protocol,
                   QStringLiteral("Адрес ВТБ не прошёл проверку безопасности")});
@@ -282,13 +301,13 @@ private:
             return;
         }
         auto batch = std::move(*projection->batch);
-        stop(false, false);
+        stop(false);
         if (completed_) {
             completed_(std::move(batch));
         }
     }
 
-    void stop(const bool invalidateGeneration, const bool clearCookies) {
+    void stop(const bool invalidateGeneration, const bool clearCookies = false) {
         if (invalidateGeneration) {
             ++generation_;
         }
@@ -302,16 +321,14 @@ private:
             auto* view = web_view_.release();
             QTimer::singleShot(0, view, [view, clearCookies] {
                 view->stop();
-                if (clearCookies) {
-                    view->deleteAllCookies();
-                }
+                if (clearCookies) view->deleteAllCookies();
                 view->deleteLater();
             });
         }
     }
 
     void fail(VtbLoginFailure failure) {
-        stop(true, mode_ == Mode::Login);
+        stop(true, !persistentBankBrowserSessions && mode_ == Mode::Login);
         if (failed_) {
             failed_(std::move(failure));
         }
@@ -326,6 +343,7 @@ private:
     Mode mode_{Mode::Login};
     std::uint64_t generation_ = 0;
     qint64 loading_observed_elapsed_ = -1;
+    bool clearing_browser_data_ = false;
     bool active_ = false;
     bool load_succeeded_ = false;
     bool probe_pending_ = false;

@@ -383,7 +383,7 @@ TEST_CASE("T-Bank login UI embeds a coordinator-owned native WebView") {
         "parse_tbank_session_projection")));
     CHECK(coordinator.contains(QByteArrayLiteral("runJavaScript(")));
     CHECK(coordinator.contains(QByteArrayLiteral("LocalStorageEnabled")));
-    CHECK(coordinator.contains(QByteArrayLiteral("deleteAllCookies()")));
+    CHECK(coordinator.contains(QByteArrayLiteral("clearBankBrowserData")));
     CHECK(coordinator.contains(QByteArrayLiteral("view->deleteLater()")));
     CHECK_FALSE(coordinator.contains(QByteArrayLiteral("about:blank")));
     CHECK_FALSE(coordinator.contains(QByteArrayLiteral(

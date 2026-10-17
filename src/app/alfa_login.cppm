@@ -1,5 +1,7 @@
 module;
 
+#include "app/BrowserSession.hpp"
+
 #include <QDateTime>
 #include <QElapsedTimer>
 #include <QObject>
@@ -106,7 +108,7 @@ public:
         connect(&probe_timer_, &QTimer::timeout, this, [this] { probePage(); });
     }
 
-    ~AlfaLoginCoordinator() override { stop(false, false); }
+    ~AlfaLoginCoordinator() override { stop(false); }
 
     [[nodiscard]] bool active() const noexcept { return active_; }
     [[nodiscard]] bool synchronizing() const noexcept {
@@ -121,7 +123,8 @@ public:
         if (!web_view_) {
             web_view_ = std::make_unique<QWebView>();
             auto* settings = web_view_->settings();
-            settings->setAttribute(QWebViewSettings::WebAttribute::LocalStorageEnabled, false);
+            settings->setAttribute(QWebViewSettings::WebAttribute::LocalStorageEnabled,
+                                   persistentBankBrowserSessions);
             settings->setAttribute(QWebViewSettings::WebAttribute::AllowFileAccess, false);
             settings->setAttribute(QWebViewSettings::WebAttribute::LocalContentCanAccessFileUrls,
                                    false);
@@ -187,9 +190,20 @@ public:
         web_view_->reload();
     }
 
-    void cancel() { stop(true, false); }
+    void cancel() { stop(true); }
 
-    void disconnectBank() { stop(true, true); }
+    void disconnectBank() {
+#ifdef Q_OS_MACOS
+        clearing_browser_data_ = true;
+        const QPointer<AlfaLoginCoordinator> guard(this);
+        clearBankBrowserData({QStringLiteral("alfabank.ru")}, [guard] {
+            if (guard) guard->clearing_browser_data_ = false;
+        });
+        stop(true);
+#else
+        stop(true, true);
+#endif
+    }
 
 private:
     enum class Mode { Login, Synchronize };
@@ -198,7 +212,12 @@ private:
     static constexpr qint64 dashboardStateTimeoutMilliseconds = 30 * 1'000;
 
     void begin(const Mode mode, const QUrl& url, QString status) {
-        stop(false, false);
+        if (clearing_browser_data_) {
+            fail({AlfaLoginFailureKind::Protocol,
+                  QStringLiteral("Удаление данных банка ещё не завершено. Повторите вход.")});
+            return;
+        }
+        stop(false);
         if (!is_alfa_login_url(url)) {
             fail({AlfaLoginFailureKind::Protocol,
                   QStringLiteral("Адрес Альфа-Банка не прошёл проверку безопасности")});
@@ -310,13 +329,13 @@ private:
             return;
         }
         auto batch = std::move(*projection->batch);
-        stop(false, false);
+        stop(false);
         if (completed_) {
             completed_(std::move(batch));
         }
     }
 
-    void stop(const bool invalidateGeneration, const bool clearCookies) {
+    void stop(const bool invalidateGeneration, const bool clearCookies = false) {
         if (invalidateGeneration) {
             ++generation_;
         }
@@ -330,16 +349,14 @@ private:
             auto* view = web_view_.release();
             QTimer::singleShot(0, view, [view, clearCookies] {
                 view->stop();
-                if (clearCookies) {
-                    view->deleteAllCookies();
-                }
+                if (clearCookies) view->deleteAllCookies();
                 view->deleteLater();
             });
         }
     }
 
     void fail(AlfaLoginFailure failure) {
-        stop(true, false);
+        stop(true);
         if (failed_) {
             failed_(std::move(failure));
         }
@@ -357,6 +374,7 @@ private:
     bool probe_pending_ = false;
     bool load_succeeded_ = false;
     bool certificate_help_required_ = false;
+    bool clearing_browser_data_ = false;
     bool active_ = false;
 };
 

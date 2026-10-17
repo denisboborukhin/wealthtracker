@@ -215,6 +215,8 @@ When the user corrects your approach, append a one-line rule here before ending 
 
 - Retail T-Bank, Alfa, VTB and T-Invest synchronization must prioritize account
   balances only; never make balance refresh depend on transaction history.
+- Preserve retail browser data across app launches; clear only the selected
+  bank's domains on explicit disconnect, and serialize startup refreshes.
 - Document implemented code and runnable commands only; omit placeholder
   integrations and future features. Update affected guides together and keep
   automated verification distinct from live-bank checks.

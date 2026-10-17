@@ -1,5 +1,7 @@
 module;
 
+#include "app/BrowserSession.hpp"
+
 #include <QByteArray>
 #include <QElapsedTimer>
 #include <QNetworkAccessManager>
@@ -73,7 +75,8 @@ class TBankLoginCoordinator final : public QObject {
         if (!web_view_) {
             web_view_ = std::make_unique<QWebView>();
             auto* settings = web_view_->settings();
-            settings->setAttribute(QWebViewSettings::WebAttribute::LocalStorageEnabled, false);
+            settings->setAttribute(QWebViewSettings::WebAttribute::LocalStorageEnabled,
+                                   persistentBankBrowserSessions);
             settings->setAttribute(QWebViewSettings::WebAttribute::AllowFileAccess, false);
             settings->setAttribute(QWebViewSettings::WebAttribute::LocalContentCanAccessFileUrls,
                                    false);
@@ -97,6 +100,10 @@ class TBankLoginCoordinator final : public QObject {
     }
 
     void start(const QUrl& loginUrl) {
+        if (clearing_browser_data_) {
+            fail(QStringLiteral("Удаление данных банка ещё не завершено. Повторите вход."));
+            return;
+        }
         stop(false, false);
         if (!is_tbank_login_url(loginUrl)) {
             fail(QStringLiteral("Адрес входа Т-Банка не прошёл проверку безопасности"));
@@ -107,7 +114,7 @@ class TBankLoginCoordinator final : public QObject {
         active_ = true;
         reportStatus(QStringLiteral("Введите телефон и код на официальной странице Т-Банка ниже."));
         auto* view = static_cast<QWebView*>(webView());
-        view->deleteAllCookies();
+        if (!persistentBankBrowserSessions) view->deleteAllCookies();
         view->setUrl(loginUrl);
         probe_timer_.start();
         authorization_timer_.start(1'000);
@@ -122,6 +129,18 @@ class TBankLoginCoordinator final : public QObject {
     }
 
     void cancel() { stop(true, true); }
+
+    void disconnectBank() {
+#ifdef Q_OS_MACOS
+        clearing_browser_data_ = true;
+        const QPointer<TBankLoginCoordinator> guard(this);
+        clearBankBrowserData({QStringLiteral("tbank.ru"), QStringLiteral("tinkoff.ru")},
+                             [guard] { if (guard) guard->clearing_browser_data_ = false; });
+        stop(true, true);
+#else
+        cancel();
+#endif
+    }
 
   private:
     static constexpr qint64 authorizationTimeoutMilliseconds = 10 * 60 * 1'000;
@@ -288,7 +307,7 @@ class TBankLoginCoordinator final : public QObject {
         auto* view = web_view_.release();
         QTimer::singleShot(0, view, [view] {
             view->stop();
-            view->deleteAllCookies();
+            if (!persistentBankBrowserSessions) view->deleteAllCookies();
             view->deleteLater();
         });
     }
@@ -334,6 +353,7 @@ class TBankLoginCoordinator final : public QObject {
     QByteArray candidate_session_;
     std::uint64_t generation_ = 0;
     bool probe_pending_ = false;
+    bool clearing_browser_data_ = false;
     bool active_ = false;
 };
 

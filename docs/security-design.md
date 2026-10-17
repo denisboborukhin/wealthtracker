@@ -13,7 +13,11 @@ Qt, browser, and OS copies are outside that clearing operation.
 
 Alfa and VTB sessions stay inside system WebViews. The app projects financial
 fields without extracting their cookies, authorization headers, or browser
-storage. Disconnect requests cookie deletion and deferred native-view cleanup.
+storage. On macOS, browser data persists across launches. Disconnect removes
+website data records for only the selected bank's domains and defers native-view
+cleanup.
+Reconnection is blocked until that asynchronous deletion completes. On macOS,
+T-Bank retains its browser data during login, completion, and cancellation.
 
 QML receives validated financial models and status text. Tokens and plugin
 answers typed in the interface remain in their controls until submission, when
@@ -54,8 +58,10 @@ Sources: [host policy](../src/connectors/network_policy.cpp),
 
 ## Browser adapters
 
-Bank WebViews disable local storage and local-file access. Native destruction
-is deferred out of loading and JavaScript callbacks.
+On macOS, bank WebViews enable persistent browser storage. Local-file access
+remains disabled on all platforms.
+Bank-controlled cookies and browser storage remain managed by WebKit on macOS.
+Native destruction is deferred out of loading and JavaScript callbacks.
 
 T-Bank top-level navigation permits exact HTTPS `www.tbank.ru`, `id.tbank.ru`,
 and `id.tinkoff.ru` origins. A fixed resource-timing expression returns at most

@@ -456,6 +456,7 @@ public:
     QTimer vtb_auto_update_timer;
     QDateTime next_vtb_auto_update_at;
     bool vtb_sync_running = false;
+    QStringList pending_retail_restores;
 };
 
 AppController::AppController(QObject* parent)
@@ -729,14 +730,33 @@ AppController::AppController(std::unique_ptr<CredentialBackend> credentials,
     refreshBankConnections();
     import_status_ = QStringLiteral("Нет импортированных выписок");
     sync_status_ = QStringLiteral("Нет синхронизированных подключений");
-    if (tbank_connected_) {
-        QTimer::singleShot(0, this, [this] { (void)synchronizeTBank(); });
+    if (tbank_connected_) private_->pending_retail_restores.push_back(QStringLiteral("tbank"));
+    if (alfa_connected_) private_->pending_retail_restores.push_back(QStringLiteral("alfa"));
+    if (vtb_connected_) private_->pending_retail_restores.push_back(QStringLiteral("vtb"));
+    const auto resumeRestoration = [this] {
+        if (!private_->pending_retail_restores.isEmpty()) {
+            QTimer::singleShot(0, this, &AppController::restoreNextRetailConnection);
+        }
+    };
+    connect(this, &AppController::tbankConnectionChanged, this, resumeRestoration);
+    connect(this, &AppController::alfaConnectionChanged, this, resumeRestoration);
+    connect(this, &AppController::vtbConnectionChanged, this, resumeRestoration);
+    connect(this, &AppController::zenPluginChanged, this, resumeRestoration);
+    connect(this, &AppController::lockedChanged, this, resumeRestoration);
+    resumeRestoration();
+}
+
+void AppController::restoreNextRetailConnection() {
+    if (locked_ || zen_plugin_running_ || tbank_login_active_ || alfa_login_active_ ||
+        vtb_login_active_ || private_->tbank_sync_running || private_->alfa_sync_running ||
+        private_->vtb_sync_running) {
+        return;
     }
-    if (alfa_connected_) {
-        QTimer::singleShot(0, this, [this] { (void)synchronizeAlfa(); });
-    }
-    if (vtb_connected_) {
-        QTimer::singleShot(0, this, [this] { (void)synchronizeVtb(); });
+    while (!private_->pending_retail_restores.isEmpty()) {
+        const auto bank = private_->pending_retail_restores.takeFirst();
+        if (bank == QStringLiteral("tbank") && tbank_connected_ && synchronizeTBank()) return;
+        if (bank == QStringLiteral("alfa") && alfa_connected_ && synchronizeAlfa()) return;
+        if (bank == QStringLiteral("vtb") && vtb_connected_ && synchronizeVtb()) return;
     }
 }
 
@@ -2628,7 +2648,7 @@ void AppController::disconnectTBank() {
     private_->tbank_session_pending_validation = false;
     tbank_connected_ = false;
     tbank_login_active_ = false;
-    private_->tbank_login->cancel();
+    private_->tbank_login->disconnectBank();
     private_->tbank_auto_update_timer.stop();
     private_->next_tbank_auto_update_at = {};
     if (private_->credentials) {
@@ -2874,7 +2894,8 @@ void AppController::describeBankConnection(const QString& connectorId) {
             "обрабатывает страница банка. Приложение получает только идентификатор "
             "сессии из адреса запроса к точному API www.tbank.ru и сохраняет "
             "его в системном хранилище только после подтверждения доступа "
-            "CLIENT. Cookies удаляются после входа или отмены. Встроенный "
+            "CLIENT. Браузерная сессия сохраняется между запусками и "
+            "удаляется при отключении банка. Встроенный "
             "C++-коннектор запрашивает только счета и остатки.");
     } else if (connectorId == QStringLiteral("alfa-retail")) {
         connection_message_ = QStringLiteral(

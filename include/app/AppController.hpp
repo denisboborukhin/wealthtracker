@@ -279,6 +279,7 @@ private:
     void scheduleAlfaAutoUpdateAfter(const QDateTime& from);
     void refreshVtbAutoUpdateSchedule();
     void scheduleVtbAutoUpdateAfter(const QDateTime& from);
+    void restoreNextRetailConnection();
     void rebuildBankModels();
 };
 

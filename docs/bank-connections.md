@@ -18,8 +18,8 @@ counts and balances against the bank's own application.
 
 Financial snapshots remain in memory until exit. Failed refreshes preserve the
 previous snapshot. Removing a connection cancels active work and removes its
-in-memory rows and saved credential. Browser-session deletion is requested on
-disconnect. Retail auto-update runs every six hours while the app is running.
+in-memory rows and saved credential. On macOS, disconnect deletes browser data for that bank
+without deleting other banks' data. Retail auto-update runs every six hours while the app is running.
 
 ## Retail T-Bank
 
@@ -55,8 +55,9 @@ summary supplements balances; non-authentication failures of that supplement
 retain a valid portfolio response. Authentication errors stop the refresh.
 
 Refresh reuses the page client without reloading, and is capped at 45 seconds.
-After restarting the app, login may be required even if a connected flag was
-saved.
+On macOS, browser data is retained across app launches. Restored connections
+refresh one at a time on startup. A saved connected flag alone does not establish
+a valid bank session; the bank may still require login after expiry.
 
 ## Token-based connections
 

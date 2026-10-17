@@ -157,6 +157,11 @@ target_sources(
         src/app/AppController.cpp
         src/app/FinanceModels.cpp
 )
+if(APPLE)
+    enable_language(OBJCXX)
+    target_sources(app PRIVATE src/app/BrowserSession.mm)
+    target_link_libraries(app PRIVATE "-framework WebKit")
+endif()
 target_include_directories(app PUBLIC include)
 qt_add_resources(
     app
@@ -269,6 +274,7 @@ if(BUILD_TESTING)
     if(APPLE)
         add_executable(webview_tests
             tests/app/webview_test_main.cpp
+            tests/app/browser_session_probe.cpp
             tests/app/webview_lifecycle_test.cpp
         )
         target_link_libraries(webview_tests PRIVATE app Catch2::Catch2)

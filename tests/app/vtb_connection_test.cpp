@@ -100,9 +100,9 @@ TEST_CASE("VTB is an available embedded retail connection") {
         WEALTHTRACKER_SOURCE_DIR "/src/app/vtb_login.cppm"));
     REQUIRE(coordinator.open(QIODevice::ReadOnly));
     const auto coordinatorSource = coordinator.readAll();
-    CHECK(coordinatorSource.contains(QByteArrayLiteral("LocalStorageEnabled, false")));
+    CHECK(coordinatorSource.contains(QByteArrayLiteral("persistentBankBrowserSessions")));
     CHECK(coordinatorSource.contains(QByteArrayLiteral("AllowFileAccess, false")));
-    CHECK(coordinatorSource.contains(QByteArrayLiteral("deleteAllCookies()")));
+    CHECK(coordinatorSource.contains(QByteArrayLiteral("clearBankBrowserData")));
     CHECK(coordinatorSource.contains(QByteArrayLiteral("QTimer::singleShot(0, view")));
     CHECK(coordinatorSource.contains(QByteArrayLiteral("view->deleteLater()")));
     CHECK_FALSE(coordinatorSource.contains(QByteArrayLiteral("about:blank")));

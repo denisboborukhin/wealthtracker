@@ -5,7 +5,9 @@ operations, cash-flow reports, and investment holdings locally.
 
 The app starts empty. Demonstration data can be enabled in Settings.
 Synchronized financial data lives in memory and is lost when the app exits.
-Connection settings and credentials are stored separately.
+Connection settings and credentials are stored separately. On macOS, retail browser data
+is retained across launches; a bank can still require reauthentication when its
+session expires.
 
 ## Current functionality
 

@@ -39,8 +39,10 @@ work and clears that connection's old data.
 Alfa and VTB have separate browser adapters because their page contracts differ.
 Both parse their projection once and use the same
 [account validator](../src/connectors/retail_accounts.cpp). Their browser
-sessions stay inside the WebViews. Native view cleanup is deferred out of
-loading and JavaScript callbacks.
+sessions use persistent browser storage on macOS. T-Bank preserves its browser data
+as well as the separately stored API session. Startup restores retail
+connections sequentially so busy checks do not discard another bank's refresh.
+Native view cleanup is deferred out of loading and JavaScript callbacks.
 
 Sources: [bank coordinator](../src/app/bank_sync.cppm),
 [investment coordinator](../src/app/investment_sync.cppm),
