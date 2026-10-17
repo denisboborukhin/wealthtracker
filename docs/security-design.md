@@ -77,8 +77,11 @@ blocking; help opens the fixed bank certificate URL without modifying trust.
 
 VTB validates exact `https://online.vtb.ru` and uses the page's exported
 `./HttpClient` for the two routes in [Bank connections](bank-connections.md#retail-vtb).
-Responses are bounded to 8 MiB page-locally. Authentication errors block even
-when the balance supplement is optional. Compatibility status uses fixed codes.
+Responses are bounded to 8 MiB page-locally. A new browser client has a ten-second
+startup restoration window after its first HTTP 401; persistent rejection then
+requires login. HTTP 403 rejects the complete refresh, including denial from the
+optional balance supplement, without labelling the session expired. No financial
+batch is published during restoration. Compatibility status uses fixed codes.
 
 Sources: [T-Bank login](../src/app/tbank_login.cppm),
 [Alfa adapter](../src/app/alfa_browser.cppm),

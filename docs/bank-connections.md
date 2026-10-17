@@ -51,8 +51,12 @@ the system WebView. The authenticated page client reads only these routes:
 - `/msa/api-gw/private/portfolio/portfolio-balances/financial/summary`
 
 The portfolio's loading response is retried at most twice. The financial
-summary supplements balances; non-authentication failures of that supplement
-retain a valid portfolio response. Authentication errors stop the refresh.
+summary supplements balances; failures other than HTTP 401 or 403 from that
+supplement retain a valid portfolio response. A startup HTTP 401 gives the page
+client up to ten seconds to restore its session; persistent rejection then
+requires login. Once a session has supplied
+a valid snapshot, HTTP 401 requires login immediately. HTTP 403 stops the
+refresh as access denial and preserves the saved connection.
 
 Refresh reuses the page client without reloading, and is capped at 45 seconds.
 On macOS, browser data is retained across app launches. Restored connections

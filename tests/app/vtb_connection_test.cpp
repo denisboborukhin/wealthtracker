@@ -206,6 +206,29 @@ TEST_CASE("VTB balances use the authenticated client without history or navigati
     CHECK(result->batch->balances.front().balance.minorUnits == 15075);
     CHECK(engine.evaluate(QStringLiteral("requests.length")).toInt() == 5);
 
+    // Access denial must fail closed without claiming the saved session expired.
+    engine.evaluate(QStringLiteral("delete globalThis.__wealthtrackerVtbSync; status = 403"));
+    run();
+    CHECK(engine.evaluate(QStringLiteral("__wealthtrackerVtbSync.status")).toString() ==
+          QStringLiteral("failed"));
+    result = wealthtracker::app::parse_vtb_financial_projection(
+        engine.evaluate(wealthtracker::app::vtb_financial_projection_script()).toString(),
+        QDateTime::currentDateTimeUtc());
+    REQUIRE(result);
+    CHECK_FALSE(result->batch);
+    CHECK(result->stage == wealthtracker::app::VtbProjectionStage::FrontendChanged);
+    CHECK(result->diagnostic == QStringLiteral("VTB-DENIED"));
+
+    engine.evaluate(QStringLiteral(
+        "delete globalThis.__wealthtrackerVtbSync; status = 200; supplementStatus = 403"));
+    run();
+    result = wealthtracker::app::parse_vtb_financial_projection(
+        engine.evaluate(wealthtracker::app::vtb_financial_projection_script()).toString(),
+        QDateTime::currentDateTimeUtc());
+    REQUIRE(result);
+    CHECK_FALSE(result->batch);
+    CHECK(result->diagnostic == QStringLiteral("VTB-DENIED"));
+
     engine.evaluate(QStringLiteral("delete globalThis.__wealthtrackerVtbSync; status = 401"));
     run();
     CHECK(engine.evaluate(QStringLiteral("__wealthtrackerVtbSync.status")).toString() ==

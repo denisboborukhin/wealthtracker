@@ -66,6 +66,7 @@ public:
     [[nodiscard]] QWindow* webView() {
         if (!web_view_) {
             web_view_ = std::make_unique<QWebView>();
+            session_ready_ = false;
             auto* settings = web_view_->settings();
             settings->setAttribute(QWebViewSettings::WebAttribute::LocalStorageEnabled,
                                    persistentBankBrowserSessions);
@@ -143,6 +144,7 @@ private:
     static constexpr qint64 loginTimeoutMilliseconds = 10 * 60 * 1'000;
     static constexpr qint64 synchronizationTimeoutMilliseconds = 45 * 1'000;
     static constexpr qint64 loadingStateTimeoutMilliseconds = 30 * 1'000;
+    static constexpr qint64 sessionRestorationTimeoutMilliseconds = 10 * 1'000;
 
     [[nodiscard]] static QString compatibilityMessage(QString message,
                                                       const QString& diagnostic) {
@@ -172,6 +174,7 @@ private:
         elapsed_.start();
         reportStatus(std::move(status));
         auto* view = static_cast<QWebView*>(webView());
+        restoring_session_ = mode == Mode::Synchronize && !session_ready_;
         if (mode == Mode::Synchronize && is_vtb_login_url(view->url())) {
             const auto generation = generation_;
             const QPointer<VtbLoginCoordinator> guard(this);
@@ -265,6 +268,17 @@ private:
         }
         if (projection->stage == VtbProjectionStage::Authentication) {
             if (mode_ == Mode::Synchronize) {
+                if (restoring_session_) {
+                    if (authentication_observed_elapsed_ < 0) {
+                        authentication_observed_elapsed_ = elapsed_.elapsed();
+                        reportStatus(QStringLiteral("ВТБ: восстанавливаем сохранённую сессию…"));
+                        return;
+                    }
+                    if (elapsed_.elapsed() - authentication_observed_elapsed_ <
+                        sessionRestorationTimeoutMilliseconds) {
+                        return;
+                    }
+                }
                 fail({VtbLoginFailureKind::AuthenticationRequired,
                       QStringLiteral("Сессия ВТБ истекла. Войдите снова.")});
             }
@@ -287,6 +301,12 @@ private:
             return;
         }
         if (projection->stage == VtbProjectionStage::FrontendChanged) {
+            if (projection->diagnostic == QStringLiteral("VTB-DENIED")) {
+                fail({VtbLoginFailureKind::Protocol,
+                      QStringLiteral("ВТБ отклонил запрос данных (HTTP 403). "
+                                     "Проверьте доступ в ВТБ Онлайн.")});
+                return;
+            }
             fail({VtbLoginFailureKind::Protocol,
                   compatibilityMessage(
                       QStringLiteral(
@@ -301,6 +321,7 @@ private:
             return;
         }
         auto batch = std::move(*projection->batch);
+        session_ready_ = true;
         stop(false);
         if (completed_) {
             completed_(std::move(batch));
@@ -316,6 +337,8 @@ private:
         active_ = false;
         load_succeeded_ = false;
         loading_observed_elapsed_ = -1;
+        authentication_observed_elapsed_ = -1;
+        restoring_session_ = false;
         elapsed_.invalidate();
         if (web_view_ && (invalidateGeneration || clearCookies)) {
             auto* view = web_view_.release();
@@ -343,6 +366,9 @@ private:
     Mode mode_{Mode::Login};
     std::uint64_t generation_ = 0;
     qint64 loading_observed_elapsed_ = -1;
+    qint64 authentication_observed_elapsed_ = -1;
+    bool session_ready_ = false;
+    bool restoring_session_ = false;
     bool clearing_browser_data_ = false;
     bool active_ = false;
     bool load_succeeded_ = false;

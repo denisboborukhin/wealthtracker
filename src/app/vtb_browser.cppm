@@ -116,7 +116,7 @@ struct VtbFinancialProjection {
         delete state.portfolio
         delete state.balances
         const status = httpStatus(error)
-        if (status === 401 || status === 403) {
+        if (status === 401) {
           state.status = 'authentication'
           state.retryAt = Date.now() + 1000
         } else if (error?.kind === 'not-ready') {
@@ -127,7 +127,8 @@ struct VtbFinancialProjection {
           const stageCode = state.requestStage === 'module' ? 'VTB-M1' :
             state.requestStage === 'portfolio' ? 'VTB-P3' :
             'VTB-R1'
-          state.reason = error?.kind === 'frontend' ? error.code : stageCode
+          state.reason = status === 403 ? 'VTB-DENIED' :
+            error?.kind === 'frontend' ? error.code : stageCode
         }
       })
     return state.status
@@ -154,7 +155,7 @@ struct VtbFinancialProjection {
     if (state.status !== 'ready') {
       result.stage = 'frontend-changed'
       result.diagnostic = ['VTB-M1', 'VTB-P1', 'VTB-P2', 'VTB-P3',
-                           'VTB-R1']
+                           'VTB-R1', 'VTB-DENIED']
         .includes(state.reason) ? state.reason : 'VTB-X1'
       return JSON.stringify(result)
     }
@@ -316,7 +317,8 @@ parse_vtb_financial_projection(const QString& projection, const QDateTime& obser
         QStringLiteral("VTB-M1"), QStringLiteral("VTB-P1"),
         QStringLiteral("VTB-P2"), QStringLiteral("VTB-P3"),
         QStringLiteral("VTB-R1"),
-        QStringLiteral("VTB-A1"), QStringLiteral("VTB-X1")};
+        QStringLiteral("VTB-A1"), QStringLiteral("VTB-X1"),
+        QStringLiteral("VTB-DENIED")};
     if (!diagnostic.isEmpty() && !supportedDiagnostics.contains(diagnostic)) {
         return std::unexpected(
             QStringLiteral("Код совместимости встроенной страницы ВТБ неизвестен"));

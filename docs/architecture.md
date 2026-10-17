@@ -42,7 +42,9 @@ Both parse their projection once and use the same
 sessions use persistent browser storage on macOS. T-Bank preserves its browser data
 as well as the separately stored API session. Startup restores retail
 connections sequentially so busy checks do not discard another bank's refresh.
-Native view cleanup is deferred out of loading and JavaScript callbacks.
+VTB gives a new page client a bounded startup authentication-restoration window
+before requiring login. Native view cleanup is deferred out of loading and
+JavaScript callbacks.
 
 Sources: [bank coordinator](../src/app/bank_sync.cppm),
 [investment coordinator](../src/app/investment_sync.cppm),
