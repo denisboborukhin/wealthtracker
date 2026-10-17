@@ -23,6 +23,11 @@ downloads archives from the configured mirror but still obtains their SHA-256
 sidecars from `download.qt.io`. If that host is blocked, use a network or VPN
 that can reach it, or set `HTTPS_PROXY`; do not disable checksum validation.
 
+Bootstrap must exit successfully before continuing. Installing Conan and CMake
+alone does not install Qt. If configuration reports a missing Qt SDK, rerun
+`./scripts/bootstrap.sh` and resolve its download error first; the expected
+configuration file is `build/qt/6.11.1/macos/lib/cmake/Qt6/Qt6Config.cmake`.
+
 Keep that environment active during Conan installation. Dependency recipes
 invoke CMake and Ninja by name. C++23 module builds also require the selected
 compiler's dependency scanner; `scripts/configure.sh` validates it.

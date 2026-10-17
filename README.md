@@ -34,15 +34,18 @@ file and network permissions; review their source before running them.
 On macOS arm64, install Xcode or LLVM, then run from the repository root:
 
 ```sh
-./scripts/bootstrap.sh
-. build/tooling/bin/activate
+./scripts/bootstrap.sh &&
+. build/tooling/bin/activate &&
 conan install . --profile:host=conan/profiles/macos-arm64 \
   --profile:build=conan/profiles/macos-arm64 \
-  --build=missing -s:h build_type=Debug -of build/macos-debug
-./scripts/configure.sh macos-debug
-cmake --build --preset macos-debug
+  --build=missing -s:h build_type=Debug -of build/macos-debug &&
+./scripts/configure.sh macos-debug &&
+cmake --build --preset macos-debug &&
 open build/macos-debug/WealthTracker.app
 ```
+
+The sequence stops if a step fails. Bootstrap must finish installing both the
+build tools and Qt before configuration can succeed.
 
 See [Building](docs/building.md) for Windows instructions, tests, and installable
 packages. Node.js 18 or newer is needed only for external plugins and the host's

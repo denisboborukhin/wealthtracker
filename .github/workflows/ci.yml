@@ -118,3 +118,4 @@ jobs:
           sh -n scripts/bootstrap.sh scripts/configure.sh
           node --check scripts/zen_plugin_host.mjs
           python -c "compile(open('scripts/check_qt_checksum.py', encoding='utf-8').read(), 'scripts/check_qt_checksum.py', 'exec')"
+          python -m unittest discover -s tests/scripts -v

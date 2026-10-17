@@ -218,6 +218,8 @@ When the user corrects your approach, append a one-line rule here before ending 
 - Document implemented code and runnable commands only; omit placeholder
   integrations and future features. Update affected guides together and keep
   automated verification distinct from live-bank checks.
+- Chain quickstart steps so a failed bootstrap stops the sequence; verify the
+  SDK exists before invoking CMake.
 
 ---
 

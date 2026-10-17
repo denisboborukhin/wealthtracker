@@ -17,6 +17,14 @@ if [ "$(uname -s)" != "Darwin" ]; then
   exec cmake --preset "${preset}"
 fi
 
+qt_dir="${project_dir}/build/qt/6.11.1/macos"
+if [ ! -f "${qt_dir}/lib/cmake/Qt6/Qt6Config.cmake" ] ||
+  [ ! -f "${qt_dir}/lib/cmake/Qt6WebView/Qt6WebViewConfig.cmake" ]; then
+  echo "Qt 6.11.1 with WebView is missing or incomplete under ${qt_dir}." >&2
+  echo "Run ./scripts/bootstrap.sh and resolve any download errors before configuring." >&2
+  exit 1
+fi
+
 compiler=
 scanner=
 
