@@ -219,7 +219,8 @@ When the user corrects your approach, append a one-line rule here before ending 
   integrations and future features. Update affected guides together and keep
   automated verification distinct from live-bank checks.
 - Chain quickstart steps so a failed bootstrap stops the sequence; verify the
-  SDK exists before invoking CMake.
+  SDK exists before invoking CMake. Use pinned archive hashes for macOS Qt
+  downloads; do not require an online checksum service or disable verification.
 
 ---
 

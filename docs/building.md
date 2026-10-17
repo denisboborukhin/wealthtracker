@@ -19,9 +19,11 @@ official Qt SDK under the ignored `build/` directory:
 ```
 
 Bootstrap reuses an existing complete Qt 6.11.1 SDK. A fresh installation
-downloads archives from the configured mirror but still obtains their SHA-256
-sidecars from `download.qt.io`. If that host is blocked, use a network or VPN
-that can reach it, or set `HTTPS_PROXY`; do not disable checksum validation.
+downloads archives over HTTPS and checks them against the SHA-256 digests in
+`scripts/qt-macos-sha256.json` before extraction. These digests were cross-checked
+against matching archives from FAU and NetCologne. No connection to
+`download.qt.io` is needed. Downloads are cached under `build/qt-downloads`;
+cached files are hash-checked before reuse.
 
 Bootstrap must exit successfully before continuing. Installing Conan and CMake
 alone does not install Qt. If configuration reports a missing Qt SDK, rerun

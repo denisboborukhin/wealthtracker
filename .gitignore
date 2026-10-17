@@ -18,6 +18,7 @@ CMakeUserPresets.json
 *.user
 *.user.*
 *.swp
+__pycache__/
 .DS_Store
 
 # Compilation databases and generated files
