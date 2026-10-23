@@ -79,6 +79,7 @@ Certificate and hostname verification remain enabled. WebViews use platform TLS.
 | Bank synchronization | 20 MiB per response, 256 accounts, four concurrent requests, 250 pages per account, 1,000 pages and 250,000 transactions per run |
 | T-Invest | Serial requests, 20 MiB per response, 256 accounts, 20,000 positions, one minute per run |
 | Alfa/VTB financial projection | 8 MiB UTF-8 JSON, 256 accounts, validated integer minor-unit balances |
+| EVM wallet | Serial requests, 4 MiB per response, 128 chains, 5,000 tokens per chain, 20,000 total tokens, five minutes per wallet |
 
 HTTP authentication, throttling, server, and transport failures are classified
 separately. Failed synchronization stops outstanding work and preserves the
@@ -90,6 +91,26 @@ Sources: [host policy](../src/connectors/network_policy.cpp),
 [investment coordinator](../src/app/investment_sync.cppm),
 [account validator](../src/connectors/retail_accounts.cpp),
 [startup](../src/app/main.cpp).
+
+## Public Ethereum wallets
+
+Wallet tracking reads public EVM addresses through exact HTTPS `api.rabby.io`,
+using fixed `/v1/chain/list`, `/v1/user/used_chain_list`, `/v1/user/token`, and
+`/v1/user/token_list` routes. Rabby receives the address and network request;
+local encryption does not hide the query from the provider. Requests use manual
+redirects, the shared TLS policy and 30-second transfer timeout, a five-minute
+wallet deadline, sequential requests spaced by 1.1 seconds, and bounded catalog,
+response, and token counts. No provider key, cookie, or request signature is sent.
+
+Chain and token identities must match the discovered catalog and requested
+network. Token metadata renders as bounded plain text. Exact raw hexadecimal
+amounts and decimal quote lexemes avoid floating-point valuation. Missing prices
+and suspicious assets are visibly excluded from the subtotal. A missing USDT
+quote or failed chain rejects the refresh; previously saved values remain.
+The app does not request wallet private keys/seed phrases or submit transactions.
+
+Source: [EVM wallet coordinator and parser](../src/app/crypto_wallet.cppm).
+Provider route contract: [Rabby portfolio helper](https://github.com/RabbyHub/Rabby/blob/master/src/ui/utils/portfolio/tokenUtils.ts).
 
 ## Browser adapters
 

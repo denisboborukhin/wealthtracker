@@ -11,7 +11,7 @@ platform ABI, and third-party C API boundaries.
 | `src/storage` | SQLCipher connections, migrations, and repositories |
 | `src/platform` | Secure buffers, key wrapping, and OS credential storage |
 | `src/connectors` | Statement parsers, bank clients, network policy, normalization, and deduplication |
-| `src/app` | Controller, synchronization, history projection, reporting, transfer matching, WebViews, plugin runner, and Qt models |
+| `src/app` | Controller, synchronization, Ethereum wallet valuation, history projection, reporting, transfer matching, WebViews, plugin runner, and Qt models |
 | `include/app` | Qt `moc` boundary headers |
 | `ui/qml` | Pages and reusable UI components |
 | `tests` | Catch2 tests and synthetic fixtures |
@@ -37,6 +37,7 @@ recorded history remains available.
 | T-Invest | `InvestmentSyncCoordinator` lists accounts and reads one RUB-valued portfolio per account |
 | Alfa B2C, T-Bank Business, Modulbank | `BankSyncCoordinator` reads accounts and bounded operation pages or statements |
 | External bundle | `ZenPluginRunner` validates process output and publishes a normalized batch |
+| EVM wallet | `CryptoWalletSync` discovers Rabby-indexed networks and reads their native coins/tokens and a USDT/USD quote; the controller saves the valued subtotal to history |
 
 Alfa and VTB have separate browser adapters because their page contracts differ.
 Both parse their projection once and use the same
@@ -55,6 +56,21 @@ JavaScript callbacks.
 Sources: [bank coordinator](../src/app/bank_sync.cppm),
 [investment coordinator](../src/app/investment_sync.cppm),
 [plugin runner](../src/app/zen_plugin_runner.cppm).
+
+Public EVM wallets have a separate serial refresh queue and a six-hour timer.
+Saved wallets refresh at startup, on manual refresh, and after adding an address.
+No provider registration or API key is required. Demo mode and the privacy screen
+block refreshes. [CryptoWalletSync](../src/app/crypto_wallet.cppm) reads Rabby's
+chain catalog and used-chain list, then explicitly fetches every used chain's
+native and ERC-20 holdings. Whole-array token responses are bounded; any failed
+chain rejects the combined refresh and preserves the previous snapshot.
+
+Raw hexadecimal token amounts use exact integers. Numeric quote lexemes are
+preserved as decimal strings; quantity/quote products accumulate as scaled
+integers before conversion through the actual USDT/USD quote. Only final displayed
+amounts are rounded to hundredths. Unpriced and suspicious assets remain visible
+and are excluded from the valuation. See [Crypto wallets](crypto-wallets.md) for
+provider coverage and availability limits.
 
 ## Reporting and local state
 
@@ -121,6 +137,12 @@ period while retaining its original observation timestamp; otherwise it identifi
 the first available observation. Horizontal coordinates follow actual timestamps.
 Changes also reflect the selected account set, deposits, withdrawals, and price
 movements, so they are not investment returns.
+
+Crypto history stores each wallet's valued subtotal as a USDT balance under
+`ethereum:<address>` (the retained identifier preserves earlier Ethereum captures
+when tracking expands to EVM networks). The last saved subtotal can be shown after restart; token
+quantities and price-availability details require a fresh request. History does
+not restore transaction or holding models after restart.
 
 The statement-checking command selects a parser and reports sample operation
 and warning counts. It does not publish the parsed records to the models.

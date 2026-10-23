@@ -31,6 +31,7 @@ qt_add_qml_module(
         pages/TransactionsPage.qml
         pages/ImportsPage.qml
         pages/InvestmentsPage.qml
+        pages/CryptoPage.qml
         pages/CategoriesPage.qml
         pages/ConnectionsPage.qml
         pages/SettingsPage.qml

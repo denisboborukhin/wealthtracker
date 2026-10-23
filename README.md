@@ -1,7 +1,7 @@
 # WealthTracker
 
 A C++23 and Qt Quick desktop application for viewing bank accounts, balances,
-operations, cash-flow reports, investment holdings locally.
+operations, cash-flow reports, investment holdings, and public Ethereum wallets locally.
 
 The app starts empty on first launch. Demonstration data can be enabled in Settings.
 Balance observations from successful connections and refreshes are saved in an
@@ -17,6 +17,8 @@ session expires.
 - Alfa-Bank B2C API, T-Bank Business, and Modulbank: token-based account and
   transaction synchronization.
 - T-Invest: token-based account, portfolio balance, and position synchronization.
+- EVM wallets: native coins and tokens across Rabby-indexed networks, valued
+  in USDT. Public-address tracking requires no registration or API key.
 - External ZenPlugins bundles: local execution through an optional Node.js host.
 - Cash-flow reports: date-filtered income, spending, savings, and categories,
   with own-account transfers excluded from totals.
@@ -43,6 +45,12 @@ shows combined history. A period can carry forward the last observation before
 its start, with its original timestamp. Changing the selected connections can
 change the total. Recording starts with successful refreshes in this version;
 earlier balances are not reconstructed.
+
+**Криптокошельки** watches public addresses without wallet keys or seed phrases.
+Refresh runs at startup, every six hours while the app is running, or manually.
+Assets without a usable price remain visible and are excluded from the USDT
+subtotal. See [Crypto wallets](docs/crypto-wallets.md) for setup, valuation,
+coverage, and verification limits.
 
 macOS credentials consolidate into one Keychain item and are read once per
 launch. The first migration may still request access to the old entries; macOS
@@ -80,6 +88,7 @@ syntax check.
 | Document | Contents |
 | --- | --- |
 | [Bank connections](docs/bank-connections.md) | Available integrations and setup |
+| [Crypto wallets](docs/crypto-wallets.md) | Keyless EVM tracking, coverage, valuation, and history |
 | [Architecture](docs/architecture.md) | Code ownership and runtime data flow |
 | [Security design](docs/security-design.md) | Credential handling, network controls, and privacy |
 | [Building](docs/building.md) | Build, verification, and packaging commands |

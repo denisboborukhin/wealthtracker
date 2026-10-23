@@ -42,6 +42,9 @@ class AppController final : public QObject {
     Q_PROPERTY(QAbstractItemModel* categories READ categories CONSTANT)
     Q_PROPERTY(QAbstractItemModel* holdings READ holdings CONSTANT)
     Q_PROPERTY(QAbstractItemModel* bankConnections READ bankConnections CONSTANT)
+    Q_PROPERTY(QVariantList cryptoWallets READ cryptoWallets NOTIFY cryptoWalletsChanged)
+    Q_PROPERTY(QString cryptoStatus READ cryptoStatus NOTIFY cryptoWalletsChanged)
+    Q_PROPERTY(bool cryptoSyncRunning READ cryptoSyncRunning NOTIFY cryptoWalletsChanged)
     Q_PROPERTY(QVariantList balanceHistoryAccounts READ balanceHistoryAccounts NOTIFY balanceHistoryChanged)
     Q_PROPERTY(QVariantList balanceHistoryConnections READ balanceHistoryConnections NOTIFY balanceHistoryChanged)
     Q_PROPERTY(QStringList balanceHistoryCurrencies READ balanceHistoryCurrencies NOTIFY balanceHistoryChanged)
@@ -115,6 +118,13 @@ public:
                   std::unique_ptr<QNetworkAccessManager> network, QObject* parent,
                   const QString& historyPath);
     ~AppController() override;
+
+    [[nodiscard]] QVariantList cryptoWallets() const;
+    [[nodiscard]] QString cryptoStatus() const;
+    [[nodiscard]] bool cryptoSyncRunning() const;
+    Q_INVOKABLE bool addCryptoWallet(const QString& name, const QString& address);
+    Q_INVOKABLE bool removeCryptoWallet(const QString& address);
+    Q_INVOKABLE bool refreshCryptoWallets();
 
     [[nodiscard]] QVariantList balanceHistoryAccounts() const;
     [[nodiscard]] QVariantList balanceHistoryConnections() const;
@@ -235,6 +245,7 @@ public:
     Q_INVOKABLE void disconnectVtb();
 
 signals:
+    void cryptoWalletsChanged();
     void balanceHistoryChanged();
     void dashboardChanged();
     void reportingPeriodChanged();
@@ -250,6 +261,8 @@ signals:
     void vtbConnectionChanged();
 
 private:
+    void startNextCryptoWallet();
+    void stopCryptoRefresh();
     void initializeBalanceHistory(const QString& path);
     void recordBalanceHistory(const QString& connectorId);
 
