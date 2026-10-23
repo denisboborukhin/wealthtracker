@@ -7,6 +7,7 @@
 #include <QObject>
 #include <QSet>
 #include <QString>
+#include <QStringList>
 #include <QUrl>
 #include <QVariantList>
 #include <QVariantMap>
@@ -41,6 +42,10 @@ class AppController final : public QObject {
     Q_PROPERTY(QAbstractItemModel* categories READ categories CONSTANT)
     Q_PROPERTY(QAbstractItemModel* holdings READ holdings CONSTANT)
     Q_PROPERTY(QAbstractItemModel* bankConnections READ bankConnections CONSTANT)
+    Q_PROPERTY(QVariantList balanceHistoryAccounts READ balanceHistoryAccounts NOTIFY balanceHistoryChanged)
+    Q_PROPERTY(QVariantList balanceHistoryConnections READ balanceHistoryConnections NOTIFY balanceHistoryChanged)
+    Q_PROPERTY(QStringList balanceHistoryCurrencies READ balanceHistoryCurrencies NOTIFY balanceHistoryChanged)
+    Q_PROPERTY(QString balanceHistoryError READ balanceHistoryError NOTIFY balanceHistoryChanged)
     Q_PROPERTY(QVariantList netWorthSeries READ netWorthSeries NOTIFY dashboardChanged)
     Q_PROPERTY(QString netWorth READ netWorth NOTIFY dashboardChanged)
     Q_PROPERTY(QString reportIncome READ reportIncome NOTIFY dashboardChanged)
@@ -106,7 +111,22 @@ public:
                            QObject* parent);
     AppController(std::unique_ptr<CredentialBackend> credentials,
                   std::unique_ptr<QNetworkAccessManager> network, QObject* parent);
+    AppController(std::unique_ptr<CredentialBackend> credentials,
+                  std::unique_ptr<QNetworkAccessManager> network, QObject* parent,
+                  const QString& historyPath);
     ~AppController() override;
+
+    [[nodiscard]] QVariantList balanceHistoryAccounts() const;
+    [[nodiscard]] QVariantList balanceHistoryConnections() const;
+    [[nodiscard]] QStringList balanceHistoryCurrencies() const;
+    [[nodiscard]] QString balanceHistoryError() const;
+    Q_INVOKABLE QVariantMap balanceHistoryChart(const QString& accountId,
+                                               const QString& currency) const;
+    Q_INVOKABLE QVariantMap filteredBalanceHistoryChart(const QString& accountId,
+        const QString& currency, const QStringList& connectionIds, bool restrictConnections,
+        const QString& from, const QString& to, bool daily = false) const;
+    Q_INVOKABLE QVariantMap balanceHistorySummary(const QStringList& connectionIds,
+        bool restrictConnections, const QString& from, const QString& to) const;
 
     [[nodiscard]] QAbstractItemModel* accounts() noexcept;
     [[nodiscard]] QAbstractItemModel* transactions() noexcept;
@@ -215,6 +235,7 @@ public:
     Q_INVOKABLE void disconnectVtb();
 
 signals:
+    void balanceHistoryChanged();
     void dashboardChanged();
     void reportingPeriodChanged();
     void importStatusChanged();
@@ -229,6 +250,9 @@ signals:
     void vtbConnectionChanged();
 
 private:
+    void initializeBalanceHistory(const QString& path);
+    void recordBalanceHistory(const QString& connectorId);
+
     AccountModel accounts_;
     TransactionModel transactions_;
     CategoryModel categories_;

@@ -206,46 +206,12 @@ Flickable {
             columnSpacing: 12
             rowSpacing: 12
 
-            SectionCard {
+            BalanceHistoryPanel {
                 Layout.fillWidth: true
                 Layout.minimumWidth: 0
-                Layout.preferredHeight: 270
-
-                ColumnLayout {
-                    anchors.fill: parent
-                    anchors.margins: 18
-                    spacing: 4
-
-                    Text {
-                        text: qsTr("Капитал")
-                        color: Theme.text
-                        font.pixelSize: 14
-                        font.weight: Font.DemiBold
-                    }
-                    Text {
-                        text: qsTr("Последние 12 месяцев")
-                        color: Theme.textMuted
-                        font.pixelSize: 11
-                    }
-                    LineChart {
-                        Layout.fillWidth: true
-                        Layout.fillHeight: true
-                        Layout.topMargin: 10
-                        visible: page.app.netWorthSeries.length > 1
-                        values: page.app.netWorthSeries
-                    }
-                    Text {
-                        Layout.fillWidth: true
-                        Layout.fillHeight: true
-                        visible: page.app.netWorthSeries.length <= 1
-                        text: qsTr("История капитала появится после нескольких снимков баланса")
-                        color: Theme.textMuted
-                        font.pixelSize: 12
-                        horizontalAlignment: Text.AlignHCenter
-                        verticalAlignment: Text.AlignVCenter
-                        wrapMode: Text.WordWrap
-                    }
-                }
+                Layout.preferredHeight: 310
+                app: page.app
+                allowAccountSelection: false
             }
 
             SectionCard {

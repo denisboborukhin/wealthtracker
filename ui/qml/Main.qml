@@ -22,6 +22,7 @@ ApplicationWindow {
     readonly property var navigationItems: [
         { "title": qsTr("Обзор") },
         { "title": qsTr("Счета") },
+        { "title": qsTr("История") },
         { "title": qsTr("Операции") },
         { "title": qsTr("Импорт") },
         { "title": qsTr("Инвестиции") },
@@ -125,6 +126,7 @@ ApplicationWindow {
 
             DashboardPage { app: window.app }
             AccountsPage { app: window.app }
+            HistoryPage { app: window.app }
             TransactionsPage { app: window.app }
             ImportsPage { app: window.app }
             InvestmentsPage { app: window.app }

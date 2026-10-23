@@ -16,8 +16,10 @@ counts and balances against the bank's own application.
 | T-Invest | Accounts, portfolio balances, and positions | User-created read-only token |
 | External ZenPlugins bundle | Bundle-dependent | Bundle-defined |
 
-Financial snapshots remain in memory until exit. Failed refreshes preserve the
-previous snapshot. Removing a connection cancels active work and removes its
+Each successful balance refresh saves an encrypted history snapshot. History
+survives app restarts and disconnections; failed refreshes add no observations.
+Other live financial data remains in memory until exit. Failed refreshes preserve
+the previous in-memory snapshot. Removing a connection cancels active work and removes its
 in-memory rows and saved credential. On macOS, disconnect deletes browser data for that bank
 without deleting other banks' data. Retail auto-update runs every six hours while the app is running.
 If another bank is busy or the privacy screen is locked, a due refresh is deferred

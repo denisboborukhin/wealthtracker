@@ -18,6 +18,7 @@ qt_add_qml_module(
         Theme.qml
         components/MetricCard.qml
         components/LineChart.qml
+        components/BalanceHistoryPanel.qml
         components/SectionCard.qml
         components/ActionButton.qml
         components/DatePickerField.qml
@@ -26,6 +27,7 @@ qt_add_qml_module(
         components/MinimalSwitch.qml
         pages/DashboardPage.qml
         pages/AccountsPage.qml
+        pages/HistoryPage.qml
         pages/TransactionsPage.qml
         pages/ImportsPage.qml
         pages/InvestmentsPage.qml

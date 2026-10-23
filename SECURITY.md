@@ -12,8 +12,8 @@ sensitive reproduction material.
 ## Current boundary
 
 Built-in bank connectors issue read requests. Credentials use macOS Keychain,
-Windows Credential Manager, or the system WebView. Financial snapshots remain
-in process memory. The privacy screen hides views and cancels active work;
+Windows Credential Manager, or the system WebView. Balance history persists in
+a SQLCipher-encrypted database with its key in the OS credential store. Other financial data remains in process memory. The privacy screen hides views and cancels active work;
 unlocking it does not require authentication.
 
 External JavaScript bundles execute with the current user's file and network

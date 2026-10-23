@@ -234,7 +234,7 @@ When the user corrects your approach, append a one-line rule here before ending 
 ---
 
 
-
+- Total history groups by connection (bank or EVM wallet), carries balances through every calendar date, and shows signed composition even when balances are negative.
 - Reduce startup Keychain reads through one protected bundle; preserve legacy secrets until successful migration and never promise an exact OS dialog count.
 
 ## 12. How this file was built

@@ -44,13 +44,27 @@ answers typed in the interface remain in their controls until submission, when
 the controls are cleared. Persisted credentials and raw session projections
 are not exposed as model properties.
 
-Financial snapshots remain in process memory. QSettings stores connection
-flags, refresh times, and non-sensitive plugin preferences. The privacy screen
+Balance-history observations are stored in a separate SQLCipher database,
+`balance-history.db`, under Qt's `AppDataLocation`. Its random 32-byte key uses
+the `balance-history-key` credential entry under `org.wealthtracker.desktop`.
+The database retains account identifiers, names, currencies, integer balances,
+connection/institution labels, and observation timestamps. Successful captures
+are committed atomically; they survive restart and disconnect. Storage requires
+SQLCipher and never falls back to a plaintext database. An unavailable or invalid
+key does not cause an existing database to be replaced.
+Schema version 2 also stores public EVM addresses and their local names in
+this encrypted database and permits USDT-valued captures. Migration from version 1
+preserves existing captures. Removing a wallet configuration retains its history.
+
+Other synchronized financial data remains in process memory. QSettings stores
+connection flags, refresh times, and non-sensitive plugin preferences. The privacy screen
 cancels active login, synchronization, and plugin work before covering the UI.
 Unlocking requires no authentication and does not erase the financial models.
 
 Sources: [credential store](../src/platform/credential_store.cpp),
 [credential bundle](../src/platform/credential_vault.cpp),
+[encrypted database](../src/storage/database.cpp),
+[balance-history repository](../src/storage/balance_history.cpp),
 [controller](../src/app/AppController.cpp).
 
 ## Native requests

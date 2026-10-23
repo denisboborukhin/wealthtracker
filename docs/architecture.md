@@ -11,7 +11,7 @@ platform ABI, and third-party C API boundaries.
 | `src/storage` | SQLCipher connections, migrations, and repositories |
 | `src/platform` | Secure buffers, key wrapping, and OS credential storage |
 | `src/connectors` | Statement parsers, bank clients, network policy, normalization, and deduplication |
-| `src/app` | Controller, synchronization, reporting, transfer matching, WebViews, plugin runner, and Qt models |
+| `src/app` | Controller, synchronization, history projection, reporting, transfer matching, WebViews, plugin runner, and Qt models |
 | `include/app` | Qt `moc` boundary headers |
 | `ui/qml` | Pages and reusable UI components |
 | `tests` | Catch2 tests and synthetic fixtures |
@@ -22,10 +22,12 @@ The QML root receives an explicit `app` property backed by
 [AppController](../src/app/AppController.cpp). The controller owns connection
 state and financial models; it exposes commands, model roles, and status text.
 
-Each completed synchronization produces a `NormalizedBatch`. The controller
+Each completed bank or plugin synchronization produces a `NormalizedBatch`. The controller
 replaces that connection's in-memory batch and rebuilds the models. A failed
-refresh preserves the previous snapshot. Replacing a token cancels pending
-work and clears that connection's old data.
+refresh preserves the previous snapshot. Successful connections and refreshes
+also append a complete balance capture to local history. Replacing a token
+cancels pending work and clears that connection's current in-memory data;
+recorded history remains available.
 
 | Integration | Runtime path |
 | --- | --- |
@@ -69,16 +71,56 @@ list and are excluded from cash-flow and category totals.
 T-Invest portfolio value uses the API total. Holding rows use instrument
 identifiers and quantity times current price in the instrument's currency.
 
-Financial batches remain in process memory. The desktop controller does not use
-the SQLCipher repository. QSettings stores connection flags, refresh times,
-and non-sensitive plugin preferences; the OS credential backend stores tokens,
-the T-Bank API session, and reusable plugin state.
+Current financial batches remain in process memory. Balance history is stored
+separately in `balance-history.db` under Qt's `AppDataLocation`, using SQLCipher.
+The database key is stored as `balance-history-key` in the OS credential backend.
+QSettings stores connection flags, refresh times, and non-sensitive plugin
+preferences; the credential backend also stores tokens, the T-Bank API session,
+and reusable plugin state.
 
 On macOS the credential factory wraps the system store in a single-item vault.
 It reads `credential-vault-v1` once, caches values in `SecureBuffer`, and preserves
 legacy bytes before deleting old entries. Explicit deletion persists a tombstone
 before cleanup. Startup holds an application-instance lock for the cached
 bundle's lifetime; Windows retains separate Credential Manager entries.
+
+[BalanceHistoryRepository](../src/storage/balance_history.cppm) stores each
+complete connection capture atomically, including an empty account set. Account
+identity includes the connection and currency, and amounts remain integer minor
+units. Schema version 2 adds encrypted wallet-address/name configuration and
+permits USDT-valued snapshots, migrating version 1 captures within a transaction.
+This database has its own schema version and does not modify the ledger
+migrations. Captures survive restart and disconnect; removing a wallet deletes
+its tracking configuration but retains its captures. Failed refreshes and demo
+data do not add observations.
+
+The [history projection](../src/app/balance_history_view.cppm) plots individual
+accounts or totals in one currency at a time without FX conversion. A total
+combines each connection's latest known account set at that observation time;
+an empty or changed capture replaces that connection's previous set. Banks
+refresh independently, so totals can mix observation times and continue to
+include the last recorded balance of a disconnected bank. These are balance
+observations, not investment-performance or return calculations.
+
+The **История** page filters connections and local calendar dates, reports
+the selected currency's total and change, and a stacked area for each connection
+(bank or EVM wallet). Source, currency, and date controls live in **Настроить**;
+individual-account charts remain on **Счета**.
+Aggregate history uses the latest complete snapshot for each local calendar
+day and carries each account forward on days without updates, through the
+selected end date or today. Multiple same-day updates use the latest values.
+The observation counter still counts real captures. Accounts are netted within
+each connection before stacking positive connection balances above zero and
+negative balances below it. A separate line shows the net total. Date tooltips
+list signed connection amounts and percentage shares; when negative balances
+are present, shares use the sum of absolute connection balances. Monetary sums
+and share rounding use exact integer arithmetic. Selecting no connections
+produces no totals. When an
+earlier observation exists, the projection carries it to the start of the
+period while retaining its original observation timestamp; otherwise it identifies
+the first available observation. Horizontal coordinates follow actual timestamps.
+Changes also reflect the selected account set, deposits, withdrawals, and price
+movements, so they are not investment returns.
 
 The statement-checking command selects a parser and reports sample operation
 and warning counts. It does not publish the parsed records to the models.

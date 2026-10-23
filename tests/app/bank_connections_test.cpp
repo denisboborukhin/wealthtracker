@@ -17,6 +17,7 @@
 #include <QSettings>
 #include <QStandardPaths>
 #include <QThread>
+#include <QTemporaryDir>
 #include <QTimer>
 #include <QUrl>
 #include <QUrlQuery>
@@ -1101,4 +1102,95 @@ TEST_CASE("Retail browser projections enforce authentication and UTF-8 byte limi
     };
     verify(wealthtracker::app::parse_alfa_financial_projection);
     verify(wealthtracker::app::parse_vtb_financial_projection);
+}
+
+TEST_CASE("Controller balance history survives restart and disconnect without recording failed refreshes") {
+    const TBankSettingsCleanup cleanup;
+    QTemporaryDir directory;
+    REQUIRE(directory.isValid());
+    const auto path = directory.filePath(QStringLiteral("history.db"));
+    QHash<QString, QByteArray> savedCredentials;
+    QVariantMap savedChart;
+    {
+        auto credentials = std::make_unique<MemoryCredentialBackend>();
+        auto* stored = credentials.get();
+        credentials->values.insert(QStringLiteral("tbank-retail-session"),
+                                   QByteArrayLiteral("connected-session-123456789"));
+        auto network = std::make_unique<TBankNetworkFixture>();
+        auto* observed = network.get();
+        wealthtracker::app::AppController controller(std::move(credentials), std::move(network), nullptr, path);
+        REQUIRE(controller.balanceHistoryError().isEmpty());
+        REQUIRE(waitUntil([&] { return controller.balanceHistoryAccounts().size() == 2 && !controller.tbankSyncRunning(); }));
+        auto chart = [&] { return controller.balanceHistoryChart({}, QStringLiteral("RUB")); };
+        REQUIRE(chart().value("observationCount").toInt() == 1);
+        CHECK(chart().value("lastValue").toString() == "4000.00 RUB");
+        QThread::msleep(2); // Distinct observation timestamps, even on a fast fixture.
+        REQUIRE(controller.synchronizeTBank());
+        REQUIRE(waitUntil([&] { return !controller.tbankSyncRunning(); }));
+        REQUIRE(chart().value("observationCount").toInt() == 2);
+        observed->failAccounts = true;
+        REQUIRE(controller.synchronizeTBank());
+        REQUIRE(waitUntil([&] { return !controller.tbankSyncRunning(); }));
+        CHECK(chart().value("observationCount").toInt() == 2);
+        controller.disconnectTBank();
+        CHECK(controller.accounts()->rowCount() == 0);
+        CHECK(controller.balanceHistoryAccounts().size() == 2);
+        savedChart = chart();
+        controller.loadDemoData();
+        CHECK(chart() == savedChart);
+        savedCredentials = stored->values;
+        REQUIRE(savedCredentials.contains(QStringLiteral("balance-history-key")));
+    }
+    auto credentials = std::make_unique<MemoryCredentialBackend>();
+    credentials->values = savedCredentials;
+    wealthtracker::app::AppController restored(std::move(credentials), std::make_unique<TBankNetworkFixture>(), nullptr, path);
+    CHECK(restored.balanceHistoryError().isEmpty());
+    CHECK(restored.balanceHistoryChart({}, QStringLiteral("RUB")) == savedChart);
+    CHECK(restored.balanceHistoryAccounts().size() == 2);
+    const auto daily = restored.filteredBalanceHistoryChart({}, "RUB", {}, false, {}, {}, true);
+    CHECK(daily.value("points").toList().size() == 1);
+    CHECK(daily.value("observationCount").toInt() == 2);
+    CHECK(daily.value("points").toList().front().toMap().value("dateLabel").toString()
+          == QDate::currentDate().toString("dd.MM.yyyy"));
+    const auto summary = restored.balanceHistorySummary({}, false, {}, {});
+    CHECK(summary.value("error").toString().isEmpty());
+    REQUIRE(summary.value("totals").toList().size() == 1);
+    REQUIRE(summary.value("banks").toList().size() == 1);
+    CHECK(summary.value("totals").toList().front().toMap().value("lastValue").toString() == "4000.00 RUB");
+    CHECK(summary.value("banks").toList().front().toMap().value("lastValue").toString() == "4000.00 RUB");
+    CHECK(restored.balanceHistorySummary({}, true, {}, {}).value("totals").toList().isEmpty());
+    CHECK_FALSE(restored.balanceHistorySummary({}, false, "invalid", {}).value("error").toString().isEmpty());
+}
+
+TEST_CASE("Controller preserves saved history when the vault key is missing or incorrect") {
+    const TBankSettingsCleanup cleanup;
+    QTemporaryDir directory;
+    REQUIRE(directory.isValid());
+    const auto path = directory.filePath(QStringLiteral("history.db"));
+    QHash<QString, QByteArray> savedCredentials;
+    {
+        auto credentials = std::make_unique<MemoryCredentialBackend>();
+        auto* stored = credentials.get();
+        credentials->values.insert(QStringLiteral("tbank-retail-session"),
+                                   QByteArrayLiteral("connected-session-123456789"));
+        wealthtracker::app::AppController controller(std::move(credentials), std::make_unique<TBankNetworkFixture>(), nullptr, path);
+        REQUIRE(waitUntil([&] { return controller.balanceHistoryAccounts().size() == 2; }));
+        controller.disconnectTBank();
+        savedCredentials = stored->values;
+    }
+    for (const auto& invalidKey : {QByteArray{}, QByteArray(32, 'x'), QByteArray("short")}) {
+        auto credentials = std::make_unique<MemoryCredentialBackend>();
+        auto* stored = credentials.get();
+        if (!invalidKey.isEmpty()) credentials->values.insert(QStringLiteral("balance-history-key"), invalidKey);
+        wealthtracker::app::AppController unavailable(std::move(credentials), std::make_unique<TBankNetworkFixture>(), nullptr, path);
+        CHECK_FALSE(unavailable.balanceHistoryError().isEmpty());
+        CHECK(unavailable.balanceHistoryAccounts().isEmpty());
+        CHECK(stored->values.value(QStringLiteral("balance-history-key")) == invalidKey);
+    }
+    auto credentials = std::make_unique<MemoryCredentialBackend>();
+    credentials->values = savedCredentials;
+    wealthtracker::app::AppController restored(std::move(credentials), std::make_unique<TBankNetworkFixture>(), nullptr, path);
+    CHECK(restored.balanceHistoryError().isEmpty());
+    CHECK(restored.balanceHistoryAccounts().size() == 2);
+    CHECK(restored.balanceHistoryChart({}, QStringLiteral("RUB")).value("lastValue").toString() == "4000.00 RUB");
 }

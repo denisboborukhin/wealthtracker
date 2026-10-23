@@ -1,10 +1,12 @@
 # WealthTracker
 
 A C++23 and Qt Quick desktop application for viewing bank accounts, balances,
-operations, cash-flow reports, and investment holdings locally.
+operations, cash-flow reports, investment holdings locally.
 
-The app starts empty. Demonstration data can be enabled in Settings.
-Synchronized financial data lives in memory and is lost when the app exits.
+The app starts empty on first launch. Demonstration data can be enabled in Settings.
+Balance observations from successful connections and refreshes are saved in an
+encrypted local database and remain available after restart or disconnect.
+Other synchronized financial data lives in memory and is lost when the app exits.
 Connection settings and credentials are stored separately. On macOS, retail browser data
 is retained across launches; a bank can still require reauthentication when its
 session expires.
@@ -18,6 +20,8 @@ session expires.
 - External ZenPlugins bundles: local execution through an optional Node.js host.
 - Cash-flow reports: date-filtered income, spending, savings, and categories,
   with own-account transfers excluded from totals.
+- Balance history: saved observations, date filters, selected banks and wallets,
+  and opening/closing totals and changes for each currency.
 - Statement checking: local parsing with operation and warning counts;
   selected files do not add records to the financial models.
 - Privacy screen: hides financial views and cancels active work.
@@ -25,6 +29,20 @@ session expires.
 Retail connections and T-Invest supply balances without transaction history.
 Cash-flow reports use operations supplied by the other connectors. Aggregate
 financial totals use RUB; foreign-currency accounts remain visible separately.
+Balance-history totals keep currencies separate without exchange-rate conversion.
+They combine the latest known balances from each connection, which may have
+different observation times. Total history fills each calendar date with the
+latest known balances, and date tooltips show connection amounts and shares. This
+shows recorded balances, not investment returns.
+Open **История** for balances grouped by bank or EVM wallet. Positive balances
+stack above zero and negative balances below; shares use absolute connection
+balances when negatives are present. **Настроить** contains source, currency,
+and date selection.
+**Счета → История остатков** also provides individual-account charts; the dashboard
+shows combined history. A period can carry forward the last observation before
+its start, with its original timestamp. Changing the selected connections can
+change the total. Recording starts with successful refreshes in this version;
+earlier balances are not reconstructed.
 
 macOS credentials consolidate into one Keychain item and are read once per
 launch. The first migration may still request access to the old entries; macOS

@@ -1,16 +1,27 @@
 pragma ComponentBehavior: Bound
 
 import QtQuick
+import QtQuick.Controls
 import QtQuick.Layouts
 import "../components"
 
-Item {
+Flickable {
     id: page
     required property var app
+    contentWidth: width
+    contentHeight: Math.max(height, content.implicitHeight + Theme.pageMargin * 2)
+    flickableDirection: Flickable.VerticalFlick
+    boundsBehavior: Flickable.StopAtBounds
+    clip: true
+    ScrollBar.vertical: ScrollBar {
+        policy: page.contentHeight > page.height ? ScrollBar.AlwaysOn : ScrollBar.AsNeeded
+    }
 
     ColumnLayout {
-        anchors.fill: parent
-        anchors.margins: Theme.pageMargin
+        id: content
+        width: page.width - Theme.pageMargin * 2
+        x: Theme.pageMargin
+        y: Theme.pageMargin
         spacing: 20
 
         ColumnLayout {
@@ -29,9 +40,14 @@ Item {
             }
         }
 
+        BalanceHistoryPanel {
+            Layout.fillWidth: true
+            app: page.app
+        }
+
         SectionCard {
             Layout.fillWidth: true
-            Layout.fillHeight: true
+            Layout.preferredHeight: Math.max(230, 43 + accountList.count * 62)
 
             ColumnLayout {
                 anchors.fill: parent

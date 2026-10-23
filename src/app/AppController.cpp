@@ -1,6 +1,7 @@
 #include "app/AppController.hpp"
 
 #include <QDate>
+#include <QDir>
 #include <QCryptographicHash>
 #include <QDesktopServices>
 #include <QFileInfo>
@@ -33,6 +34,8 @@
 import wt.connectors;
 import wt.alfa_login;
 import wt.bank_sync;
+import wt.balance_history_view;
+import wt.storage;
 import wt.investment_sync;
 import wt.platform;
 import wt.reporting;
@@ -435,6 +438,9 @@ public:
     wealthtracker::connectors::TBankRetailClient tbank_retail;
     QHash<QString, wealthtracker::connectors::NormalizedBatch> bank_batches;
     QHash<QString, QString> bank_institutions;
+    std::optional<wealthtracker::storage::Database> history_database;
+    std::vector<wealthtracker::storage::BalanceCapture> balance_history;
+    QString history_error;
     QHash<QString, QPointer<BankSyncCoordinator>> bank_sync_coordinators;
     QPointer<InvestmentSyncCoordinator> investment_sync;
     std::optional<ZenPluginDescriptor> zen_descriptor;
@@ -460,9 +466,157 @@ public:
     QStringList pending_retail_restores;
 };
 
+void AppController::initializeBalanceHistory(const QString& path) {
+    // Injected controllers opt in with an explicit path; tests never open the user's vault.
+    if (path.isEmpty()) return;
+    private_->history_error = QStringLiteral("История недоступна: не удалось открыть защищённое хранилище.");
+    if (!private_->credentials || !private_->credentials->supported()) return;
+    const auto keyName = QStringLiteral("balance-history-key");
+    auto loaded = private_->credentials->get(keyName);
+    if (!loaded) return;
+    if (!*loaded) {
+        if (QFileInfo::exists(path)) {
+            private_->history_error = QStringLiteral("История недоступна: ключ сохранённой базы не найден.");
+            return;
+        }
+        auto generated = wealthtracker::platform::VaultCrypto::generate_database_key();
+        if (!generated) return;
+        QByteArray key(reinterpret_cast<const char*>(generated->data()),
+                       static_cast<qsizetype>(generated->size()));
+        if (!private_->credentials->put(keyName, key)) {
+            key.fill('\0');
+            return;
+        }
+        *loaded = std::move(key);
+    }
+    auto& key = **loaded;
+    if (key.size() != 32 || !QDir{}.mkpath(QFileInfo(path).absolutePath())) {
+        key.fill('\0');
+        return;
+    }
+    auto database = wealthtracker::storage::Database::open(
+        QFileInfo(path).filesystemFilePath(),
+        std::span<const std::byte>(reinterpret_cast<const std::byte*>(key.constData()),
+                                   static_cast<std::size_t>(key.size())));
+    key.fill('\0');
+    if (!database) return;
+    wealthtracker::storage::BalanceHistoryRepository repository(*database);
+    if (!repository.initialize()) return;
+    auto captures = repository.captures();
+    if (!captures) return;
+    private_->balance_history = std::move(*captures);
+    private_->history_database = std::move(*database);
+    private_->history_error.clear();
+}
+
+void AppController::recordBalanceHistory(const QString& connectorId) {
+    if (!private_->history_database) return;
+    const auto batch = private_->bank_batches.constFind(connectorId);
+    if (batch == private_->bank_batches.cend()) return;
+    const auto configuration = bankConfiguration(connectorId);
+    auto institution = configuration ? configuration->institution : retailBankInstitution(connectorId);
+    if (institution.isEmpty()) institution = private_->bank_institutions.value(connectorId);
+    std::vector<wealthtracker::storage::HistoryBalance> balances;
+    // A missing balance is unknown, never zero. Do not save an incomplete observation.
+    bool complete = batch->balances.size() == batch->accounts.size();
+    for (const auto& account : batch->accounts) {
+        const auto matches = [&](const auto& balance) {
+            return balance.accountExternalId == account.externalId && balance.balance.currency == account.currency;
+        };
+        if (std::count_if(batch->balances.cbegin(), batch->balances.cend(), matches) != 1) {
+            complete = false;
+            break;
+        }
+        const auto found = std::find_if(batch->balances.cbegin(), batch->balances.cend(), matches);
+        balances.push_back({account.externalId.toStdString(), account.name.toStdString(),
+                            account.currency.toStdString(), found->balance.minorUnits});
+    }
+    if (!complete) {
+        private_->history_error = QStringLiteral("История не обновлена: получены не все остатки по счетам.");
+        emit balanceHistoryChanged();
+        return;
+    }
+    const auto capturedAt = QDateTime::currentDateTimeUtc().toString(Qt::ISODateWithMs);
+    wealthtracker::storage::BalanceHistoryRepository repository(*private_->history_database);
+    auto saved = repository.append(connectorId.toStdString(), institution.toStdString(),
+                                   capturedAt.toStdString(), balances);
+    if (!saved) {
+        private_->history_error = QStringLiteral("Не удалось сохранить историю остатков. Предыдущие записи сохранены.");
+    } else {
+        private_->balance_history.push_back({*saved, connectorId.toStdString(), institution.toStdString(),
+                                            capturedAt.toStdString(), std::move(balances)});
+        private_->history_error.clear();
+    }
+    emit balanceHistoryChanged();
+}
+
+QVariantList AppController::balanceHistoryAccounts() const {
+    return balance_history_accounts(private_->balance_history);
+}
+
+QVariantList AppController::balanceHistoryConnections() const {
+    return balance_history_connections(private_->balance_history);
+}
+
+QStringList AppController::balanceHistoryCurrencies() const {
+    return balance_history_currencies(private_->balance_history);
+}
+
+QString AppController::balanceHistoryError() const { return private_->history_error; }
+
+QVariantMap AppController::balanceHistoryChart(const QString& accountId, const QString& currency) const {
+    return balance_history_chart(private_->balance_history, accountId, currency);
+}
+
+QVariantMap AppController::filteredBalanceHistoryChart(const QString& accountId,
+    const QString& currency, const QStringList& connectionIds, const bool restrictConnections,
+    const QString& from, const QString& to, const bool daily) const {
+    const auto start = QDate::fromString(from, QStringLiteral("dd.MM.yyyy"));
+    const auto end = QDate::fromString(to, QStringLiteral("dd.MM.yyyy"));
+    if ((!from.isEmpty() && !start.isValid()) || (!to.isEmpty() && !end.isValid())) {
+        return {{QStringLiteral("error"), QStringLiteral("Укажите даты в формате ДД.ММ.ГГГГ.")}};
+    }
+    return balance_history_chart(private_->balance_history, accountId, currency,
+                                 {restrictConnections, connectionIds, start, end, daily});
+}
+
+QVariantMap AppController::balanceHistorySummary(const QStringList& connectionIds,
+    const bool restrictConnections, const QString& from, const QString& to) const {
+    const auto start = QDate::fromString(from, QStringLiteral("dd.MM.yyyy"));
+    const auto end = QDate::fromString(to, QStringLiteral("dd.MM.yyyy"));
+    if ((!from.isEmpty() && !start.isValid()) || (!to.isEmpty() && !end.isValid()) ||
+        (start.isValid() && end.isValid() && start > end)) {
+        return {{QStringLiteral("error"), QStringLiteral("Проверьте даты начала и окончания периода.")}};
+    }
+    QVariantList totals;
+    QVariantList banks;
+    QString error;
+    for (const auto& currency : balanceHistoryCurrencies()) {
+        const auto total = filteredBalanceHistoryChart({}, currency, connectionIds, restrictConnections, from, to, true);
+        if (!total.value(QStringLiteral("error")).toString().isEmpty()) {
+            error = total.value(QStringLiteral("error")).toString();
+        } else if (!total.value(QStringLiteral("lastValue")).toString().isEmpty()) {
+            totals.push_back(total);
+        }
+        for (const auto& option : balanceHistoryConnections()) {
+            const auto connection = option.toMap();
+            const auto id = connection.value(QStringLiteral("id")).toString();
+            if (restrictConnections && !connectionIds.contains(id)) continue;
+            auto bank = filteredBalanceHistoryChart({}, currency, {id}, true, from, to, true);
+            if (bank.value(QStringLiteral("lastValue")).toString().isEmpty()) continue;
+            bank.insert(QStringLiteral("institution"), connection.value(QStringLiteral("label")));
+            banks.push_back(bank);
+        }
+    }
+    return {{QStringLiteral("totals"), totals}, {QStringLiteral("banks"), banks},
+            {QStringLiteral("error"), error}};
+}
+
 AppController::AppController(QObject* parent)
     : AppController(std::make_unique<SystemCredentialBackend>(),
-                    std::make_unique<QNetworkAccessManager>(), parent) {}
+                    std::make_unique<QNetworkAccessManager>(), parent,
+                    QStandardPaths::writableLocation(QStandardPaths::AppDataLocation)
+                        + QStringLiteral("/balance-history.db")) {}
 
 AppController::AppController(std::unique_ptr<CredentialBackend> credentials,
                              QObject* parent)
@@ -471,6 +625,11 @@ AppController::AppController(std::unique_ptr<CredentialBackend> credentials,
 
 AppController::AppController(std::unique_ptr<CredentialBackend> credentials,
                              std::unique_ptr<QNetworkAccessManager> network, QObject* parent)
+    : AppController(std::move(credentials), std::move(network), parent, QString{}) {}
+
+AppController::AppController(std::unique_ptr<CredentialBackend> credentials,
+                             std::unique_ptr<QNetworkAccessManager> network, QObject* parent,
+                             const QString& historyPath)
     : QObject(parent),
       accounts_(this),
       transactions_(this),
@@ -479,6 +638,7 @@ AppController::AppController(std::unique_ptr<CredentialBackend> credentials,
       bank_connections_(this),
       private_(std::make_unique<AppControllerPrivate>(std::move(credentials),
                                                       std::move(network))) {
+    initializeBalanceHistory(historyPath);
     const auto defaultPeriod = defaultReportingPeriod(QDate::currentDate());
     reporting_from_ = defaultPeriod.from;
     reporting_to_ = defaultPeriod.to;
@@ -509,6 +669,7 @@ AppController::AppController(std::unique_ptr<CredentialBackend> credentials,
             alfa_login_active_ = false;
             alfa_connected_ = true;
             private_->bank_batches.insert(QStringLiteral("alfa-retail"), std::move(batch));
+            recordBalanceHistory(QStringLiteral("alfa-retail"));
             rebuildBankModels();
             const auto completedAt = QDateTime::currentDateTimeUtc();
             QSettings settings;
@@ -556,6 +717,7 @@ AppController::AppController(std::unique_ptr<CredentialBackend> credentials,
             vtb_login_active_ = false;
             vtb_connected_ = true;
             private_->bank_batches.insert(QStringLiteral("vtb-retail"), std::move(batch));
+            recordBalanceHistory(QStringLiteral("vtb-retail"));
             rebuildBankModels();
             const auto completedAt = QDateTime::currentDateTimeUtc();
             QSettings settings;
@@ -1569,6 +1731,7 @@ void AppController::synchronizeInvestments() {
                 sync_status_ += QStringLiteral(" · пропущено записей %1").arg(batch.warnings.size());
             }
             private_->bank_batches.insert(QStringLiteral("t-invest"), std::move(batch));
+            recordBalanceHistory(QStringLiteral("t-invest"));
             rebuildBankModels();
             emit syncStatusChanged();
         },
@@ -1701,6 +1864,7 @@ void AppController::synchronizeBank(const QString& connectorId) {
             const auto transactionCount = batch.transactions.size();
             const auto warningCount = batch.warnings.size();
             private_->bank_batches.insert(connectorId, std::move(batch));
+            recordBalanceHistory(connectorId);
             rebuildBankModels();
             sync_status_ =
                 QStringLiteral("%1: счетов %2 · операций %3")
@@ -2185,6 +2349,7 @@ bool AppController::startZenPlugin(
                                           std::move(batch));
             private_->bank_institutions.insert(batchKey,
                                                displayName);
+            recordBalanceHistory(batchKey);
             rebuildBankModels();
 
             QSettings settings;
@@ -2600,6 +2765,7 @@ bool AppController::synchronizeTBank() {
             const auto accountCount = batch.accounts.size();
             private_->bank_batches.insert(QStringLiteral("tbank-retail"),
                                           std::move(batch));
+            recordBalanceHistory(QStringLiteral("tbank-retail"));
             rebuildBankModels();
             const auto completedAt = QDateTime::currentDateTimeUtc();
             QSettings{}.setValue(
