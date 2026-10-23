@@ -63,6 +63,7 @@ target_sources(
             src/storage/migrations.cppm
             src/storage/import_session.cppm
             src/storage/repository.cppm
+            src/storage/balance_history.cppm
             src/storage/storage.cppm
     PRIVATE
         src/storage/database.cpp
@@ -70,6 +71,7 @@ target_sources(
         src/storage/migrations.cpp
         src/storage/import_session.cpp
         src/storage/repository.cpp
+        src/storage/balance_history.cpp
 )
 target_link_libraries(storage PUBLIC sqlcipher::sqlcipher)
 set_property(TARGET storage PROPERTY CXX_SCAN_FOR_MODULES ON)
@@ -207,7 +209,10 @@ if(BUILD_TESTING)
     enable_sanitizers(core_tests)
     catch_discover_tests(core_tests)
 
-    add_executable(storage_tests tests/storage/storage_test.cpp)
+    add_executable(storage_tests
+        tests/storage/storage_test.cpp
+        tests/storage/balance_history_test.cpp
+    )
     target_link_libraries(storage_tests PRIVATE storage Catch2::Catch2WithMain)
     set_property(TARGET storage_tests PROPERTY CXX_SCAN_FOR_MODULES ON)
     enable_strict_warnings(storage_tests)
