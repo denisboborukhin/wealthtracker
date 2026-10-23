@@ -276,6 +276,7 @@ if(BUILD_TESTING)
             tests/app/webview_test_main.cpp
             tests/app/browser_session_probe.cpp
             tests/app/webview_lifecycle_test.cpp
+            tests/app/retail_refresh_test.cpp
         )
         target_link_libraries(webview_tests PRIVATE app Catch2::Catch2)
         set_property(TARGET webview_tests PROPERTY CXX_SCAN_FOR_MODULES ON)

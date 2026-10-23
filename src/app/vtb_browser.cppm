@@ -118,6 +118,7 @@ struct VtbFinancialProjection {
         const status = httpStatus(error)
         if (status === 401) {
           state.status = 'authentication'
+          state.reason = state.requestStage === 'balances' ? 'VTB-AUTH-B' : 'VTB-AUTH-P'
           state.retryAt = Date.now() + 1000
         } else if (error?.kind === 'not-ready') {
           state.status = 'waiting'
@@ -148,7 +149,11 @@ struct VtbFinancialProjection {
         (pageUrl.port !== '' && pageUrl.port !== '443') ||
         pageUrl.username !== '' || pageUrl.password !== '') return JSON.stringify(result)
     const state = globalThis.__wealthtrackerVtbSync
-    if (!state || state.status === 'authentication') return JSON.stringify(result)
+    if (!state) return JSON.stringify(result)
+    if (state.status === 'authentication') {
+      result.diagnostic = ['VTB-AUTH-P', 'VTB-AUTH-B'].includes(state.reason) ? state.reason : ''
+      return JSON.stringify(result)
+    }
     result.authenticated = true
     result.stage = 'loading'
     if (state.status === 'running' || state.status === 'waiting') return JSON.stringify(result)
@@ -318,7 +323,8 @@ parse_vtb_financial_projection(const QString& projection, const QDateTime& obser
         QStringLiteral("VTB-P2"), QStringLiteral("VTB-P3"),
         QStringLiteral("VTB-R1"),
         QStringLiteral("VTB-A1"), QStringLiteral("VTB-X1"),
-        QStringLiteral("VTB-DENIED")};
+        QStringLiteral("VTB-DENIED"), QStringLiteral("VTB-AUTH-P"),
+        QStringLiteral("VTB-AUTH-B")};
     if (!diagnostic.isEmpty() && !supportedDiagnostics.contains(diagnostic)) {
         return std::unexpected(
             QStringLiteral("Код совместимости встроенной страницы ВТБ неизвестен"));

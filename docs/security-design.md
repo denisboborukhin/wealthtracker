@@ -74,14 +74,21 @@ Alfa projects known global or inline dashboard bootstrap objects on exact
 `https://web.alfabank.ru`. Inline scanning considers at most 64 scripts, with
 8 MiB per script and a 16 MiB aggregate budget. Certificate failures remain
 blocking; help opens the fixed bank certificate URL without modifying trust.
+An authentication-host redirect alone does not prove expiry. The coordinator
+waits within its 45-second refresh deadline, then preserves an unresolved
+authentication page for the user to inspect or complete.
 
 VTB validates exact `https://online.vtb.ru` and uses the page's exported
 `./HttpClient` for the two routes in [Bank connections](bank-connections.md#retail-vtb).
 Responses are bounded to 8 MiB page-locally. A new browser client has a ten-second
 startup restoration window after its first HTTP 401; persistent rejection then
-requires login. HTTP 403 rejects the complete refresh, including denial from the
+stops publication and reports unconfirmed access while retaining the saved
+connection and WebView. The retained page can be opened without navigation.
+HTTP 403 rejects the complete refresh, including denial from the
 optional balance supplement, without labelling the session expired. No financial
 batch is published during restoration. Compatibility status uses fixed codes.
+VTB authentication diagnostics log only an allowlisted request-stage code and
+elapsed milliseconds; cookies, headers, storage, URLs, and response bodies are not logged.
 
 Sources: [T-Bank login](../src/app/tbank_login.cppm),
 [Alfa adapter](../src/app/alfa_browser.cppm),

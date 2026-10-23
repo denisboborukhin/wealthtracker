@@ -42,8 +42,12 @@ Both parse their projection once and use the same
 sessions use persistent browser storage on macOS. T-Bank preserves its browser data
 as well as the separately stored API session. Startup restores retail
 connections sequentially so busy checks do not discard another bank's refresh.
+Periodic refresh collisions and privacy-screen blocking are retried after ten seconds.
 VTB gives a new page client a bounded startup authentication-restoration window
-before requiring login. Native view cleanup is deferred out of loading and
+before reporting access as unconfirmed; it retains the connection and page for
+inspection. Alfa allows authentication redirects to finish within its refresh
+deadline and also preserves an unresolved authentication page. Opening either
+bank reuses the retained page. Native view cleanup is deferred out of loading and
 JavaScript callbacks.
 
 Sources: [bank coordinator](../src/app/bank_sync.cppm),

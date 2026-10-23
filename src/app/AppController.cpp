@@ -265,9 +265,10 @@ constexpr int autoUpdateIntervalHours = 6;
 constexpr int autoUpdateIntervalSeconds =
     autoUpdateIntervalHours * 60 * 60;
 
-QDateTime scheduleAutoUpdate(QTimer& timer, const QDateTime& from) {
+QDateTime scheduleAutoUpdate(QTimer& timer, const QDateTime& from,
+                            const int intervalSeconds = autoUpdateIntervalSeconds) {
     const auto now = QDateTime::currentDateTimeUtc();
-    auto next = from.toUTC().addSecs(autoUpdateIntervalSeconds);
+    auto next = from.toUTC().addSecs(intervalSeconds);
     auto secondsUntilNext = now.secsTo(next);
     if (secondsUntilNext < 10) {
         secondsUntilNext = 10;
@@ -526,10 +527,6 @@ AppController::AppController(std::unique_ptr<CredentialBackend> credentials,
         [this](AlfaLoginFailure failure) {
             private_->alfa_sync_running = false;
             alfa_login_active_ = false;
-            if (failure.kind == AlfaLoginFailureKind::AuthenticationRequired) {
-                alfa_connected_ = false;
-                QSettings{}.setValue(QStringLiteral("alfa/connected"), false);
-            }
             if (private_->bank_batches.contains(QStringLiteral("alfa-retail"))) {
                 failure.message += QStringLiteral(" Показаны последние успешно загруженные остатки.");
             }
@@ -577,10 +574,6 @@ AppController::AppController(std::unique_ptr<CredentialBackend> credentials,
         [this](VtbLoginFailure failure) {
             private_->vtb_sync_running = false;
             vtb_login_active_ = false;
-            if (failure.kind == VtbLoginFailureKind::AuthenticationRequired) {
-                vtb_connected_ = false;
-                QSettings{}.setValue(QStringLiteral("vtb/connected"), false);
-            }
             if (private_->bank_batches.contains(QStringLiteral("vtb-retail"))) {
                 failure.message += QStringLiteral(" Показаны последние успешно загруженные остатки.");
             }
@@ -704,23 +697,38 @@ AppController::AppController(std::unique_ptr<CredentialBackend> credentials,
             [this] {
                 if (tbankAutoUpdate() && tbank_connected_
                     && !private_->tbank_sync_running) {
-                    (void)synchronizeTBank();
+                    if ((locked_ || tbank_login_active_ || !synchronizeTBank()) &&
+                        tbankAutoUpdate() && tbank_connected_) {
+                        private_->next_tbank_auto_update_at = scheduleAutoUpdate(
+                            private_->tbank_auto_update_timer, QDateTime::currentDateTimeUtc(), 10);
+                        emit tbankConnectionChanged();
+                    }
                 }
             });
     private_->alfa_auto_update_timer.setSingleShot(true);
     connect(&private_->alfa_auto_update_timer, &QTimer::timeout, this,
             [this] {
                 if (alfaAutoUpdate() && alfa_connected_ &&
-                    !private_->alfa_sync_running && !alfa_login_active_) {
-                    (void)synchronizeAlfa();
+                    !private_->alfa_sync_running) {
+                    if ((locked_ || alfa_login_active_ || !synchronizeAlfa()) &&
+                        alfaAutoUpdate() && alfa_connected_) {
+                        private_->next_alfa_auto_update_at = scheduleAutoUpdate(
+                            private_->alfa_auto_update_timer, QDateTime::currentDateTimeUtc(), 10);
+                        emit alfaConnectionChanged();
+                    }
                 }
             });
     private_->vtb_auto_update_timer.setSingleShot(true);
     connect(&private_->vtb_auto_update_timer, &QTimer::timeout, this,
             [this] {
                 if (vtbAutoUpdate() && vtb_connected_ &&
-                    !private_->vtb_sync_running && !vtb_login_active_) {
-                    (void)synchronizeVtb();
+                    !private_->vtb_sync_running) {
+                    if ((locked_ || vtb_login_active_ || !synchronizeVtb()) &&
+                        vtbAutoUpdate() && vtb_connected_) {
+                        private_->next_vtb_auto_update_at = scheduleAutoUpdate(
+                            private_->vtb_auto_update_timer, QDateTime::currentDateTimeUtc(), 10);
+                        emit vtbConnectionChanged();
+                    }
                 }
             });
     refreshZenPluginAutoUpdateSchedule();
@@ -2517,19 +2525,25 @@ bool AppController::synchronizeTBank() {
 
     if (private_->tbank_sync_running || tbank_login_active_) {
         sync_status_ = QStringLiteral("Т-Банк уже выполняет вход или синхронизацию");
+        tbank_login_status_ = sync_status_;
         emit syncStatusChanged();
+        emit tbankConnectionChanged();
         return false;
     }
     if ((!tbank_connected_ && !private_->tbank_session_pending_validation)
         || !private_->credentials) {
         sync_status_ = QStringLiteral("Сначала войдите в Т-Банк");
+        tbank_login_status_ = sync_status_;
         emit syncStatusChanged();
+        emit tbankConnectionChanged();
         return false;
     }
     if (zen_plugin_running_ || alfa_login_active_ || private_->alfa_sync_running ||
         vtb_login_active_ || private_->vtb_sync_running) {
         sync_status_ = QStringLiteral("Сначала завершите текущую синхронизацию");
+        tbank_login_status_ = sync_status_;
         emit syncStatusChanged();
+        emit tbankConnectionChanged();
         return false;
     }
 
@@ -2541,6 +2555,7 @@ bool AppController::synchronizeTBank() {
         tbank_connected_ = false;
         private_->tbank_session_pending_validation = false;
         refreshBankConnections();
+        tbank_login_status_ = sync_status_;
         emit syncStatusChanged();
         emit tbankConnectionChanged();
         return false;
@@ -2550,7 +2565,9 @@ bool AppController::synchronizeTBank() {
     session.fill('\0');
     if (!discovery) {
         sync_status_ = discovery.error().message;
+        tbank_login_status_ = sync_status_;
         emit syncStatusChanged();
+        emit tbankConnectionChanged();
         return false;
     }
 
@@ -2725,18 +2742,24 @@ void AppController::cancelAlfaLogin() {
 bool AppController::synchronizeAlfa() {
     if (private_->alfa_sync_running || alfa_login_active_) {
         sync_status_ = QStringLiteral("Альфа-Банк уже выполняет вход или синхронизацию");
+        alfa_login_status_ = sync_status_;
         emit syncStatusChanged();
+        emit alfaConnectionChanged();
         return false;
     }
     if (!alfa_connected_) {
         sync_status_ = QStringLiteral("Сначала войдите в Альфа-Банк");
+        alfa_login_status_ = sync_status_;
         emit syncStatusChanged();
+        emit alfaConnectionChanged();
         return false;
     }
     if (zen_plugin_running_ || private_->tbank_sync_running || tbank_login_active_ ||
         vtb_login_active_ || private_->vtb_sync_running) {
         sync_status_ = QStringLiteral("Сначала завершите текущую синхронизацию");
+        alfa_login_status_ = sync_status_;
         emit syncStatusChanged();
+        emit alfaConnectionChanged();
         return false;
     }
 
@@ -2825,18 +2848,24 @@ void AppController::cancelVtbLogin() {
 bool AppController::synchronizeVtb() {
     if (private_->vtb_sync_running || vtb_login_active_) {
         sync_status_ = QStringLiteral("ВТБ уже выполняет вход или синхронизацию");
+        vtb_login_status_ = sync_status_;
         emit syncStatusChanged();
+        emit vtbConnectionChanged();
         return false;
     }
     if (!vtb_connected_) {
         sync_status_ = QStringLiteral("Сначала войдите в ВТБ");
+        vtb_login_status_ = sync_status_;
         emit syncStatusChanged();
+        emit vtbConnectionChanged();
         return false;
     }
     if (zen_plugin_running_ || private_->tbank_sync_running || tbank_login_active_ ||
         private_->alfa_sync_running || alfa_login_active_) {
         sync_status_ = QStringLiteral("Сначала завершите текущую синхронизацию");
+        vtb_login_status_ = sync_status_;
         emit syncStatusChanged();
+        emit vtbConnectionChanged();
         return false;
     }
 

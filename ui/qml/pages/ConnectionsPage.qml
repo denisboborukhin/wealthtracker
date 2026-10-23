@@ -290,7 +290,8 @@ Item {
                     Layout.fillWidth: true
                     Layout.fillHeight: connectionDialog.retailLoginActive
                     visible: connectionDialog.builtinRetail
-                             && !connectionDialog.effectiveConnected
+                             && (!connectionDialog.effectiveConnected
+                                 || connectionDialog.retailLoginActive)
                     spacing: 10
 
                     Text {
@@ -326,7 +327,7 @@ Item {
                         Layout.fillWidth: true
                         visible: connectionDialog.retailLoginActive
                         text: connectionDialog.builtinTBank
-                              ? qsTr("Телефон и код обрабатывает официальная страница банка. WealthTracker получает только идентификатор API-сессии и удаляет cookies после завершения.")
+                              ? qsTr("Телефон и код обрабатывает официальная страница банка. WealthTracker получает только идентификатор API-сессии. На macOS браузерные данные сохраняются до отключения банка.")
                               : qsTr("Телефон и код обрабатывает официальная страница банка. WealthTracker не читает cookies или поля входа и получает только ограниченный снимок финансовых данных.")
                         color: Theme.textMuted
                         font.pixelSize: 10
@@ -564,6 +565,7 @@ Item {
                     Layout.fillWidth: true
                     visible: connectionDialog.builtinRetail
                              && connectionDialog.effectiveConnected
+                             && !connectionDialog.retailLoginActive
                     spacing: 10
 
                     StatusBadge {
@@ -597,9 +599,9 @@ Item {
                     }
                     Text {
                         Layout.fillWidth: true
-                        text: page.app.syncStatus
-                        color: page.app.syncStatus.toLowerCase().indexOf("не удалось") >= 0
-                               || page.app.syncStatus.toLowerCase().indexOf("ошиб") >= 0
+                        text: connectionDialog.retailLoginStatus
+                        color: connectionDialog.retailLoginStatus.toLowerCase().indexOf("не удалось") >= 0
+                               || connectionDialog.retailLoginStatus.toLowerCase().indexOf("ошиб") >= 0
                                ? Theme.negative : Theme.textMuted
                         font.pixelSize: 11
                         wrapMode: Text.WordWrap
@@ -661,10 +663,12 @@ Item {
                     }
                     ActionButton {
                         visible: connectionDialog.builtinRetail
-                                 && !connectionDialog.effectiveConnected
+                                 && (!connectionDialog.effectiveConnected
+                                     || connectionDialog.builtinVtb || connectionDialog.builtinAlfa)
                                  && !connectionDialog.retailLoginActive
                                  && !connectionDialog.retailSyncRunning
-                        text: qsTr("Войти")
+                        text: !connectionDialog.effectiveConnected ? qsTr("Войти")
+                              : connectionDialog.builtinVtb ? qsTr("Открыть ВТБ") : qsTr("Открыть банк")
                         primary: true
                         onClicked: connectionDialog.beginRetailLogin()
                     }
@@ -745,6 +749,7 @@ Item {
                         visible: connectionDialog.builtinRetail
                                  && connectionDialog.effectiveConnected
                                  && !connectionDialog.retailSyncRunning
+                                 && !connectionDialog.retailLoginActive
                         text: qsTr("Обновить")
                         primary: true
                         onClicked: connectionDialog.synchronizeRetail()
@@ -753,6 +758,7 @@ Item {
                         visible: connectionDialog.builtinRetail
                                  && connectionDialog.effectiveConnected
                                  && !connectionDialog.retailSyncRunning
+                                 && !connectionDialog.retailLoginActive
                         text: qsTr("Отключить")
                         destructive: true
                         onClicked: {

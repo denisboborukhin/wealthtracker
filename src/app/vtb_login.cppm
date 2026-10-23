@@ -3,6 +3,7 @@ module;
 #include "app/BrowserSession.hpp"
 
 #include <QDateTime>
+#include <QDebug>
 #include <QElapsedTimer>
 #include <QObject>
 #include <QPointer>
@@ -33,7 +34,7 @@ export namespace wealthtracker::app {
            (url.port() == -1 || url.port() == 443) && url.userInfo().isEmpty();
 }
 
-enum class VtbLoginFailureKind { AuthenticationRequired, Protocol, Timeout };
+enum class VtbLoginFailureKind { AuthenticationUnconfirmed, Protocol, Timeout };
 
 struct VtbLoginFailure {
     VtbLoginFailureKind kind{VtbLoginFailureKind::Protocol};
@@ -175,7 +176,7 @@ private:
         reportStatus(std::move(status));
         auto* view = static_cast<QWebView*>(webView());
         restoring_session_ = mode == Mode::Synchronize && !session_ready_;
-        if (mode == Mode::Synchronize && is_vtb_login_url(view->url())) {
+        if (is_vtb_login_url(view->url())) {
             const auto generation = generation_;
             const QPointer<VtbLoginCoordinator> guard(this);
             view->runJavaScript(QStringLiteral(
@@ -279,8 +280,12 @@ private:
                         return;
                     }
                 }
-                fail({VtbLoginFailureKind::AuthenticationRequired,
-                      QStringLiteral("Сессия ВТБ истекла. Войдите снова.")});
+                qInfo("VTB authentication unconfirmed: diagnostic=%s elapsed_ms=%lld",
+                      qPrintable(projection->diagnostic),
+                      static_cast<long long>(elapsed_.elapsed()));
+                fail({VtbLoginFailureKind::AuthenticationUnconfirmed,
+                      QStringLiteral("ВТБ не подтвердил доступ к счетам. "
+                                     "Нажмите «Открыть ВТБ», чтобы проверить страницу банка.")});
             }
             return;
         }
@@ -351,7 +356,12 @@ private:
     }
 
     void fail(VtbLoginFailure failure) {
-        stop(true, !persistentBankBrowserSessions && mode_ == Mode::Login);
+        if (failure.kind == VtbLoginFailureKind::AuthenticationUnconfirmed) {
+            ++generation_;
+            stop(false);
+        } else {
+            stop(true, !persistentBankBrowserSessions && mode_ == Mode::Login);
+        }
         if (failed_) {
             failed_(std::move(failure));
         }

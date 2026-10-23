@@ -19,7 +19,49 @@
 #include <QtWebView/QWebViewLoadingInfo>
 
 import wt.connectors;
+import wt.alfa_login;
 import wt.vtb_login;
+
+TEST_CASE("Alfa authentication redirect can restore the dashboard without a new login") {
+    using namespace wealthtracker::app;
+    bool failed = false;
+    bool completed = false;
+    AlfaLoginCoordinator coordinator([](QString) {},
+        [&](wealthtracker::connectors::NormalizedBatch batch) {
+            completed = batch.accounts.size() == 1;
+        }, [&](AlfaLoginFailure) { failed = true; }, nullptr);
+    const QUrl dashboard{QStringLiteral("https://web.alfabank.ru/dashboard")};
+    coordinator.synchronize(dashboard);
+    auto* view = static_cast<QWebView*>(coordinator.existingWebView());
+    REQUIRE(view);
+    QEventLoop authentication;
+    QObject::connect(view, &QWebView::loadingChanged, &authentication,
+                     [&](const QWebViewLoadingInfo& info) {
+        if (info.status() == QWebViewLoadingInfo::LoadStatus::Succeeded) authentication.quit();
+    });
+    view->loadHtml(QStringLiteral("<html>Restoring session</html>"),
+                   QUrl{QStringLiteral("https://private.auth.alfabank.ru/")});
+    QTimer::singleShot(3'000, &authentication, &QEventLoop::quit);
+    authentication.exec();
+    REQUIRE_FALSE(failed);
+    REQUIRE(coordinator.active());
+    REQUIRE(coordinator.existingWebView() == view);
+    view->loadHtml(QStringLiteral(R"HTML(<html><script>
+      globalThis.initialState = { layoutData: { accounts: [
+        { id: 'fixture-account', amount: { value: '1.00', currency: 'RUB' } }
+      ] } };
+    </script></html>)HTML"), dashboard);
+    QEventLoop finished;
+    QTimer timer;
+    QObject::connect(&timer, &QTimer::timeout, &finished, [&] {
+        if (completed || failed) finished.quit();
+    });
+    timer.start(10);
+    QTimer::singleShot(3'000, &finished, &QEventLoop::quit);
+    finished.exec();
+    CHECK(completed);
+    CHECK_FALSE(failed);
+}
 
 TEST_CASE("VTB off-origin navigation defers native WebView destruction") {
     QEventLoop failureLoop;
@@ -119,7 +161,7 @@ TEST_CASE("VTB startup waits for the page client to restore authentication") {
     using namespace wealthtracker::app;
     bool persistentRejection = false;
     SECTION("A temporary startup rejection recovers") {}
-    SECTION("Persistent rejection still requires login") { persistentRejection = true; }
+    SECTION("Persistent rejection preserves the page for inspection") { persistentRejection = true; }
     QEventLoop finished;
     bool completed = false;
     bool failed = false;
@@ -159,7 +201,11 @@ TEST_CASE("VTB startup waits for the page client to restore authentication") {
     finished.exec();
     CHECK(failed == persistentRejection);
     CHECK(completed != persistentRejection);
-    if (persistentRejection) CHECK(failureKind == VtbLoginFailureKind::AuthenticationRequired);
+    CHECK(failureKind != VtbLoginFailureKind::Timeout);
+    if (persistentRejection) {
+        CHECK(failureKind == VtbLoginFailureKind::AuthenticationUnconfirmed);
+        REQUIRE(coordinator.existingWebView() == view);
+    }
     CHECK_FALSE(coordinator.active());
     if (!persistentRejection && completed) {
         QEventLoop changed;
@@ -174,6 +220,23 @@ TEST_CASE("VTB startup waits for the page client to restore authentication") {
         finished.exec();
         CHECK(failed);
         CHECK_FALSE(completed);
-        CHECK(failureKind == VtbLoginFailureKind::AuthenticationRequired);
+        CHECK(failureKind == VtbLoginFailureKind::AuthenticationUnconfirmed);
+        REQUIRE(coordinator.existingWebView() == view);
     }
+
+    // Opening the bank after a failed refresh must preserve this exact document.
+    QEventLoop changed;
+    view->runJavaScript(QStringLiteral(
+        "globalThis.fixtureForceRejection = false; globalThis.fixtureReads = 10; true"),
+        [&changed](const QVariant&) { changed.quit(); });
+    QTimer::singleShot(3'000, &changed, &QEventLoop::quit);
+    changed.exec();
+    completed = false;
+    failed = false;
+    coordinator.startLogin(origin);
+    QTimer::singleShot(3'000, &finished, &QEventLoop::quit);
+    finished.exec();
+    CHECK(completed);
+    CHECK_FALSE(failed);
+    CHECK(coordinator.existingWebView() == view);
 }

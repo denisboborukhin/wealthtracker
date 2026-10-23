@@ -233,6 +233,22 @@ TEST_CASE("VTB balances use the authenticated client without history or navigati
     run();
     CHECK(engine.evaluate(QStringLiteral("__wealthtrackerVtbSync.status")).toString() ==
           QStringLiteral("authentication"));
+    result = wealthtracker::app::parse_vtb_financial_projection(
+        engine.evaluate(wealthtracker::app::vtb_financial_projection_script()).toString(),
+        QDateTime::currentDateTimeUtc());
+    REQUIRE(result);
+    CHECK_FALSE(result->batch);
+    CHECK(result->diagnostic == QStringLiteral("VTB-AUTH-P"));
+
+    engine.evaluate(QStringLiteral(
+        "delete globalThis.__wealthtrackerVtbSync; status = 200; supplementStatus = 401"));
+    run();
+    result = wealthtracker::app::parse_vtb_financial_projection(
+        engine.evaluate(wealthtracker::app::vtb_financial_projection_script()).toString(),
+        QDateTime::currentDateTimeUtc());
+    REQUIRE(result);
+    CHECK_FALSE(result->batch);
+    CHECK(result->diagnostic == QStringLiteral("VTB-AUTH-B"));
 }
 
 TEST_CASE("VTB balances retain child card masks and prefer the balance summary") {

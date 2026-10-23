@@ -27,7 +27,7 @@ import wt.connectors;
 
 export namespace wealthtracker::app {
 
-enum class AlfaLoginFailureKind { AuthenticationRequired, Protocol, Timeout };
+enum class AlfaLoginFailureKind { AuthenticationUnconfirmed, Protocol, Timeout };
 
 struct AlfaLoginFailure {
     AlfaLoginFailureKind kind{AlfaLoginFailureKind::Protocol};
@@ -152,13 +152,6 @@ public:
                         if (information.status() == QWebViewLoadingInfo::LoadStatus::Succeeded) {
                             load_succeeded_ = true;
                             certificate_help_required_ = false;
-                            if (mode_ == Mode::Synchronize &&
-                                web_view_->url().host() ==
-                                    QStringLiteral("private.auth.alfabank.ru")) {
-                                fail({AlfaLoginFailureKind::AuthenticationRequired,
-                                      QStringLiteral(
-                                          "Сессия Альфа-Банка истекла. Войдите снова.")});
-                            }
                         }
                     });
         }
@@ -232,7 +225,9 @@ private:
         elapsed_.start();
         reportStatus(std::move(status));
         auto* view = static_cast<QWebView*>(webView());
-        if (view->url() == url) {
+        if (mode == Mode::Login && is_alfa_login_url(view->url())) {
+            load_succeeded_ = !view->isLoading();
+        } else if (view->url() == url) {
             view->reload();
         } else {
             view->setUrl(url);
@@ -253,6 +248,13 @@ private:
         const auto timeout = mode_ == Mode::Login ? loginTimeoutMilliseconds
                                                   : synchronizationTimeoutMilliseconds;
         if (!elapsed_.isValid() || elapsed_.elapsed() > timeout) {
+            if (mode_ == Mode::Synchronize &&
+                web_view_->url().host() == QStringLiteral("private.auth.alfabank.ru")) {
+                fail({AlfaLoginFailureKind::AuthenticationUnconfirmed,
+                      QStringLiteral("Альфа-Банк не завершил восстановление доступа. "
+                                     "Нажмите «Открыть банк», чтобы проверить страницу банка.")});
+                return;
+            }
             fail({mode_ == Mode::Login ? AlfaLoginFailureKind::Timeout
                                        : AlfaLoginFailureKind::Protocol,
                   mode_ == Mode::Login
@@ -356,7 +358,12 @@ private:
     }
 
     void fail(AlfaLoginFailure failure) {
-        stop(true);
+        if (failure.kind == AlfaLoginFailureKind::AuthenticationUnconfirmed) {
+            ++generation_;
+            stop(false);
+        } else {
+            stop(true);
+        }
         if (failed_) {
             failed_(std::move(failure));
         }

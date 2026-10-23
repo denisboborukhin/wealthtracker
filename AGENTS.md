@@ -219,6 +219,8 @@ When the user corrects your approach, append a one-line rule here before ending 
   reject HTTP 403 data without treating access denial as proof of session expiry.
 - Preserve retail browser data across app launches; clear only the selected
   bank's domains on explicit disconnect, and serialize startup refreshes.
+- Treat a data-request 401 or an authentication redirect as unconfirmed access,
+  not proof of bank-required login; preserve the page and verify behavior after Cmd+Q separately.
 - Document implemented code and runnable commands only; omit placeholder
   integrations and future features. Update affected guides together and keep
   automated verification distinct from live-bank checks.
@@ -226,7 +228,12 @@ When the user corrects your approach, append a one-line rule here before ending 
   SDK exists before invoking CMake. Use pinned archive hashes for macOS Qt
   downloads; do not require an online checksum service or disable verification.
 
+- Show only the selected bank's status inside its connection dialog; background
+  refreshes must never replace it with another bank's global sync message.
+
 ---
+
+
 
 ## 12. How this file was built
 
