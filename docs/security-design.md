@@ -5,11 +5,31 @@ This describes implemented controls. Report vulnerabilities using the
 
 ## Credentials and local data
 
-API tokens, the T-Bank API session, and reusable plugin state use macOS Keychain
-or Windows Credential Manager. Keychain entries use
-`WhenUnlockedThisDeviceOnly`. Other platforms return an unsupported-backend
-error. Temporary credential byte arrays are cleared after request construction;
+API tokens, the T-Bank API session, reusable plugin state, and the balance-history
+database key use macOS Keychain or Windows Credential Manager. macOS uses a single
+versioned `credential-vault-v1` item under `org.wealthtracker.desktop`, loaded once
+into secure process buffers. Its file-based Keychain access is governed by macOS
+Keychain ACLs; the configured accessibility attribute does not establish a
+data-protection Keychain protection class. Windows keeps its per-entry backend.
+Other platforms return an unsupported-backend error. Temporary credential byte
+arrays are cleared after request construction;
 Qt, browser, and OS copies are outside that clearing operation.
+
+Legacy macOS items migrate lazily: the exact secret bytes are committed to the
+bundle before legacy cleanup. The database key is preserved unchanged. Migration
+can still require permission for each old item once. Later reads use the process
+cache; a rejected or malformed bundle never falls back to empty credentials.
+Durable deletion markers prevent an undeleted legacy item from reappearing.
+A denied legacy read stops further credential requests for that process. The app
+holds a single-instance lock while using the cached bundle to avoid concurrent
+writers. Cached secrets are wiped at process exit; the privacy screen covers the
+UI and cancels work but does not discard this process cache.
+
+The normal path performs one protected bundle read per launch. The OS controls
+actual dialogs: first migration, locked Keychain, changed signing identity, and
+credential updates can still require authorization. Debug binaries use ad hoc
+signing; relinking changes their code identity. Stable certificate-based signing
+is needed to preserve trust across app builds.
 
 Alfa and VTB sessions stay inside system WebViews. The app projects financial
 fields without extracting their cookies, authorization headers, or browser
@@ -30,6 +50,7 @@ cancels active login, synchronization, and plugin work before covering the UI.
 Unlocking requires no authentication and does not erase the financial models.
 
 Sources: [credential store](../src/platform/credential_store.cpp),
+[credential bundle](../src/platform/credential_vault.cpp),
 [controller](../src/app/AppController.cpp).
 
 ## Native requests

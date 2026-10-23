@@ -46,4 +46,9 @@ public:
 [[nodiscard]] std::unique_ptr<CredentialStore> make_system_credential_store(
     std::string service_name);
 
+// Opt-in bundle/cache for stores supporting 64 KiB items. Legacy accounts migrate
+// lazily; the wrapper never changes the bytes of an existing database key.
+[[nodiscard]] std::unique_ptr<CredentialStore> make_bundled_credential_store(
+    std::unique_ptr<CredentialStore> store);
+
 }  // namespace wealthtracker::platform

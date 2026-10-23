@@ -1,11 +1,14 @@
 #include "app/AppController.hpp"
 
 #include <QGuiApplication>
+#include <QDir>
 #include <QImage>
+#include <QLockFile>
 #include <QQmlApplicationEngine>
 #include <QQuickWindow>
 #include <QQuickStyle>
 #include <QSslSocket>
+#include <QStandardPaths>
 #include <QTimer>
 #include <QVariantMap>
 #include <QtWebView/QtWebView>
@@ -24,6 +27,21 @@ int main(int argc, char* argv[]) {
     QGuiApplication::setOrganizationName(QStringLiteral("WealthTracker"));
     QGuiApplication::setApplicationVersion(QStringLiteral("0.1.0"));
     QQuickStyle::setStyle(QStringLiteral("Basic"));
+
+#if defined(Q_OS_MACOS)
+    // The cached Keychain bundle has one writer for the application's lifetime.
+    const auto dataDirectory = QStandardPaths::writableLocation(QStandardPaths::AppDataLocation);
+    if (!QDir().mkpath(dataDirectory)) {
+        qCritical("Unable to open the WealthTracker data directory");
+        return 4;
+    }
+    QLockFile instanceLock(dataDirectory + QStringLiteral("/desktop.lock"));
+    instanceLock.setStaleLockTime(0);
+    if (!instanceLock.tryLock(0)) {
+        qCritical("Unable to start WealthTracker. Close any other running instance and try again");
+        return 4;
+    }
+#endif
 
     wealthtracker::app::AppController controller;
     QQmlApplicationEngine engine;

@@ -74,5 +74,11 @@ the SQLCipher repository. QSettings stores connection flags, refresh times,
 and non-sensitive plugin preferences; the OS credential backend stores tokens,
 the T-Bank API session, and reusable plugin state.
 
+On macOS the credential factory wraps the system store in a single-item vault.
+It reads `credential-vault-v1` once, caches values in `SecureBuffer`, and preserves
+legacy bytes before deleting old entries. Explicit deletion persists a tombstone
+before cleanup. Startup holds an application-instance lock for the cached
+bundle's lifetime; Windows retains separate Credential Manager entries.
+
 The statement-checking command selects a parser and reports sample operation
 and warning counts. It does not publish the parsed records to the models.

@@ -235,6 +235,8 @@ When the user corrects your approach, append a one-line rule here before ending 
 
 
 
+- Reduce startup Keychain reads through one protected bundle; preserve legacy secrets until successful migration and never promise an exact OS dialog count.
+
 ## 12. How this file was built
 
 This boilerplate synthesizes:

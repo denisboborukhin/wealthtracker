@@ -26,6 +26,10 @@ Retail connections and T-Invest supply balances without transaction history.
 Cash-flow reports use operations supplied by the other connectors. Aggregate
 financial totals use RUB; foreign-currency accounts remain visible separately.
 
+macOS credentials consolidate into one Keychain item and are read once per
+launch. The first migration may still request access to the old entries; macOS
+can also ask again after a debug rebuild.
+
 Bank integrations are implemented, but automated tests do not establish current
 compatibility with a bank's live service. See [Bank connections](docs/bank-connections.md)
 for setup and refresh behavior. External plugins run with the current user's

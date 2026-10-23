@@ -164,7 +164,8 @@ CredentialError keychain_error(OSStatus status, std::string operation) {
     CredentialErrorCode code = CredentialErrorCode::platform_error;
     if (status == errSecItemNotFound) {
         code = CredentialErrorCode::not_found;
-    } else if (status == errSecAuthFailed || status == errSecInteractionNotAllowed) {
+    } else if (status == errSecAuthFailed || status == errSecInteractionNotAllowed ||
+               status == errSecUserCanceled) {
         code = CredentialErrorCode::access_denied;
     }
     return CredentialError{code, static_cast<long>(status), std::move(operation)};
@@ -503,7 +504,8 @@ std::unique_ptr<CredentialStore> make_system_credential_store(std::string servic
         return std::make_unique<UnsupportedCredentialStore>(std::move(service_name));
     }
 #if defined(__APPLE__)
-    return std::make_unique<MacCredentialStore>(std::move(service_name));
+    return make_bundled_credential_store(
+        std::make_unique<MacCredentialStore>(std::move(service_name)));
 #elif defined(_WIN32)
     return std::make_unique<WindowsCredentialStore>(std::move(service_name));
 #else

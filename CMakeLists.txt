@@ -89,6 +89,7 @@ target_sources(
     PRIVATE
         src/platform/vault_crypto.cpp
         src/platform/credential_store.cpp
+        src/platform/credential_vault.cpp
 )
 target_link_libraries(platform PUBLIC libsodium::libsodium)
 set_property(TARGET platform PROPERTY CXX_SCAN_FOR_MODULES ON)
@@ -214,7 +215,10 @@ if(BUILD_TESTING)
     enable_sanitizers(storage_tests)
     catch_discover_tests(storage_tests)
 
-    add_executable(platform_tests tests/platform/vault_crypto_test.cpp)
+    add_executable(platform_tests
+        tests/platform/vault_crypto_test.cpp
+        tests/platform/credential_store_test.cpp
+    )
     target_link_libraries(platform_tests PRIVATE platform Catch2::Catch2WithMain)
     set_property(TARGET platform_tests PROPERTY CXX_SCAN_FOR_MODULES ON)
     enable_strict_warnings(platform_tests)
