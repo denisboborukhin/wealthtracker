@@ -32,6 +32,24 @@ jobs:
         with:
           python-version: "3.12"
 
+      - name: Initialize MSVC
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $vswhere = "${env:ProgramFiles(x86)}/Microsoft Visual Studio/Installer/vswhere.exe"
+          $installation = & $vswhere -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath
+          if ($LASTEXITCODE -ne 0 -or -not $installation) { throw "MSVC installation not found." }
+          $environment = & cmd /d /s /c "call `"$installation/Common7/Tools/VsDevCmd.bat`" -arch=x64 -host_arch=x64 >nul && set"
+          if ($LASTEXITCODE -ne 0) { throw "MSVC environment initialization failed." }
+          foreach ($line in $environment) {
+            if ($line -match '^([^=]+)=(.*)$') {
+              $name, $value = $Matches[1], $Matches[2]
+              if ([Environment]::GetEnvironmentVariable($name) -ne $value) {
+                "$name=$value" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+              }
+            }
+          }
+
       - name: Install build tools
         run: >
           python -m pip install
@@ -64,6 +82,18 @@ jobs:
           --profile:build=${{ matrix.profile }}
           --build=missing
           -of=build/${{ matrix.preset }}
+
+      - name: Initialize Windows runtime paths
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $runtime = (Resolve-Path "build/${{ matrix.preset }}/generators/conanrun.bat").Path
+          $environment = & cmd /d /s /c "call `"$runtime`" >nul && set"
+          if ($LASTEXITCODE -ne 0) { throw "Conan runtime environment initialization failed." }
+          $runtimePath = $environment | Where-Object { $_ -match '^PATH=' } | Select-Object -First 1
+          if (-not $runtimePath) { throw "Conan runtime PATH is missing." }
+          $qtBin = (Resolve-Path 'build/qt/6.11.1/msvc2022_64/bin').Path
+          "PATH=$qtBin;$($runtimePath.Substring(5))" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
 
       - name: Configure
         run: cmake --preset ${{ matrix.preset }}

@@ -111,6 +111,9 @@ The Debug host settings override the profiles' Release defaults. Keep the build
 profile in Release for dependency build tools. Activate Conan's runtime
 environment and add Qt's `bin` directory before building: Catch2 test discovery
 executes binaries during the build and needs the dependency DLLs on `PATH`.
+Windows CI initializes MSVC and carries the Conan runtime and Qt paths into
+each subsequent build, test, and staging step. Bootstrap stops on a failed
+Python, build-tool, or Qt installation instead of reporting success.
 
 ## Sanitizers
 
