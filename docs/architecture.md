@@ -120,8 +120,7 @@ observations, not investment-performance or return calculations.
 
 The **История** page filters connections and local calendar dates, reports
 the selected currency's total and change, and a stacked area for each connection
-(bank or EVM wallet). Source, currency, and date controls live in **Настроить**;
-individual-account charts remain on **Счета**.
+(bank or EVM wallet). Source, currency, and date controls live in **Настроить**.
 Aggregate history uses the latest complete snapshot for each local calendar
 day and carries each account forward on days without updates, through the
 selected end date or today. Multiple same-day updates use the latest values.

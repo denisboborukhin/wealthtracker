@@ -21,13 +21,9 @@ ApplicationWindow {
 
     readonly property var navigationItems: [
         { "title": qsTr("Обзор") },
-        { "title": qsTr("Счета") },
         { "title": qsTr("История") },
-        { "title": qsTr("Операции") },
-        { "title": qsTr("Импорт") },
         { "title": qsTr("Инвестиции") },
         { "title": qsTr("Криптокошельки") },
-        { "title": qsTr("Категории") },
         { "title": qsTr("Подключения") },
         { "title": qsTr("Настройки") }
     ]
@@ -126,13 +122,9 @@ ApplicationWindow {
             currentIndex: 0
 
             DashboardPage { app: window.app }
-            AccountsPage { app: window.app }
             HistoryPage { app: window.app }
-            TransactionsPage { app: window.app }
-            ImportsPage { app: window.app }
             InvestmentsPage { app: window.app }
             CryptoPage { app: window.app }
-            CategoriesPage { app: window.app }
             ConnectionsPage { app: window.app }
             SettingsPage { app: window.app }
         }

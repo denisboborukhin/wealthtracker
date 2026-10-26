@@ -40,8 +40,7 @@ Open **История** for balances grouped by bank or EVM wallet. Positive bal
 stack above zero and negative balances below; shares use absolute connection
 balances when negatives are present. **Настроить** contains source, currency,
 and date selection.
-**Счета → История остатков** also provides individual-account charts; the dashboard
-shows combined history. A period can carry forward the last observation before
+The dashboard also shows combined history. A period can carry forward the last observation before
 its start, with its original timestamp. Changing the selected connections can
 change the total. Recording starts with successful refreshes in this version;
 earlier balances are not reconstructed.
