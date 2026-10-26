@@ -44,7 +44,9 @@ session stays inside the system WebView. The app projects known dashboard
 account and balance fields; refresh reloads the dashboard.
 An authentication-host redirect is allowed to finish within the 45-second refresh
 limit. If it does not finish, the saved connection and page remain available through
-**Открыть банк**; opening it does not restart the authentication flow.
+**Открыть банк**. This button is also available during that bank's refresh: it
+switches to interactive verification on the same page without restarting the
+authentication flow.
 
 Certificate failures stop login. The app offers the fixed bank help link
 `https://alfa.bank/cert`; it does not install certificates or change system
@@ -66,7 +68,8 @@ client up to ten seconds to restore access. If access remains unconfirmed, the
 refresh stops without publishing data or deleting the saved connection or WebView.
 After a successful snapshot, a subsequent HTTP 401 stops the refresh immediately
 with the same preservation behavior. **Открыть ВТБ** displays that same page without
-reloading it; complete a bank-requested verification there if necessary.
+reloading it, including while that bank's refresh is running; complete a
+bank-requested verification there if necessary.
 HTTP 403 stops the refresh as access denial and preserves the saved connection.
 Diagnostic logs contain only a fixed request-stage code (`VTB-AUTH-P` for portfolio,
 `VTB-AUTH-B` for the summary) and elapsed time, never bank response bodies or credentials.

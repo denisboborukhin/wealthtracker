@@ -238,6 +238,8 @@ When the user corrects your approach, append a one-line rule here before ending 
 - Total history groups by connection (bank or EVM wallet), carries balances through every calendar date, and shows signed composition even when balances are negative.
 - Reduce startup Keychain reads through one protected bundle; preserve legacy secrets until successful migration and never promise an exact OS dialog count.
 
+- A short successful reopen followed by later bank verification is evidence of time-dependent authentication; preserve saved sessions and allow inspecting a bank page during its refresh without waiting for a timeout.
+
 ## 12. How this file was built
 
 This boilerplate synthesizes:

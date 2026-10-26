@@ -3045,7 +3045,7 @@ bool AppController::prepareAlfaConnection() {
         return false;
     };
     if (zen_plugin_running_ || private_->tbank_sync_running || tbank_login_active_ ||
-        private_->alfa_sync_running || vtb_login_active_ || private_->vtb_sync_running) {
+        alfa_login_active_ || vtb_login_active_ || private_->vtb_sync_running) {
         return reportFailure(QStringLiteral("Сначала завершите текущую синхронизацию"));
     }
     refreshBankConnections();
@@ -3056,6 +3056,7 @@ void AppController::beginAlfaLogin() {
     if (!prepareAlfaConnection()) {
         return;
     }
+    private_->alfa_sync_running = false;
     alfa_login_active_ = true;
     private_->alfa_login->startLogin(alfaLoginUrl());
     refreshBankConnections();
@@ -3163,7 +3164,7 @@ bool AppController::prepareVtbConnection() {
     };
     if (zen_plugin_running_ || private_->tbank_sync_running || tbank_login_active_ ||
         private_->alfa_sync_running || alfa_login_active_ ||
-        private_->vtb_sync_running || vtb_login_active_) {
+        vtb_login_active_) {
         return reportFailure(QStringLiteral("Сначала завершите текущую синхронизацию"));
     }
     refreshBankConnections();
@@ -3174,6 +3175,7 @@ void AppController::beginVtbLogin() {
     if (!prepareVtbConnection()) {
         return;
     }
+    private_->vtb_sync_running = false;
     vtb_login_active_ = true;
     private_->vtb_login->startLogin(vtbLoginUrl());
     refreshBankConnections();

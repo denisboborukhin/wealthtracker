@@ -11,6 +11,7 @@
 #include <QTimer>
 #include <QUrl>
 #include <QtWebView/QWebView>
+#include <QtWebView/QWebViewLoadingInfo>
 
 #include <functional>
 #include <memory>
@@ -185,4 +186,38 @@ TEST_CASE("Retail refresh rejections update only the requested bank status") {
     CHECK(tbankSignals == 1);
     CHECK(alfaSignals == 1);
     CHECK(vtbSignals == 1);
+}
+
+TEST_CASE("Retail bank pages can open during their own startup refresh without navigation") {
+    bool alfa = false;
+    SECTION("Alfa") { alfa = true; }
+    SECTION("VTB") {}
+    SettingsScope settings;
+    QSettings{}.setValue(alfa ? QStringLiteral("alfa/connected") : QStringLiteral("vtb/connected"), true);
+    wealthtracker::app::AppController controller(
+        std::unique_ptr<wealthtracker::app::CredentialBackend>{}, nullptr);
+    REQUIRE(waitFor([&] { return alfa ? controller.alfaSyncRunning() : controller.vtbSyncRunning(); }, 3'000));
+    auto* view = static_cast<QWebView*>(alfa ? controller.alfaWebView() : controller.vtbWebView());
+    REQUIRE(view);
+    bool loaded = false;
+    QObject::connect(view, &QWebView::loadingChanged, &controller,
+        [&](const QWebViewLoadingInfo& info) {
+            if (info.status() == QWebViewLoadingInfo::LoadStatus::Succeeded) loaded = true;
+        });
+    view->loadHtml(QStringLiteral("<html><script>globalThis.fixtureDocument = true</script>Verification fixture</html>"),
+        alfa ? QUrl{QStringLiteral("https://private.auth.alfabank.ru/")}
+             : controller.vtbLoginUrl());
+    REQUIRE(waitFor([&] { return loaded; }, 3'000));
+    if (alfa) controller.beginAlfaLogin();
+    else controller.beginVtbLogin();
+    REQUIRE((alfa ? controller.alfaLoginActive() : controller.vtbLoginActive()));
+    CHECK_FALSE((alfa ? controller.alfaSyncRunning() : controller.vtbSyncRunning()));
+    REQUIRE((alfa ? controller.alfaWebView() : controller.vtbWebView()) == view);
+    CHECK((alfa ? controller.alfaConnected() : controller.vtbConnected()));
+    bool inspected = false;
+    view->runJavaScript(QStringLiteral("globalThis.fixtureDocument === true"),
+        [&](const QVariant& value) { inspected = value.toBool(); });
+    CHECK(waitFor([&] { return inspected; }, 3'000));
+    if (alfa) controller.cancelAlfaLogin();
+    else controller.cancelVtbLogin();
 }

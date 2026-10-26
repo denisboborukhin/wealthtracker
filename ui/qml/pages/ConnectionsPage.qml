@@ -666,7 +666,8 @@ Item {
                                  && (!connectionDialog.effectiveConnected
                                      || connectionDialog.builtinVtb || connectionDialog.builtinAlfa)
                                  && !connectionDialog.retailLoginActive
-                                 && !connectionDialog.retailSyncRunning
+                                 && (!connectionDialog.retailSyncRunning
+                                     || connectionDialog.builtinVtb || connectionDialog.builtinAlfa)
                         text: !connectionDialog.effectiveConnected ? qsTr("Войти")
                               : connectionDialog.builtinVtb ? qsTr("Открыть ВТБ") : qsTr("Открыть банк")
                         primary: true

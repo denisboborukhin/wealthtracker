@@ -135,7 +135,9 @@ Alfa projects known global or inline dashboard bootstrap objects on exact
 blocking; help opens the fixed bank certificate URL without modifying trust.
 An authentication-host redirect alone does not prove expiry. The coordinator
 waits within its 45-second refresh deadline, then preserves an unresolved
-authentication page for the user to inspect or complete.
+authentication page for the user to inspect or complete. Alfa and VTB pages can
+also be opened during their own refresh without waiting for the deadline or
+navigating away from the current document.
 
 VTB validates exact `https://online.vtb.ru` and uses the page's exported
 `./HttpClient` for the two routes in [Bank connections](bank-connections.md#retail-vtb).
