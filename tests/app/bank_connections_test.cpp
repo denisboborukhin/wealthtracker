@@ -54,6 +54,7 @@ public:
 
     std::expected<void, QString> put(const QString& key,
                                      const QByteArray& secret) override {
+        ++writeCount;
         values.insert(key, secret);
         return {};
     }
@@ -68,11 +69,14 @@ public:
     }
 
     std::expected<void, QString> remove(const QString& key) override {
+        ++removalCount;
         values.remove(key);
         return {};
     }
 
     QHash<QString, QByteArray> values;
+    int writeCount = 0;
+    int removalCount = 0;
 };
 
 class BufferedNetworkReply final : public QNetworkReply {
@@ -789,7 +793,7 @@ TEST_CASE("T-Bank network failures do not read a closed TLS reply") {
     CHECK(controller.accounts()->rowCount() == 0);
 }
 
-TEST_CASE("T-Bank authentication failures expire the stored session") {
+TEST_CASE("T-Bank authentication rejection preserves credentials without startup writes") {
     const TBankSettingsCleanup cleanup;
     auto credentials = std::make_unique<MemoryCredentialBackend>();
     credentials->values.insert(QStringLiteral("tbank-retail-session"),
@@ -797,15 +801,23 @@ TEST_CASE("T-Bank authentication failures expire the stored session") {
     auto* observedCredentials = credentials.get();
     auto network = std::make_unique<TBankNetworkFixture>();
     network->rejectAuthentication = true;
+    auto* observedNetwork = network.get();
     wealthtracker::app::AppController controller(std::move(credentials), std::move(network),
                                                  nullptr);
 
-    REQUIRE(controller.synchronizeTBank());
-    REQUIRE(waitUntil([&controller] { return !controller.tbankSyncRunning(); }));
+    REQUIRE(waitUntil([&] {
+        return observedNetwork->readCalls > 0 && !controller.tbankSyncRunning();
+    }));
 
     CHECK_FALSE(controller.tbankConnected());
-    CHECK_FALSE(observedCredentials->values.contains(
-        QStringLiteral("tbank-retail-session")));
+    CHECK(observedCredentials->values.value(QStringLiteral("tbank-retail-session")) ==
+          QByteArrayLiteral("expired-session-123456789"));
+    CHECK(observedCredentials->writeCount == 0);
+    CHECK(observedCredentials->removalCount == 0);
+    CHECK(controller.accounts()->rowCount() == 0);
+    controller.disconnectTBank();
+    CHECK_FALSE(observedCredentials->values.contains(QStringLiteral("tbank-retail-session")));
+    CHECK(observedCredentials->removalCount == 1);
 }
 
 TEST_CASE("balance overflow never wraps the displayed net worth") {

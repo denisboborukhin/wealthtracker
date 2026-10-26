@@ -124,7 +124,10 @@ and `id.tinkoff.ru` origins. A fixed resource-timing expression returns at most
 eight recent API-session candidates. A cookie-disabled, redirect-disabled
 `ping` must confirm `CLIENT` access before a session is accepted. Validation
 uses HTTP/1.1, a 15-second transfer timeout, and a 64 KiB response limit.
-The account client permits only `accounts_light_ib` reads.
+The account client permits only `accounts_light_ib` reads. An authentication
+rejection publishes no data and disables refresh for that process until login,
+but does not delete the saved session or rewrite the Keychain. Explicit
+disconnect still removes it.
 
 Alfa projects known global or inline dashboard bootstrap objects on exact
 `https://web.alfabank.ru`. Inline scanning considers at most 64 scripts, with

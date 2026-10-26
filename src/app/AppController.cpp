@@ -2967,18 +2967,19 @@ bool AppController::synchronizeTBank() {
         [this](ConnectorError error) {
             private_->tbank_sync_coordinator.clear();
             private_->tbank_sync_running = false;
-            const bool discardSession = error.code == ErrorCode::AuthenticationFailed;
+            const bool authenticationRejected = error.code == ErrorCode::AuthenticationFailed;
             const bool validatedSession = private_->tbank_session_pending_validation;
             private_->tbank_session_pending_validation = false;
-            if (discardSession && private_->credentials) {
-                (void)private_->credentials->remove(
-                    QString::fromLatin1(tbankRetailCredentialKey));
+            if (authenticationRejected) {
+                // A rejected request must not rewrite the Keychain during startup.
+                // Keep the saved session until replacement or explicit disconnect,
+                // but stop publishing data or scheduling refreshes with it.
                 tbank_connected_ = false;
             }
             if (private_->bank_batches.contains(QStringLiteral("tbank-retail"))) {
                 error.message += QStringLiteral(" Показаны последние успешно загруженные остатки.");
             }
-            if (validatedSession && !discardSession) {
+            if (validatedSession && !authenticationRejected) {
                 tbank_connected_ = true;
                 tbank_login_status_ =
                     QStringLiteral("Т-Банк подключён, но синхронизация не завершена: %1")

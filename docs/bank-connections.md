@@ -31,8 +31,10 @@ Choose **Т-Банк → Войти** and complete the official page. The app va
 observed API session with the bank before storing it in the OS credential store.
 Refresh reads `/api/common/v1/accounts_light_ib` at `https://www.tbank.ru`.
 
-Authentication rejection expires the saved session. Transport failures retain
-the connection and previous snapshot for retry. A timeout with HTTP 0 means
+Authentication rejection stops refreshes and requires verification, but retains
+the saved session without rewriting the Keychain. A successful new login replaces
+it; explicit disconnect deletes it. Transport failures retain the connection and
+previous snapshot for retry. A timeout with HTTP 0 means
 that no HTTP response was received.
 
 ## Retail Alfa-Bank
