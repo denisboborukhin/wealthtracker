@@ -201,7 +201,7 @@ public:
 private:
     enum class Mode { Login, Synchronize };
     static constexpr qint64 loginTimeoutMilliseconds = 10 * 60 * 1'000;
-    static constexpr qint64 synchronizationTimeoutMilliseconds = 45 * 1'000;
+    static constexpr qint64 synchronizationTimeoutMilliseconds = 10 * 1'000;
     static constexpr qint64 dashboardStateTimeoutMilliseconds = 30 * 1'000;
 
     void begin(const Mode mode, const QUrl& url, QString status) {
@@ -247,7 +247,7 @@ private:
         }
         const auto timeout = mode_ == Mode::Login ? loginTimeoutMilliseconds
                                                   : synchronizationTimeoutMilliseconds;
-        if (!elapsed_.isValid() || elapsed_.elapsed() > timeout) {
+        if (!elapsed_.isValid() || elapsed_.elapsed() >= timeout) {
             if (mode_ == Mode::Synchronize &&
                 web_view_->url().host() == QStringLiteral("private.auth.alfabank.ru")) {
                 fail({AlfaLoginFailureKind::AuthenticationUnconfirmed,
@@ -255,14 +255,13 @@ private:
                                      "Нажмите «Открыть банк», чтобы проверить страницу банка.")});
                 return;
             }
-            fail({mode_ == Mode::Login ? AlfaLoginFailureKind::Timeout
-                                       : AlfaLoginFailureKind::Protocol,
+            fail({AlfaLoginFailureKind::Timeout,
                   mode_ == Mode::Login
                       ? QStringLiteral(
                             "Время входа истекло. Начните подключение Альфа-Банка заново.")
                       : QStringLiteral(
-                            "Альфа-Банк не передал счета. Войдите заново, если сайт изменил "
-                            "формат данных.")});
+                            "Альфа-Банк не завершил обновление за 10 секунд. "
+                            "Нажмите «Открыть банк», чтобы проверить страницу банка.")});
             return;
         }
         if (!load_succeeded_ || probe_pending_) {
@@ -358,7 +357,8 @@ private:
     }
 
     void fail(AlfaLoginFailure failure) {
-        if (failure.kind == AlfaLoginFailureKind::AuthenticationUnconfirmed) {
+        if (failure.kind == AlfaLoginFailureKind::AuthenticationUnconfirmed ||
+            (mode_ == Mode::Synchronize && failure.kind == AlfaLoginFailureKind::Timeout)) {
             ++generation_;
             stop(false);
         } else {

@@ -5,6 +5,10 @@
 #include <QAbstractItemModel>
 #include <QCoreApplication>
 #include <QDateTime>
+#include <QElapsedTimer>
+#include <QNetworkAccessManager>
+#include <QNetworkReply>
+#include <QNetworkRequest>
 #include <QEventLoop>
 #include <QSettings>
 #include <QTemporaryDir>
@@ -49,6 +53,41 @@ bool waitFor(const std::function<bool()>& ready, const int timeoutMilliseconds) 
     loop.exec();
     return ready();
 }
+
+class StartupCredentials final : public wealthtracker::app::CredentialBackend {
+public:
+    bool supported() const noexcept override { return true; }
+    std::expected<void, QString> put(const QString&, const QByteArray&) override { return {}; }
+    std::expected<void, QString> remove(const QString&) override { return {}; }
+    std::expected<std::optional<QByteArray>, QString> get(const QString& key) override {
+        if (key == QStringLiteral("tbank-retail-session"))
+            return std::optional<QByteArray>{QByteArrayLiteral("connected-session-123456789")};
+        return std::optional<QByteArray>{};
+    }
+};
+
+class PendingReply final : public QNetworkReply {
+public:
+    PendingReply(const QNetworkRequest& request, QObject* parent) : QNetworkReply(parent) {
+        setRequest(request);
+        setUrl(request.url());
+        open(QIODevice::ReadOnly);
+    }
+    void abort() override {
+        setError(OperationCanceledError, QStringLiteral("Fixture canceled"));
+        setFinished(true);
+        emit finished();
+    }
+protected:
+    qint64 readData(char*, qint64) override { return 0; }
+};
+
+class PendingNetwork final : public QNetworkAccessManager {
+protected:
+    QNetworkReply* createRequest(Operation, const QNetworkRequest& request, QIODevice*) override {
+        return new PendingReply(request, this);
+    }
+};
 
 } // namespace
 
@@ -141,7 +180,7 @@ TEST_CASE("Alfa unfinished authentication retains its connection and bank page")
     view->loadHtml(QStringLiteral(
         "<html><script>globalThis.fixtureDocument = true</script>Authentication fixture</html>"),
         QUrl{QStringLiteral("https://private.auth.alfabank.ru/")});
-    REQUIRE(waitFor([&] { return !controller.alfaSyncRunning(); }, 48'000));
+    REQUIRE(waitFor([&] { return !controller.alfaSyncRunning(); }, 11'500));
     CHECK(controller.alfaConnected());
     CHECK(QSettings{}.value(QStringLiteral("alfa/connected")).toBool());
     CHECK(controller.accounts()->rowCount() == 0);
@@ -220,4 +259,66 @@ TEST_CASE("Retail bank pages can open during their own startup refresh without n
     CHECK(waitFor([&] { return inspected; }, 3'000));
     if (alfa) controller.cancelAlfaLogin();
     else controller.cancelVtbLogin();
+}
+
+TEST_CASE("Retail startup refreshes overlap and stop after ten seconds while login remains interactive") {
+    bool openAlfa = false;
+    SECTION("All three background refreshes time out") {}
+    SECTION("Interactive Alfa remains open while other refreshes time out") { openAlfa = true; }
+    SettingsScope settings;
+    QSettings{}.setValue(QStringLiteral("alfa/connected"), true);
+    QSettings{}.setValue(QStringLiteral("vtb/connected"), true);
+    QElapsedTimer elapsed;
+    elapsed.start();
+    wealthtracker::app::AppController controller(std::make_unique<StartupCredentials>(),
+        std::make_unique<PendingNetwork>(), nullptr);
+    REQUIRE(waitFor([&] {
+        return controller.tbankSyncRunning() && controller.alfaSyncRunning() && controller.vtbSyncRunning();
+    }, 2'000));
+    auto* alfa = static_cast<QWebView*>(controller.alfaWebView());
+    auto* vtb = static_cast<QWebView*>(controller.vtbWebView());
+    REQUIRE(alfa);
+    REQUIRE(vtb);
+    alfa->loadHtml(QStringLiteral("<html>Verification fixture</html>"),
+        QUrl{QStringLiteral("https://private.auth.alfabank.ru/")});
+    vtb->loadHtml(QStringLiteral("<html><script>globalThis.mf_1488_core = {get: () => new Promise(() => {})}</script></html>"),
+        controller.vtbLoginUrl());
+    if (openAlfa) {
+        controller.beginAlfaLogin();
+        REQUIRE(controller.alfaLoginActive());
+        CHECK_FALSE(controller.alfaSyncRunning());
+        controller.beginVtbLogin();
+        CHECK_FALSE(controller.vtbLoginActive());
+    }
+    REQUIRE(waitFor([&] {
+        return !controller.tbankSyncRunning() && !controller.alfaSyncRunning() && !controller.vtbSyncRunning();
+    }, 11'500));
+    CHECK(elapsed.elapsed() >= 9'000);
+    CHECK(elapsed.elapsed() < 11'500);
+    CHECK(controller.tbankConnected());
+    CHECK(controller.alfaConnected());
+    CHECK(controller.vtbConnected());
+    CHECK(controller.alfaWebView() == alfa);
+    CHECK(controller.vtbWebView() == vtb);
+    CHECK(controller.accounts()->rowCount() == 0);
+    CHECK(controller.alfaLoginActive() == openAlfa);
+    controller.lock();
+}
+
+TEST_CASE("Manual retail refreshes overlap even when T-Bank starts last") {
+    SettingsScope settings;
+    QSettings{}.setValue(QStringLiteral("alfa/connected"), true);
+    QSettings{}.setValue(QStringLiteral("vtb/connected"), true);
+    wealthtracker::app::AppController controller(std::make_unique<StartupCredentials>(),
+        std::make_unique<PendingNetwork>(), nullptr);
+    REQUIRE(controller.synchronizeAlfa());
+    REQUIRE(controller.synchronizeVtb());
+    REQUIRE(controller.synchronizeTBank());
+    CHECK(controller.alfaSyncRunning());
+    CHECK(controller.vtbSyncRunning());
+    CHECK(controller.tbankSyncRunning());
+    controller.lock();
+    CHECK_FALSE(controller.alfaSyncRunning());
+    CHECK_FALSE(controller.vtbSyncRunning());
+    CHECK_FALSE(controller.tbankSyncRunning());
 }

@@ -588,7 +588,7 @@ TEST_CASE("Alfa projection reports post-login loading instead of waiting silentl
     CHECK(coordinatorSource.contains(QByteArrayLiteral(
         "dashboardStateTimeoutMilliseconds = 30 * 1'000")));
     CHECK(coordinatorSource.contains(QByteArrayLiteral(
-        "synchronizationTimeoutMilliseconds = 45 * 1'000")));
+        "synchronizationTimeoutMilliseconds = 10 * 1'000")));
     CHECK_FALSE(coordinatorSource.contains(QByteArrayLiteral(
         "alfa_history_capture_script()")));
     CHECK_FALSE(coordinatorSource.contains(QByteArrayLiteral(

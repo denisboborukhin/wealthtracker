@@ -44,7 +44,10 @@ Both parse their projection once and use the same
 [account validator](../src/connectors/retail_accounts.cpp). Their browser
 sessions use persistent browser storage on macOS. T-Bank preserves its browser data
 as well as the separately stored API session. Startup restores retail
-connections sequentially so busy checks do not discard another bank's refresh.
+connections concurrently using their separate coordinators. Each retail refresh
+has a ten-second deadline; timeout preserves the browser page and saved credentials.
+Interactive verification keeps a separate ten-minute deadline and one active
+login at a time. Other banks' background refreshes do not block opening a bank.
 Periodic refresh collisions and privacy-screen blocking are retried after ten seconds.
 VTB gives a new page client a bounded startup authentication-restoration window
 before reporting access as unconfirmed; it retains the connection and page for

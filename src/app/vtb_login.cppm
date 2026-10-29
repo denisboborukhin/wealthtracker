@@ -143,7 +143,7 @@ public:
 private:
     enum class Mode { Login, Synchronize };
     static constexpr qint64 loginTimeoutMilliseconds = 10 * 60 * 1'000;
-    static constexpr qint64 synchronizationTimeoutMilliseconds = 45 * 1'000;
+    static constexpr qint64 synchronizationTimeoutMilliseconds = 10 * 1'000;
     static constexpr qint64 loadingStateTimeoutMilliseconds = 30 * 1'000;
     static constexpr qint64 sessionRestorationTimeoutMilliseconds = 10 * 1'000;
 
@@ -206,12 +206,13 @@ private:
         }
         const auto timeout = mode_ == Mode::Login ? loginTimeoutMilliseconds
                                                   : synchronizationTimeoutMilliseconds;
-        if (!elapsed_.isValid() || elapsed_.elapsed() > timeout) {
-            fail({mode_ == Mode::Login ? VtbLoginFailureKind::Timeout
-                                       : VtbLoginFailureKind::Protocol,
+        if (!elapsed_.isValid() || elapsed_.elapsed() >= timeout) {
+            fail({mode_ == Mode::Synchronize && authentication_observed_elapsed_ >= 0
+                      ? VtbLoginFailureKind::AuthenticationUnconfirmed : VtbLoginFailureKind::Timeout,
                   mode_ == Mode::Login
                       ? QStringLiteral("Время входа истекло. Начните подключение ВТБ заново.")
-                      : QStringLiteral("ВТБ не завершил загрузку счетов и остатков.")});
+                      : QStringLiteral("ВТБ не завершил обновление за 10 секунд. "
+                                       "Нажмите «Открыть ВТБ», чтобы проверить страницу банка.")});
             return;
         }
         if (probe_pending_ || !load_succeeded_) {
@@ -356,7 +357,8 @@ private:
     }
 
     void fail(VtbLoginFailure failure) {
-        if (failure.kind == VtbLoginFailureKind::AuthenticationUnconfirmed) {
+        if (failure.kind == VtbLoginFailureKind::AuthenticationUnconfirmed ||
+            (mode_ == Mode::Synchronize && failure.kind == VtbLoginFailureKind::Timeout)) {
             ++generation_;
             stop(false);
         } else {

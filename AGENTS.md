@@ -218,7 +218,8 @@ When the user corrects your approach, append a one-line rule here before ending 
 - Give a new VTB page client a bounded authentication-restoration window;
   reject HTTP 403 data without treating access denial as proof of session expiry.
 - Preserve retail browser data across app launches; clear only the selected
-  bank's domains on explicit disconnect, and serialize startup refreshes.
+  bank's domains on explicit disconnect. Run retail background refreshes in parallel,
+  cap each at ten seconds, and keep interactive verification independent of that deadline.
 - Treat a data-request 401 or an authentication redirect as unconfirmed access,
   not proof of bank-required login; preserve the page and verify behavior after Cmd+Q separately.
 - Document implemented code and runnable commands only; omit placeholder

@@ -22,7 +22,13 @@ Other live financial data remains in memory until exit. Failed refreshes preserv
 the previous in-memory snapshot. Removing a connection cancels active work and removes its
 in-memory rows and saved credential. On macOS, disconnect deletes browser data for that bank
 without deleting other banks' data. Retail auto-update runs every six hours while the app is running.
-If another bank is busy or the privacy screen is locked, a due refresh is deferred
+Retail T-Bank, Alfa, and VTB background refreshes run independently and start
+together on launch. Each refresh has a ten-second deadline. A timeout retains
+credentials, browser pages, and previous balances; it does not establish expiry.
+Interactive bank verification keeps its separate ten-minute window and only one
+interactive login is active at a time. Background refreshes already in progress
+may finish while you enter a code.
+If interactive login or the privacy screen blocks a due refresh, it is deferred
 by ten seconds instead of being dropped.
 
 ## Retail T-Bank
@@ -42,7 +48,7 @@ that no HTTP response was received.
 Choose **Альфа-Банк → Войти** and complete the official phone/SMS page. The
 session stays inside the system WebView. The app projects known dashboard
 account and balance fields; refresh reloads the dashboard.
-An authentication-host redirect is allowed to finish within the 45-second refresh
+An authentication-host redirect is allowed to finish within the ten-second refresh
 limit. If it does not finish, the saved connection and page remain available through
 **Открыть банк**. This button is also available during that bank's refresh: it
 switches to interactive verification on the same page without restarting the
@@ -64,7 +70,7 @@ the system WebView. The authenticated page client reads only these routes:
 The portfolio's loading response is retried at most twice. The financial
 summary supplements balances; failures other than HTTP 401 or 403 from that
 supplement retain a valid portfolio response. A startup HTTP 401 gives the page
-client up to ten seconds to restore access. If access remains unconfirmed, the
+client time to restore access within the total ten-second refresh deadline. If access remains unconfirmed, the
 refresh stops without publishing data or deleting the saved connection or WebView.
 After a successful snapshot, a subsequent HTTP 401 stops the refresh immediately
 with the same preservation behavior. **Открыть ВТБ** displays that same page without
@@ -74,9 +80,9 @@ HTTP 403 stops the refresh as access denial and preserves the saved connection.
 Diagnostic logs contain only a fixed request-stage code (`VTB-AUTH-P` for portfolio,
 `VTB-AUTH-B` for the summary) and elapsed time, never bank response bodies or credentials.
 
-Refresh reuses the page client without reloading, and is capped at 45 seconds.
+Refresh reuses the page client without reloading, and is capped at ten seconds.
 On macOS, browser data is retained across app launches. Restored connections
-refresh one at a time on startup. A saved connected flag alone does not establish
+refresh together on startup. A saved connected flag alone does not establish
 a valid bank session; the bank may still require login after expiry.
 Quitting with Cmd+Q ends live page memory. Persistent browser data does not
 guarantee that a bank will restore authentication without a new code. The app

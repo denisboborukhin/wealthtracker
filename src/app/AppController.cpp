@@ -1077,7 +1077,7 @@ AppController::AppController(std::unique_ptr<CredentialBackend> credentials,
     if (vtb_connected_) private_->pending_retail_restores.push_back(QStringLiteral("vtb"));
     const auto resumeRestoration = [this] {
         if (!private_->pending_retail_restores.isEmpty()) {
-            QTimer::singleShot(0, this, &AppController::restoreNextRetailConnection);
+            QTimer::singleShot(0, this, &AppController::restoreRetailConnections);
         }
     };
     connect(this, &AppController::tbankConnectionChanged, this, resumeRestoration);
@@ -1097,17 +1097,16 @@ AppController::AppController(std::unique_ptr<CredentialBackend> credentials,
     }
 }
 
-void AppController::restoreNextRetailConnection() {
+void AppController::restoreRetailConnections() {
     if (locked_ || zen_plugin_running_ || tbank_login_active_ || alfa_login_active_ ||
-        vtb_login_active_ || private_->tbank_sync_running || private_->alfa_sync_running ||
-        private_->vtb_sync_running) {
+        vtb_login_active_) {
         return;
     }
     while (!private_->pending_retail_restores.isEmpty()) {
         const auto bank = private_->pending_retail_restores.takeFirst();
-        if (bank == QStringLiteral("tbank") && tbank_connected_ && synchronizeTBank()) return;
-        if (bank == QStringLiteral("alfa") && alfa_connected_ && synchronizeAlfa()) return;
-        if (bank == QStringLiteral("vtb") && vtb_connected_ && synchronizeVtb()) return;
+        if (bank == QStringLiteral("tbank") && tbank_connected_) (void)synchronizeTBank();
+        if (bank == QStringLiteral("alfa") && alfa_connected_) (void)synchronizeAlfa();
+        if (bank == QStringLiteral("vtb") && vtb_connected_) (void)synchronizeVtb();
     }
 }
 
@@ -2756,7 +2755,7 @@ bool AppController::prepareTBankConnection() {
         return false;
     };
     if (zen_plugin_running_ || private_->tbank_sync_running || alfa_login_active_ ||
-        private_->alfa_sync_running || vtb_login_active_ || private_->vtb_sync_running) {
+        vtb_login_active_) {
         return reportFailure(QStringLiteral(
             "Сначала завершите текущую синхронизацию"));
     }
@@ -2888,8 +2887,7 @@ bool AppController::synchronizeTBank() {
         emit tbankConnectionChanged();
         return false;
     }
-    if (zen_plugin_running_ || alfa_login_active_ || private_->alfa_sync_running ||
-        vtb_login_active_ || private_->vtb_sync_running) {
+    if (zen_plugin_running_ || alfa_login_active_ || vtb_login_active_) {
         sync_status_ = QStringLiteral("Сначала завершите текущую синхронизацию");
         tbank_login_status_ = sync_status_;
         emit syncStatusChanged();
@@ -2939,6 +2937,7 @@ bool AppController::synchronizeTBank() {
     };
     runtime.maximumConcurrentRequests = 1;
     runtime.synchronizeHistory = false;
+    runtime.maximumDurationMilliseconds = 10'000;
     auto* coordinator = new BankSyncCoordinator(
         std::move(runtime),
         {},
@@ -3044,8 +3043,7 @@ bool AppController::prepareAlfaConnection() {
         emit alfaConnectionChanged();
         return false;
     };
-    if (zen_plugin_running_ || private_->tbank_sync_running || tbank_login_active_ ||
-        alfa_login_active_ || vtb_login_active_ || private_->vtb_sync_running) {
+    if (zen_plugin_running_ || tbank_login_active_ || alfa_login_active_ || vtb_login_active_) {
         return reportFailure(QStringLiteral("Сначала завершите текущую синхронизацию"));
     }
     refreshBankConnections();
@@ -3107,8 +3105,7 @@ bool AppController::synchronizeAlfa() {
         emit alfaConnectionChanged();
         return false;
     }
-    if (zen_plugin_running_ || private_->tbank_sync_running || tbank_login_active_ ||
-        vtb_login_active_ || private_->vtb_sync_running) {
+    if (zen_plugin_running_ || tbank_login_active_ || vtb_login_active_) {
         sync_status_ = QStringLiteral("Сначала завершите текущую синхронизацию");
         alfa_login_status_ = sync_status_;
         emit syncStatusChanged();
@@ -3162,9 +3159,7 @@ bool AppController::prepareVtbConnection() {
         emit vtbConnectionChanged();
         return false;
     };
-    if (zen_plugin_running_ || private_->tbank_sync_running || tbank_login_active_ ||
-        private_->alfa_sync_running || alfa_login_active_ ||
-        vtb_login_active_) {
+    if (zen_plugin_running_ || tbank_login_active_ || alfa_login_active_ || vtb_login_active_) {
         return reportFailure(QStringLiteral("Сначала завершите текущую синхронизацию"));
     }
     refreshBankConnections();
@@ -3214,8 +3209,7 @@ bool AppController::synchronizeVtb() {
         emit vtbConnectionChanged();
         return false;
     }
-    if (zen_plugin_running_ || private_->tbank_sync_running || tbank_login_active_ ||
-        private_->alfa_sync_running || alfa_login_active_) {
+    if (zen_plugin_running_ || tbank_login_active_ || alfa_login_active_) {
         sync_status_ = QStringLiteral("Сначала завершите текущую синхронизацию");
         vtb_login_status_ = sync_status_;
         emit syncStatusChanged();

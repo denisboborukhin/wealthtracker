@@ -113,7 +113,7 @@ TEST_CASE("Browser sessions survive process restart and clear only the selected 
     probe(QStringLiteral("clear-all"));
 }
 
-TEST_CASE("Startup restores the next retail connection after cancellation") {
+TEST_CASE("Startup starts retail browser refreshes together and cancels both on lock") {
     struct SettingsScope {
         QString organization = QCoreApplication::organizationName();
         QString application = QCoreApplication::applicationName();
@@ -146,14 +146,15 @@ TEST_CASE("Startup restores the next retail connection after cancellation") {
         loop.exec();
         return ready();
     };
-    REQUIRE(waitFor([&] { return controller.alfaSyncRunning(); }));
-    CHECK_FALSE(controller.vtbSyncRunning());
+    REQUIRE(waitFor([&] { return controller.alfaSyncRunning() && controller.vtbSyncRunning(); }));
     controller.lock();
     CHECK_FALSE(controller.alfaSyncRunning());
     CHECK_FALSE(controller.vtbSyncRunning());
     REQUIRE(controller.unlock());
-    REQUIRE(waitFor([&] { return controller.vtbSyncRunning(); }));
+    CHECK(controller.alfaConnected());
+    CHECK(controller.vtbConnected());
     CHECK_FALSE(controller.alfaSyncRunning());
+    CHECK_FALSE(controller.vtbSyncRunning());
     controller.lock();
 }
 

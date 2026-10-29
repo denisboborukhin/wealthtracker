@@ -13,6 +13,7 @@ module;
 #include <QString>
 #include <QTime>
 #include <QTimeZone>
+#include <QTimer>
 
 #include <cstddef>
 #include <expected>
@@ -41,6 +42,7 @@ struct BankRuntime {
     int maximumConcurrentRequests = 4;
     int historyLookbackYears = 1;
     bool synchronizeHistory = true;
+    int maximumDurationMilliseconds = 0;
 };
 
 class BankSyncCoordinator final : public QObject {
@@ -53,13 +55,20 @@ class BankSyncCoordinator final : public QObject {
                         Failed failed, QObject* parent)
         : QObject(parent), runtime_(std::move(runtime)),
           load_credential_(std::move(loadCredential)), completed_(std::move(completed)),
-          failed_(std::move(failed)) {}
+          failed_(std::move(failed)) {
+        deadline_.setSingleShot(true);
+        connect(&deadline_, &QTimer::timeout, this, [this] {
+            fail(networkFailure(QStringLiteral("Синхронизация банка"), QNetworkReply::TimeoutError));
+            finishIfReady();
+        });
+    }
 
     void start(QNetworkReply* discoveryReply) {
         if (started_ || discoveryReply == nullptr ||
             (runtime_.synchronizeHistory && runtime_.connector == nullptr) ||
             !runtime_.parseAccounts || (runtime_.synchronizeHistory && !runtime_.parsePage) || runtime_.pageSize <= 0 ||
             runtime_.maximumResponseBytes <= 0 || runtime_.maximumConcurrentRequests <= 0 ||
+            runtime_.maximumDurationMilliseconds < 0 ||
             runtime_.maximumConcurrentRequests > maximumSupportedConcurrentRequests ||
             runtime_.historyLookbackYears <= 0 ||
             runtime_.historyLookbackYears > maximumSupportedHistoryLookbackYears) {
@@ -71,6 +80,7 @@ class BankSyncCoordinator final : public QObject {
             return;
         }
         started_ = true;
+        if (runtime_.maximumDurationMilliseconds > 0) deadline_.start(runtime_.maximumDurationMilliseconds);
         history_to_ = QDateTime::currentDateTimeUtc();
         history_from_ = QDateTime(history_to_.date().addYears(-runtime_.historyLookbackYears),
                                   QTime(0, 0), QTimeZone::UTC);
@@ -132,6 +142,7 @@ class BankSyncCoordinator final : public QObject {
             return;
         }
         finished_ = true;
+        deadline_.stop();
         for (const auto& reply : std::as_const(active_replies_)) {
             if (reply) {
                 disconnect(reply, nullptr, this, nullptr);
@@ -358,6 +369,7 @@ class BankSyncCoordinator final : public QObject {
             return;
         }
         finished_ = true;
+        deadline_.stop();
         if (first_error_) {
             for (const auto& reply : std::as_const(active_replies_)) {
                 if (reply) {
@@ -374,6 +386,7 @@ class BankSyncCoordinator final : public QObject {
         deleteLater();
     }
 
+    QTimer deadline_;
     BankRuntime runtime_;
     LoadCredential load_credential_;
     Completed completed_;
