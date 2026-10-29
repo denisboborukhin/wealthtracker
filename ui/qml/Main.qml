@@ -25,7 +25,8 @@ ApplicationWindow {
         { "title": qsTr("Инвестиции") },
         { "title": qsTr("Криптокошельки") },
         { "title": qsTr("Подключения") },
-        { "title": qsTr("Настройки") }
+        { "title": qsTr("Настройки") },
+        { "title": qsTr("Кэшбэк") }
     ]
 
     Item {
@@ -127,6 +128,7 @@ ApplicationWindow {
             CryptoPage { app: window.app }
             ConnectionsPage { app: window.app }
             SettingsPage { app: window.app }
+            CashbackPage { app: window.app }
         }
     }
 

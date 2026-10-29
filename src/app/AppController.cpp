@@ -36,6 +36,7 @@ import wt.alfa_login;
 import wt.bank_sync;
 import wt.balance_history_view;
 import wt.crypto_wallet;
+import wt.cashback;
 import wt.storage;
 import wt.investment_sync;
 import wt.platform;
@@ -473,7 +474,117 @@ public:
     QDateTime next_vtb_auto_update_at;
     bool vtb_sync_running = false;
     QStringList pending_retail_restores;
+    CashbackBook cashback;
+    QString cashback_error;
+    bool cashback_storage_ready = false;
+    QTimer cashback_month_timer;
+    QDate cashback_month;
 };
+
+void AppController::initializeCashback() {
+    const auto loaded = CashbackBook::parse(QSettings{}.value(QStringLiteral("cashback/categories")).toByteArray());
+    if (loaded) {
+        private_->cashback = *loaded;
+        private_->cashback_storage_ready = true;
+    } else {
+        private_->cashback_error = loaded.error();
+    }
+    for (auto signal : {&AppController::tbankConnectionChanged, &AppController::alfaConnectionChanged,
+                        &AppController::vtbConnectionChanged, &AppController::demoModeChanged,
+                        &AppController::lockedChanged}) {
+        connect(this, signal, this, &AppController::cashbackChanged);
+    }
+    private_->cashback_month = CashbackBook::monthStart(QDate::currentDate());
+    connect(&private_->cashback_month_timer, &QTimer::timeout, this, [this] {
+        const auto month = CashbackBook::monthStart(QDate::currentDate());
+        if (private_->cashback_month != month) {
+            private_->cashback_month = month;
+            emit cashbackChanged();
+        }
+    });
+    private_->cashback_month_timer.start(60'000);
+}
+
+QVariantList AppController::cashbackMonths() const {
+    QVariantList result;
+    const QLocale russian(QLocale::Russian);
+    const auto current = CashbackBook::monthStart(QDate::currentDate());
+    for (const auto& month : {current, current.addMonths(1)}) {
+        result.push_back(QVariantMap{{QStringLiteral("id"), month.toString(QStringLiteral("yyyy-MM-dd"))},
+            {QStringLiteral("label"), russian.toString(month, QStringLiteral("LLLL yyyy"))}});
+    }
+    return result;
+}
+
+QVariantList AppController::cashbackBanks() const {
+    if (locked_ || demo_mode_) return {};
+    QVariantList result;
+    const auto current = CashbackBook::monthStart(QDate::currentDate());
+    const auto append = [&](const QString& id, const QString& name, bool connected, bool running,
+                            const QString& lastSync, const QString& status) {
+        result.push_back(QVariantMap{{QStringLiteral("id"), id}, {QStringLiteral("name"), name},
+            {QStringLiteral("connected"), connected}, {QStringLiteral("syncRunning"), running},
+            {QStringLiteral("lastSync"), lastSync}, {QStringLiteral("syncStatus"), status},
+            {QStringLiteral("current"), private_->cashback.rows(id, current)},
+            {QStringLiteral("next"), private_->cashback.rows(id, current.addMonths(1))}});
+    };
+    append(QStringLiteral("tbank"), QStringLiteral("Т-Банк"), tbankConnected(), tbankSyncRunning(), tbankLastSync(), tbankLoginStatus());
+    append(QStringLiteral("alfa"), QStringLiteral("Альфа-Банк"), alfaConnected(), alfaSyncRunning(), alfaLastSync(), alfaLoginStatus());
+    append(QStringLiteral("vtb"), QStringLiteral("ВТБ"), vtbConnected(), vtbSyncRunning(), vtbLastSync(), vtbLoginStatus());
+    return result;
+}
+
+QString AppController::cashbackError() const { return private_->cashback_error; }
+
+bool AppController::persistCashback(const QByteArray& data) {
+    QSettings settings;
+    const auto previous = settings.value(QStringLiteral("cashback/categories"));
+    settings.setValue(QStringLiteral("cashback/categories"), data);
+    settings.sync();
+    if (settings.status() != QSettings::NoError) {
+        if (previous.isValid()) settings.setValue(QStringLiteral("cashback/categories"), previous);
+        else settings.remove(QStringLiteral("cashback/categories"));
+        private_->cashback_error = QStringLiteral("Не удалось сохранить категории кэшбэка.");
+        emit cashbackChanged();
+        return false;
+    }
+    return true;
+}
+
+bool AppController::saveCashbackCategory(const QString& bank, const QString& month,
+    const QString& category, const QString& percent) {
+    if (locked_ || demo_mode_ || !private_->cashback_storage_ready) return false;
+    auto next = private_->cashback;
+    const auto saved = next.set(bank, month, category, percent, QDate::currentDate());
+    if (!saved) {
+        private_->cashback_error = saved.error();
+        emit cashbackChanged();
+        return false;
+    }
+    if (!persistCashback(next.serialize())) return false;
+    private_->cashback = std::move(next);
+    private_->cashback_error.clear();
+    emit cashbackChanged();
+    return true;
+}
+
+bool AppController::removeCashbackCategory(const QString& bank, const QString& month,
+    const QString& category) {
+    if (locked_ || demo_mode_ || !private_->cashback_storage_ready) return false;
+    auto next = private_->cashback;
+    if (!next.remove(bank, month, category) || !persistCashback(next.serialize())) return false;
+    private_->cashback = std::move(next);
+    private_->cashback_error.clear();
+    emit cashbackChanged();
+    return true;
+}
+
+void AppController::refreshCashbackBanks() {
+    if (locked_ || demo_mode_) return;
+    if (tbankConnected() && !tbankSyncRunning()) (void)synchronizeTBank();
+    if (alfaConnected() && !alfaSyncRunning()) (void)synchronizeAlfa();
+    if (vtbConnected() && !vtbSyncRunning()) (void)synchronizeVtb();
+}
 
 void AppController::initializeBalanceHistory(const QString& path) {
     // Injected controllers opt in with an explicit path; tests never open the user's vault.
@@ -810,6 +921,7 @@ AppController::AppController(std::unique_ptr<CredentialBackend> credentials,
       bank_connections_(this),
       private_(std::make_unique<AppControllerPrivate>(std::move(credentials),
                                                       std::move(network))) {
+    initializeCashback();
     initializeBalanceHistory(historyPath);
     const auto defaultPeriod = defaultReportingPeriod(QDate::currentDate());
     reporting_from_ = defaultPeriod.from;

@@ -31,6 +31,29 @@ may finish while you enter a code.
 If interactive login or the privacy screen blocks a due refresh, it is deferred
 by ten seconds instead of being dropped.
 
+## Cashback
+
+Open **Кэшбэк** to record categories already selected in the bank's own app.
+T-Bank, Alfa-Bank, and VTB each have separate lists for the current calendar
+month and the next month. Enter a category and a percentage (0.01–100, up to two
+decimal places). Saving the same category for the same bank and month updates
+its rate; **Удалить** removes only that entry. Entries do not require a connected
+bank. A new calendar month promotes next month's entries without copying the
+previous month's choices.
+
+The page uses each bank's existing synchronization status and last balance
+refresh time. **Обновить банки** starts the ordinary balance refresh for
+connected retail banks. Startup, scheduled, and manual refreshes update that
+status too, while preserving manual categories, including on failure. A bank
+refresh does not verify the selections. Automatic category retrieval is not
+implemented: no verified read contract is available for these banks. An empty
+list means no manual entries, not that the bank has no selected categories.
+
+Manual names, percentages, and months are stored in local application settings,
+separately from encrypted balance history and OS credentials. The privacy screen
+and demo mode hide them and block edits. Disconnecting a bank preserves manual
+entries; delete them on the cashback page when they are no longer wanted.
+
 ## Retail T-Bank
 
 Choose **Т-Банк → Войти** and complete the official page. The app validates the

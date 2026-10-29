@@ -1,5 +1,11 @@
 # Security design
 
+Manual cashback category names, percentages, and calendar months are saved in
+local application settings without encryption. They contain no bank credentials
+or bank responses. The privacy screen and demo mode hide these entries and block
+changes; they do not encrypt the settings. Cashback refresh uses existing bank
+balance synchronization and does not submit category choices to a bank.
+
 This describes implemented controls. Report vulnerabilities using the
 [security policy](../SECURITY.md).
 

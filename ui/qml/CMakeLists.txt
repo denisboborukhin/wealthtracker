@@ -32,6 +32,7 @@ qt_add_qml_module(
         pages/ImportsPage.qml
         pages/InvestmentsPage.qml
         pages/CryptoPage.qml
+        pages/CashbackPage.qml
         pages/CategoriesPage.qml
         pages/ConnectionsPage.qml
         pages/SettingsPage.qml

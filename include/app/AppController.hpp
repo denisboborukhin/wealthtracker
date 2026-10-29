@@ -45,6 +45,9 @@ class AppController final : public QObject {
     Q_PROPERTY(QVariantList cryptoWallets READ cryptoWallets NOTIFY cryptoWalletsChanged)
     Q_PROPERTY(QString cryptoStatus READ cryptoStatus NOTIFY cryptoWalletsChanged)
     Q_PROPERTY(bool cryptoSyncRunning READ cryptoSyncRunning NOTIFY cryptoWalletsChanged)
+    Q_PROPERTY(QVariantList cashbackBanks READ cashbackBanks NOTIFY cashbackChanged)
+    Q_PROPERTY(QVariantList cashbackMonths READ cashbackMonths NOTIFY cashbackChanged)
+    Q_PROPERTY(QString cashbackError READ cashbackError NOTIFY cashbackChanged)
     Q_PROPERTY(QVariantList balanceHistoryAccounts READ balanceHistoryAccounts NOTIFY balanceHistoryChanged)
     Q_PROPERTY(QVariantList balanceHistoryConnections READ balanceHistoryConnections NOTIFY balanceHistoryChanged)
     Q_PROPERTY(QStringList balanceHistoryCurrencies READ balanceHistoryCurrencies NOTIFY balanceHistoryChanged)
@@ -125,6 +128,15 @@ public:
     Q_INVOKABLE bool addCryptoWallet(const QString& name, const QString& address);
     Q_INVOKABLE bool removeCryptoWallet(const QString& address);
     Q_INVOKABLE bool refreshCryptoWallets();
+
+    [[nodiscard]] QVariantList cashbackBanks() const;
+    [[nodiscard]] QVariantList cashbackMonths() const;
+    [[nodiscard]] QString cashbackError() const;
+    Q_INVOKABLE bool saveCashbackCategory(const QString& bank, const QString& month,
+        const QString& category, const QString& percent);
+    Q_INVOKABLE bool removeCashbackCategory(const QString& bank, const QString& month,
+        const QString& category);
+    Q_INVOKABLE void refreshCashbackBanks();
 
     [[nodiscard]] QVariantList balanceHistoryAccounts() const;
     [[nodiscard]] QVariantList balanceHistoryConnections() const;
@@ -245,6 +257,7 @@ public:
     Q_INVOKABLE void disconnectVtb();
 
 signals:
+    void cashbackChanged();
     void cryptoWalletsChanged();
     void balanceHistoryChanged();
     void dashboardChanged();
@@ -261,6 +274,8 @@ signals:
     void vtbConnectionChanged();
 
 private:
+    void initializeCashback();
+    bool persistCashback(const QByteArray& data);
     void startNextCryptoWallet();
     void stopCryptoRefresh();
     void initializeBalanceHistory(const QString& path);

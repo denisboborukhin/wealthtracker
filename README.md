@@ -51,6 +51,13 @@ Assets without a usable price remain visible and are excluded from the USDT
 subtotal. See [Crypto wallets](docs/crypto-wallets.md) for setup, valuation,
 coverage, and verification limits.
 
+**Кэшбэк** records manually selected cashback categories and exact percentages
+for T-Bank, Alfa-Bank, and VTB, separately for this month and next month. Entries
+survive restart. Bank refresh status updates on the same synchronization as
+balances; it does not verify or replace manual cashback entries. Automatic
+retrieval of selected bank categories is not implemented. See
+[Bank connections](docs/bank-connections.md#cashback).
+
 macOS credentials consolidate into one Keychain item and are read once per
 launch. The first migration may still request access to the old entries; macOS
 can also ask again after a debug rebuild.

@@ -77,6 +77,14 @@ provider coverage and availability limits.
 
 ## Reporting and local state
 
+The [cashback book](../src/app/cashback.cppm) validates manual bank/month/category
+selections and stores percentages as integer basis points. The controller saves
+its bounded versioned JSON in `cashback/categories` application settings, not
+the balance-history database. It exposes only this month and next month and
+notifies the cashback view from the existing retail connection signals. The
+cashback page's refresh command uses the existing balance synchronizations;
+manual selections are never interpreted as bank-confirmed results.
+
 [Reporting](../src/app/reporting.cppm) filters operations by an inclusive date
 range, initially the latest month through today. Current balances and portfolio
 values are independent of that range. Aggregate totals use RUB.

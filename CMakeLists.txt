@@ -144,6 +144,7 @@ target_sources(
         FILES
             src/app/reporting.cppm
             src/app/crypto_wallet.cppm
+            src/app/cashback.cppm
             src/app/balance_history_view.cppm
             src/app/transfer_matching.cppm
             src/app/bank_sync.cppm
@@ -264,6 +265,7 @@ if(BUILD_TESTING)
         tests/app/reporting_test.cpp
         tests/app/balance_history_view_test.cpp
         tests/app/crypto_wallet_test.cpp
+        tests/app/cashback_test.cpp
         tests/app/transfer_matching_test.cpp
         tests/app/bank_connections_test.cpp
         tests/app/alfa_reliability_test.cpp
