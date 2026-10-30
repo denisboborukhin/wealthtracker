@@ -159,7 +159,6 @@ struct VtbFinancialProjection {
       result.diagnostic = ['VTB-AUTH-P', 'VTB-AUTH-B'].includes(state.reason) ? state.reason : ''
       return JSON.stringify(result)
     }
-    result.authenticated = true
     result.stage = 'loading'
     if (state.status === 'running' || state.status === 'waiting') return JSON.stringify(result)
     if (state.status !== 'ready') {
@@ -269,10 +268,13 @@ struct VtbFinancialProjection {
       return JSON.stringify(result)
     }
 
+    result.authenticated = true
     result.stage = 'ready'
   } catch (ignored) {
-    result.stage = result.authenticated ? 'frontend-changed' : 'authentication'
-    if (result.authenticated) result.diagnostic = 'VTB-X1'
+    if (result.stage !== 'authentication') {
+      result.stage = 'frontend-changed'
+      result.diagnostic = 'VTB-X1'
+    }
   }
   return JSON.stringify(result)
 })())VTB");
@@ -317,8 +319,7 @@ parse_vtb_financial_projection(const QString& projection, const QDateTime& obser
             QStringLiteral("Этап ответа встроенной страницы ВТБ неизвестен"));
     }
     const bool authenticated = object.value(QStringLiteral("authenticated")).toBool();
-    if ((stage == VtbProjectionStage::Authentication && authenticated) ||
-        (stage != VtbProjectionStage::Authentication && !authenticated)) {
+    if (authenticated != (stage == VtbProjectionStage::Ready)) {
         return std::unexpected(
             QStringLiteral("Состояние встроенной страницы ВТБ противоречиво"));
     }

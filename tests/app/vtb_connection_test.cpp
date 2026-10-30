@@ -321,14 +321,14 @@ TEST_CASE("VTB projection reports authentication, loading, and frontend drift") 
 
     const auto loading = parse_vtb_financial_projection(
         QStringLiteral(
-            R"({"version":1,"stage":"loading","authenticated":true,"accounts":[],"transactions":[]})"),
+            R"({"version":1,"stage":"loading","authenticated":false,"accounts":[],"transactions":[]})"),
         observedAt);
     REQUIRE(loading);
     CHECK(loading->stage == VtbProjectionStage::Loading);
 
     const auto drift = parse_vtb_financial_projection(
         QStringLiteral(
-            R"({"version":1,"stage":"frontend-changed","authenticated":true,"diagnostic":"VTB-P1","accounts":[],"transactions":[]})"),
+            R"({"version":1,"stage":"frontend-changed","authenticated":false,"diagnostic":"VTB-P1","accounts":[],"transactions":[]})"),
         observedAt);
     REQUIRE(drift);
     CHECK(drift->stage == VtbProjectionStage::FrontendChanged);
@@ -336,14 +336,14 @@ TEST_CASE("VTB projection reports authentication, loading, and frontend drift") 
 
     const auto portfolioRequest = parse_vtb_financial_projection(
         QStringLiteral(
-            R"({"version":1,"stage":"frontend-changed","authenticated":true,"diagnostic":"VTB-P3","accounts":[],"transactions":[]})"),
+            R"({"version":1,"stage":"frontend-changed","authenticated":false,"diagnostic":"VTB-P3","accounts":[],"transactions":[]})"),
         observedAt);
     REQUIRE(portfolioRequest);
     CHECK(portfolioRequest->diagnostic == QStringLiteral("VTB-P3"));
 
     const auto unsafeDiagnostic = parse_vtb_financial_projection(
         QStringLiteral(
-            R"({"version":1,"stage":"frontend-changed","authenticated":true,"diagnostic":"account-40817810000000000001","accounts":[],"transactions":[]})"),
+            R"({"version":1,"stage":"frontend-changed","authenticated":false,"diagnostic":"account-40817810000000000001","accounts":[],"transactions":[]})"),
         observedAt);
     REQUIRE_FALSE(unsafeDiagnostic);
 
@@ -352,4 +352,78 @@ TEST_CASE("VTB projection reports authentication, loading, and frontend drift") 
             R"({"version":1,"stage":"unknown","authenticated":false,"accounts":[],"transactions":[]})"),
         observedAt);
     REQUIRE_FALSE(unknown);
+}
+
+TEST_CASE("VTB frontend availability never proves authentication") {
+    using namespace wealthtracker::app;
+    QJSEngine engine;
+    const auto setup = engine.evaluate(QStringLiteral(R"JS(
+        var globalThis = this
+        globalThis.location = { href: 'https://online.vtb.ru/' }
+        globalThis.URL = function() {
+            return { protocol: 'https:', hostname: 'online.vtb.ru', port: '',
+                     username: '', password: '' }
+        }
+    )JS"));
+    REQUIRE_FALSE(setup.isError());
+    auto projected = [&] {
+        const auto value = engine.evaluate(vtb_financial_projection_script());
+        REQUIRE_FALSE(value.isError());
+        const auto result = parse_vtb_financial_projection(value.toString(), QDateTime::currentDateTimeUtc());
+        REQUIRE(result);
+        CHECK_FALSE(result->batch);
+        CHECK_FALSE(value.toString().contains(QStringLiteral("\"authenticated\":true")));
+        return result->stage;
+    };
+
+    // A public login page can load without exposing the authenticated module.
+    CHECK(projected() == VtbProjectionStage::Authentication);
+    REQUIRE_FALSE(engine.evaluate(vtb_sync_start_script()).isError());
+    CHECK(projected() == VtbProjectionStage::Loading);
+    for (int i = 0; i < 8; ++i) {
+        QCoreApplication::processEvents();
+        engine.evaluate(QStringLiteral("0"));
+    }
+    CHECK(engine.evaluate(QStringLiteral("__wealthtrackerVtbSync.status")).toString() == QStringLiteral("waiting"));
+    CHECK(projected() == VtbProjectionStage::Loading);
+
+    engine.evaluate(QStringLiteral(R"JS(
+        delete globalThis.__wealthtrackerVtbSync
+        globalThis.mf_1488_core = { get: function() {
+            return Promise.resolve(function() { return {http: {get: function() {
+                return new Promise(function() {})
+            }}} })
+        }}
+    )JS"));
+    REQUIRE_FALSE(engine.evaluate(vtb_sync_start_script()).isError());
+    for (int i = 0; i < 8; ++i) {
+        QCoreApplication::processEvents();
+        engine.evaluate(QStringLiteral("0"));
+    }
+    CHECK(engine.evaluate(QStringLiteral("__wealthtrackerVtbSync.requestStage")).toString() == QStringLiteral("portfolio"));
+    CHECK(projected() == VtbProjectionStage::Loading);
+
+    for (const auto& state : {QStringLiteral("running"), QStringLiteral("waiting")}) {
+        engine.globalObject().setProperty(QStringLiteral("fixtureStatus"), state);
+        engine.evaluate(QStringLiteral("__wealthtrackerVtbSync = {status: fixtureStatus, requestStage: 'portfolio'}"));
+        CHECK(projected() == VtbProjectionStage::Loading);
+    }
+    engine.evaluate(QStringLiteral("__wealthtrackerVtbSync = {status: 'failed', reason: 'VTB-M1'}"));
+    CHECK(projected() == VtbProjectionStage::FrontendChanged);
+    engine.evaluate(QStringLiteral("__wealthtrackerVtbSync = {status: 'ready', portfolio: {accounts: []}}"));
+    CHECK(projected() == VtbProjectionStage::FrontendChanged);
+    engine.evaluate(QStringLiteral("__wealthtrackerVtbSync = {status: 'authentication', reason: 'VTB-AUTH-P'}"));
+    CHECK(projected() == VtbProjectionStage::Authentication);
+}
+
+TEST_CASE("VTB ready projections require authenticated nonempty accounts") {
+    using wealthtracker::app::parse_vtb_financial_projection;
+    const auto observedAt = QDateTime::currentDateTimeUtc();
+    for (const auto& value : {
+             QStringLiteral(R"({"version":1,"stage":"ready","authenticated":false,"accounts":[{"id":"a","name":"Account","kind":"checking","currency":"RUB","balanceMinor":"100"}]})"),
+             QStringLiteral(R"({"version":1,"stage":"ready","authenticated":true,"accounts":[]})"),
+             QStringLiteral(R"({"version":1,"stage":"loading","authenticated":true,"accounts":[]})"),
+             QStringLiteral(R"({"version":1,"stage":"frontend-changed","authenticated":true,"diagnostic":"VTB-P1","accounts":[]})")}) {
+        CHECK_FALSE(parse_vtb_financial_projection(value, observedAt));
+    }
 }

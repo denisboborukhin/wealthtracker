@@ -287,6 +287,11 @@ private:
             return;
         }
         if (projection->stage == VtbProjectionStage::Authentication) {
+            session_ready_ = false;
+            if (loading_observed_elapsed_ >= 0 && mode_ == Mode::Login) {
+                reportStatus(QStringLiteral("Введите телефон и код на официальной странице ВТБ ниже."));
+            }
+            loading_observed_elapsed_ = -1;
             if (mode_ == Mode::Synchronize) {
                 if (restoring_session_) {
                     if (authentication_observed_elapsed_ < 0) {
@@ -312,15 +317,16 @@ private:
             if (loading_observed_elapsed_ < 0) {
                 loading_observed_elapsed_ = elapsed_.elapsed();
                 reportStatus(QStringLiteral(
-                    "Вход выполнен. Получаем счета и остатки из ВТБ Онлайн…"));
+                    "Проверяем доступ к счетам ВТБ Онлайн…"));
                 return;
             }
-            if (elapsed_.elapsed() - loading_observed_elapsed_ >
+            if (mode_ == Mode::Synchronize &&
+                elapsed_.elapsed() - loading_observed_elapsed_ >
                 loadingStateTimeoutMilliseconds) {
                 fail({VtbLoginFailureKind::Protocol,
                       QStringLiteral(
-                          "Вход выполнен, но ВТБ Онлайн не вернул данные в "
-                          "ожидаемом формате. Возможно, интерфейс банка изменился.")});
+                          "Не удалось подтвердить доступ к счетам ВТБ Онлайн. "
+                          "Проверьте страницу банка и повторите вход.")});
             }
             return;
         }
