@@ -63,6 +63,15 @@ class TBankLoginCoordinator final : public QObject {
           completed_(std::move(completed)), failed_(std::move(failed)) {
         authorization_timer_.setSingleShot(true);
         connect(&authorization_timer_, &QTimer::timeout, this, [this] { pollAuthorization(); });
+        request_deadline_.setSingleShot(true);
+        connect(&request_deadline_, &QTimer::timeout, this, [this] {
+            if (authorization_reply_ && !authorization_reply_->isFinished())
+                authorization_reply_->abort();
+        });
+        login_deadline_.setSingleShot(true);
+        connect(&login_deadline_, &QTimer::timeout, this, [this] {
+            if (active_) fail(QStringLiteral("Время входа истекло. Начните подключение Т-Банка заново."));
+        });
         probe_timer_.setInterval(400);
         connect(&probe_timer_, &QTimer::timeout, this, [this] { probePage(); });
     }
@@ -121,6 +130,7 @@ class TBankLoginCoordinator final : public QObject {
         ++generation_;
         elapsed_.start();
         active_ = true;
+        login_deadline_.start(static_cast<int>(authorizationTimeoutMilliseconds));
         reportStatus(QStringLiteral("Введите телефон и код на официальной странице Т-Банка ниже."));
         auto* view = static_cast<QWebView*>(webView());
         if (!persistentBankBrowserSessions) view->deleteAllCookies();
@@ -163,22 +173,6 @@ class TBankLoginCoordinator final : public QObject {
   private:
     static constexpr qint64 authorizationTimeoutMilliseconds = 10 * 60 * 1'000;
     static constexpr qsizetype maximumAuthResponseBytes = 64 * 1024;
-
-    static QNetworkRequest authRequest(const QUrl& url) {
-        QNetworkRequest request(url);
-        request.setRawHeader(QByteArrayLiteral("Accept"), QByteArrayLiteral("application/json"));
-        request.setRawHeader(QByteArrayLiteral("User-Agent"),
-                             QByteArrayLiteral("WealthTracker/0.1"));
-        request.setTransferTimeout(15'000);
-        request.setAttribute(QNetworkRequest::Http2AllowedAttribute, false);
-        request.setAttribute(QNetworkRequest::CookieLoadControlAttribute, QNetworkRequest::Manual);
-        request.setAttribute(QNetworkRequest::CookieSaveControlAttribute, QNetworkRequest::Manual);
-        request.setAttribute(QNetworkRequest::RedirectPolicyAttribute,
-                             QNetworkRequest::ManualRedirectPolicy);
-        request.setAttribute(QNetworkRequest::MaximumDownloadBufferSizeAttribute,
-                             maximumAuthResponseBytes);
-        return request;
-    }
 
     static std::expected<QByteArray, QString> authResponse(QNetworkReply& reply) {
         const auto status = reply.attribute(QNetworkRequest::HttpStatusCodeAttribute).toInt();
@@ -243,7 +237,7 @@ class TBankLoginCoordinator final : public QObject {
         candidate_session_.fill('\0');
         candidate_session_ = std::move(session);
         reportStatus(
-            QStringLiteral("Официальная страница передала API-сессию. Проверяем доступ CLIENT…"));
+            QStringLiteral("Проверяем доступ к счетам Т-Банка. Если форма входа открыта, завершите вход на странице банка."));
         pollAuthorization();
     }
 
@@ -259,16 +253,17 @@ class TBankLoginCoordinator final : public QObject {
             authorization_timer_.start(1'000);
             return;
         }
-        const auto pingUrl = tbank_ping_url(candidate_session_);
-        if (!pingUrl) {
-            fail(pingUrl.error());
+        const auto request = tbank_authorization_request(candidate_session_);
+        if (!request) {
+            fail(request.error());
             return;
         }
 
         auto polledSession = candidate_session_;
         const auto generation = generation_;
-        auto* reply = network_.get(authRequest(*pingUrl));
+        auto* reply = network_.get(*request);
         authorization_reply_ = reply;
+        request_deadline_.start(15'000);
         connect(reply, &QNetworkReply::finished, this,
                 [this, reply, generation, polledSession = std::move(polledSession)]() mutable {
                     if (generation != generation_ || authorization_reply_ != reply) {
@@ -277,6 +272,7 @@ class TBankLoginCoordinator final : public QObject {
                         return;
                     }
                     authorization_reply_.clear();
+                    request_deadline_.stop();
                     auto response = authResponse(*reply);
                     reply->deleteLater();
                     if (polledSession != candidate_session_) {
@@ -337,6 +333,8 @@ class TBankLoginCoordinator final : public QObject {
             ++generation_;
         }
         authorization_timer_.stop();
+        request_deadline_.stop();
+        login_deadline_.stop();
         if (authorization_reply_) {
             disconnect(authorization_reply_, nullptr, this, nullptr);
             authorization_reply_->abort();
@@ -365,6 +363,8 @@ class TBankLoginCoordinator final : public QObject {
     QNetworkAccessManager network_;
     QPointer<QNetworkReply> authorization_reply_;
     QTimer authorization_timer_;
+    QTimer request_deadline_;
+    QTimer login_deadline_;
     QElapsedTimer elapsed_;
     std::unique_ptr<QWebView> web_view_;
     QTimer probe_timer_;

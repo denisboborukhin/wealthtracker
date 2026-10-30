@@ -7,6 +7,7 @@ extern "C++" {
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QJsonParseError>
+#include <QNetworkRequest>
 #include <QString>
 #include <QUrl>
 #include <QUrlQuery>
@@ -102,6 +103,23 @@ parse_tbank_access_level(const QByteArray& response) {
     }
     return std::unexpected(
         QStringLiteral("Т-Банк вернул неизвестный уровень доступа"));
+}
+
+[[nodiscard]] std::expected<QNetworkRequest, QString>
+tbank_authorization_request(const QByteArray& sessionId) {
+    const auto url = tbank_ping_url(sessionId);
+    if (!url) return std::unexpected(url.error());
+    const wealthtracker::connectors::HostAllowlist policy({QStringLiteral("www.tbank.ru")});
+    auto request = policy.makeRequest(*url);
+    if (!request) return std::unexpected(request.error().message);
+    request->setRawHeader(QByteArrayLiteral("Accept"), QByteArrayLiteral("application/json"));
+    request->setTransferTimeout(15'000);
+    request->setAttribute(QNetworkRequest::Http2AllowedAttribute, false);
+    request->setAttribute(QNetworkRequest::CookieLoadControlAttribute, QNetworkRequest::Manual);
+    request->setAttribute(QNetworkRequest::CookieSaveControlAttribute, QNetworkRequest::Manual);
+    request->setAttribute(QNetworkRequest::MaximumDownloadBufferSizeAttribute,
+                          detail::maximumTBankAuthResponseSize);
+    return *request;
 }
 
 }  // namespace wealthtracker::app
