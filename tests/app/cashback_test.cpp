@@ -175,6 +175,13 @@ TEST_CASE("Controller cashback persists manual choices and protects them during 
         AppController controller(nullptr, nullptr);
         REQUIRE(controller.cashbackBanks().size() == 3);
         REQUIRE(controller.cashbackMonths().size() == 2);
+        const QStringList monthNames{"январь", "февраль", "март", "апрель", "май", "июнь",
+            "июль", "август", "сентябрь", "октябрь", "ноябрь", "декабрь"};
+        for (int index = 0; index < 2; ++index) {
+            const auto date = CashbackBook::monthStart(QDate::currentDate()).addMonths(index);
+            CHECK(controller.cashbackMonths()[index].toMap()["label"].toString()
+                == monthNames[date.month() - 1] + " " + QString::number(date.year()));
+        }
         REQUIRE(controller.saveCashbackCategory("tbank", month, "Супермаркеты", "5.25"));
         controller.refreshCashbackBanks();
         CHECK(controller.cashbackBanks().front().toMap()["current"].toList().size() == 1);

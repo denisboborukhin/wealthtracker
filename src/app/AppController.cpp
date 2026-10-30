@@ -650,7 +650,8 @@ QVariantList AppController::cashbackMonths() const {
     const auto current = CashbackBook::monthStart(QDate::currentDate());
     for (const auto& month : {current, current.addMonths(1)}) {
         result.push_back(QVariantMap{{QStringLiteral("id"), month.toString(QStringLiteral("yyyy-MM-dd"))},
-            {QStringLiteral("label"), russian.toString(month, QStringLiteral("LLLL yyyy"))}});
+            {QStringLiteral("label"), russian.standaloneMonthName(month.month(), QLocale::LongFormat)
+                + QLatin1Char(' ') + QString::number(month.year())}});
     }
     return result;
 }
