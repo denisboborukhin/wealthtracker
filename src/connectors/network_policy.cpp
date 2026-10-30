@@ -3,6 +3,10 @@ module;
 #include <QNetworkRequest>
 #include <QString>
 #include <QUrl>
+#ifdef Q_OS_ANDROID
+#include <QSslCertificate>
+#include <QSslConfiguration>
+#endif
 
 #include <algorithm>
 #include <expected>
@@ -42,6 +46,21 @@ ConnectorResult<QNetworkRequest> HostAllowlist::makeRequest(const QUrl &url) con
             url.toDisplayString(QUrl::RemoveUserInfo), false});
     }
     QNetworkRequest request(url);
+#ifdef Q_OS_ANDROID
+    // Qt/OpenSSL does not consume Android WebView's domain trust configuration.
+    if (url.host().compare(QStringLiteral("www.tbank.ru"), Qt::CaseInsensitive) == 0) {
+        const auto roots = QSslCertificate::fromPath(
+            QStringLiteral(":/certificates/russian_trusted_root_ca.pem"));
+        if (roots.size() != 1) {
+            return std::unexpected(ConnectorError{
+                ErrorCode::SecurityViolation,
+                QStringLiteral("The bundled bank CA certificate is unavailable"), {}, false});
+        }
+        auto tls = request.sslConfiguration();
+        tls.addCaCertificates(roots);
+        request.setSslConfiguration(tls);
+    }
+#endif
     request.setAttribute(QNetworkRequest::RedirectPolicyAttribute,
                          QNetworkRequest::ManualRedirectPolicy);
     request.setHeader(QNetworkRequest::UserAgentHeader,

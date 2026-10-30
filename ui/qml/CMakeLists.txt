@@ -63,12 +63,17 @@ set_target_properties(
 )
 
 if(ANDROID)
+    qt_add_resources(wealthtracker android_bank_ca
+        PREFIX "/certificates"
+        BASE "${PROJECT_SOURCE_DIR}/android/res/raw"
+        FILES "${PROJECT_SOURCE_DIR}/android/res/raw/russian_trusted_root_ca.pem"
+    )
     set_target_properties(wealthtracker PROPERTIES
         QT_ANDROID_PACKAGE_SOURCE_DIR "${PROJECT_SOURCE_DIR}/android"
         QT_ANDROID_PACKAGE_NAME "org.wealthtracker.android"
         QT_ANDROID_APP_NAME "WealthTracker"
-        QT_ANDROID_VERSION_CODE 2
-        QT_ANDROID_VERSION_NAME "0.1.1"
+        QT_ANDROID_VERSION_CODE 3
+        QT_ANDROID_VERSION_NAME "0.1.2"
         QT_ANDROID_MIN_SDK_VERSION 28
         QT_ANDROID_TARGET_SDK_VERSION 36
         QT_ANDROID_COMPILE_SDK_VERSION 36

@@ -27,8 +27,8 @@ not change crypto code or TLS validation. Gradle verifies its distribution hash.
 Output:
 
 ```text
-android/output/wealthtracker-0.1.1-debug.apk
-android/output/wealthtracker-0.1.1-debug.apk.sha256
+android/output/wealthtracker-0.1.2-debug.apk
+android/output/wealthtracker-0.1.2-debug.apk.sha256
 ```
 
 The package ID is `org.wealthtracker.android`. Keep
@@ -42,7 +42,7 @@ Copy the APK to your phone, open it in Files, and permit installation from that
 source. Or authorize USB debugging on your phone and run:
 
 ```sh
-"$ANDROID_SDK_ROOT/platform-tools/adb" install -r android/output/wealthtracker-0.1.1-debug.apk
+"$ANDROID_SDK_ROOT/platform-tools/adb" install -r android/output/wealthtracker-0.1.2-debug.apk
 ```
 
 Install future versions over this app rather than uninstalling; uninstalling
@@ -57,7 +57,14 @@ storage is enabled for bank frontends and removed for the selected bank on
 explicit disconnect using WebView’s site-scoped deletion API. Bank connections
 require an up-to-date Android System WebView with browsing-data deletion support;
 older providers receive an update message before login. Certificate failures remain blocked and receive a visible
-status message. Credentials are encrypted with
+status message. The APK includes the bank-recommended Russian Trusted Root CA
+only for the six exact login hosts in `res/xml/network_security_config.xml`.
+Other hosts use system CAs only; arbitrary user-installed CAs are not trusted.
+This uses Android's declarative trust configuration, preserving TLS chain,
+validity, and hostname checks without changing the phone's certificate store.
+Qt/OpenSSL requests to the exact `www.tbank.ru` API host receive the same
+additional root per request; the global Qt trust configuration is unchanged.
+Credentials are encrypted with
 AES-GCM and a non-exportable Android Keystore key; financial history continues
 to use SQLCipher. Cloud backup and device-transfer extraction are excluded.
 Manual cashback entries use app-private Qt settings, as on desktop; these entries
@@ -68,3 +75,21 @@ included, but live bank login and cashback compatibility require validation on
 your device. Android preserves browser sessions between launches and clears only the selected
 bank on disconnect. Android may suspend background synchronization while the app
 is not active.
+
+## Bank certificate provenance and checks
+
+The root in `res/raw/russian_trusted_root_ca.pem` was downloaded over verified
+HTTPS from the Android certificate link on
+<https://www.tbank.ru/bank/help/certificates/>:
+<https://help-static2.tbank-online.com/certs/Android/Root/Russian_Trusted_Root_CA.cer>.
+Its DER SHA-256 fingerprint is
+`d26d2d0231b7c39f92cc738512ba54103519e4405d68b5bd703e9788ca8ecf31`.
+The bank's separate Linux root download produced the same DER fingerprint.
+The root is valid from March 2022 through February 2032.
+
+`BankCertificateTrustTest` checks Android's actual trust manager against public
+Alfa, VTB, and T-Bank certificate chains captured on October 30, 2026. It also
+checks rejection outside the exact host scope and rejection of a damaged bank
+certificate signature. Fixtures contain public certificates only and expire
+with the banks' certificates; replace them from verified live TLS handshakes
+when they expire. Test assets are excluded from the installable app APK.

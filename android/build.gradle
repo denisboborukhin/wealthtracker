@@ -62,6 +62,7 @@ android {
     }
 
     sourceSets.androidTest.java.srcDirs = ['tests']
+    sourceSets.androidTest.assets.srcDirs = ['tests/assets']
 
     tasks.withType(JavaCompile) {
         options.incremental = true
