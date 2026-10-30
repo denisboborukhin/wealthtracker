@@ -245,6 +245,7 @@ When the user corrects your approach, append a one-line rule here before ending 
 - Keep Android packaging tools, outputs, and local signing files under `android/`.
 - Verify phone layouts and native WebView rendering before delivering an APK; bank frontends require DOM storage, which must be cleared with a site-scoped API on disconnect.
 - Verify Android bank certificate chains against the app's actual trust configuration; system roots alone do not cover the banks' Russian CA, and user-installed roots are not trusted by default.
+- Report bank login success only after validated financial data; an API-session identifier, loaded frontend module, or pending dashboard request does not prove authentication.
 
 ## 12. How this file was built
 

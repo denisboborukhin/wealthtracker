@@ -133,7 +133,9 @@ that no HTTP response was received.
 
 Choose **Альфа-Банк → Войти** and complete the official phone/SMS page. The
 session stays inside the system WebView. The app projects known dashboard
-account and balance fields; refresh reloads the dashboard.
+account and balance fields from the frontend's current financial store, falling
+back to known bootstrap data when that store is unavailable; refresh reloads
+the dashboard. Empty or still-loading pages do not establish successful login.
 An authentication-host redirect is allowed to finish within the ten-second refresh
 limit. If it does not finish, the saved connection and page remain available through
 **Открыть банк**. This button is also available during that bank's refresh: it

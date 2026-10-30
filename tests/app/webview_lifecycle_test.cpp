@@ -22,6 +22,45 @@ import wt.connectors;
 import wt.alfa_login;
 import wt.vtb_login;
 
+TEST_CASE("An unauthenticated bank page never reports successful login") {
+    QStringList statuses;
+    bool completed = false;
+    bool failed = false;
+    const auto status = [&](QString value) { statuses.push_back(std::move(value)); };
+    const auto done = [&](wealthtracker::connectors::NormalizedBatch) { completed = true; };
+    const auto failure = [&](auto) { failed = true; };
+    const auto exercise = [&](auto& coordinator, const QUrl& origin) {
+        auto* view = static_cast<QWebView*>(coordinator.webView());
+        QEventLoop loaded;
+        QObject::connect(view, &QWebView::loadingChanged, &loaded,
+                         [&](const QWebViewLoadingInfo& info) {
+            if (info.status() == QWebViewLoadingInfo::LoadStatus::Succeeded) loaded.quit();
+        });
+        view->loadHtml(QStringLiteral("<html><body><input type='tel'></body></html>"), origin);
+        QTimer::singleShot(3'000, &loaded, &QEventLoop::quit);
+        loaded.exec();
+        REQUIRE(view->url() == origin);
+        coordinator.startLogin(origin);
+        QEventLoop probed;
+        QTimer::singleShot(1'200, &probed, &QEventLoop::quit);
+        probed.exec();
+        CHECK(coordinator.active());
+        CHECK_FALSE(completed);
+        CHECK_FALSE(failed);
+        for (const auto& message : statuses)
+            CHECK_FALSE(message.contains(QStringLiteral("Вход выполнен")));
+        coordinator.cancel();
+    };
+    SECTION("Alfa") {
+        wealthtracker::app::AlfaLoginCoordinator coordinator(status, done, failure, nullptr);
+        exercise(coordinator, QUrl{QStringLiteral("https://web.alfabank.ru/")});
+    }
+    SECTION("VTB") {
+        wealthtracker::app::VtbLoginCoordinator coordinator(status, done, failure, nullptr);
+        exercise(coordinator, QUrl{QStringLiteral("https://online.vtb.ru/")});
+    }
+}
+
 TEST_CASE("Alfa authentication redirect can restore the dashboard without a new login") {
     using namespace wealthtracker::app;
     bool failed = false;

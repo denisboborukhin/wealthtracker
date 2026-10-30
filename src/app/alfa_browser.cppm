@@ -64,7 +64,6 @@ struct AlfaFinancialProjection {
       return JSON.stringify(result)
     }
 
-    result.stage = 'dashboard-loading'
     const roots = []
     const seenRoots = new Set()
     const addRoot = value => {
@@ -72,10 +71,37 @@ struct AlfaFinancialProjection {
       seenRoots.add(value)
       roots.push(value)
     }
-    addRoot(globalThis.initialState)
-    addRoot(globalThis.__INITIAL_STATE__)
-    addRoot(globalThis.__PRELOADED_STATE__)
-    addRoot(globalThis.__NEXT_DATA__)
+    // Host bootstrap hydrates module32792.iZ in module51824.globalStore;
+    // later product reads update that store, not the original initialState.
+    let runtime = globalThis.__wealthtrackerAlfaLayoutRuntime
+    if (typeof runtime !== 'function') {
+      const chunks = globalThis.webpackChunknewclick_host_ui
+      if (Array.isArray(chunks)) {
+        const entry = [['wealthtracker-alfa-layout-reader'], {}, require => { runtime = require }]
+        try { chunks.push(entry) } finally {
+          const index = chunks.indexOf(entry)
+          if (index >= 0) chunks.splice(index, 1)
+        }
+        if (typeof runtime === 'function') globalThis.__wealthtrackerAlfaLayoutRuntime = runtime
+      }
+    }
+    const storeModule = runtime?.c?.[51824]
+    const layoutModule = runtime?.c?.[32792]
+    const hasLiveLayout = Boolean(storeModule && layoutModule)
+    if (hasLiveLayout) {
+      const store = storeModule.exports?.globalStore
+      const atom = layoutModule.exports?.iZ
+      if (!store || typeof store.get !== 'function' || !atom) return JSON.stringify(result)
+      const layoutData = store.get(atom)
+      if (!layoutData || typeof layoutData !== 'object' || Array.isArray(layoutData))
+        return JSON.stringify(result)
+      addRoot({ layoutData })
+    } else {
+      addRoot(globalThis.initialState)
+      addRoot(globalThis.__INITIAL_STATE__)
+      addRoot(globalThis.__PRELOADED_STATE__)
+      addRoot(globalThis.__NEXT_DATA__)
+    }
 
     const parseObjectAt = (source, start) => {
       if (start < 0 || source[start] !== '{') return null
@@ -106,7 +132,7 @@ struct AlfaFinancialProjection {
     }
     let scannedCharacters = 0
     const inlineScripts = pageScripts.slice(0, 64)
-    for (const element of inlineScripts) {
+    for (const element of hasLiveLayout ? [] : inlineScripts) {
       if (element.src) continue
       const source = String(element.textContent ?? '')
       scannedCharacters += source.length
@@ -239,6 +265,8 @@ struct AlfaFinancialProjection {
         [layout.products?.accounts, 'checking'], [layout.products?.deposits, 'deposit'],
         [layout.products?.credits, 'loan']
       ]
+      if (groups.some(([group]) => Array.isArray(group)) ||
+          Array.isArray(layout.allProducts)) result.stage = 'dashboard-loading'
       for (const [group, kind] of groups)
         if (Array.isArray(group)) for (const item of group) addAccount(item, kind)
       if (Array.isArray(layout.allProducts))

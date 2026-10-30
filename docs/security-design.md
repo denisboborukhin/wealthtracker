@@ -149,6 +149,9 @@ and `id.tinkoff.ru` origins. A fixed resource-timing expression returns at most
 eight recent API-session candidates. A cookie-disabled, redirect-disabled
 `ping` must confirm `CLIENT` access before a session is accepted. Validation
 uses HTTP/1.1, a 15-second transfer timeout, and a 64 KiB response limit.
+The same guarded request policy supplies Android's bank CA to `ping` and account
+reads. A separate 15-second timer aborts a stalled verification request; the
+interactive ten-minute deadline remains independent of reply completion.
 The account client permits only `accounts_light_ib` reads. An authentication
 rejection publishes no data and disables refresh for that process until login,
 but does not delete the saved session or rewrite the Keychain. Explicit
@@ -156,8 +159,16 @@ disconnect still removes it. Retail refreshes have independent ten-second
 deadlines and may run concurrently; only one interactive bank login is active
 at a time. Interactive verification retains a ten-minute deadline.
 
-Alfa projects known global or inline dashboard bootstrap objects on exact
-`https://web.alfabank.ru`. Inline scanning considers at most 64 scripts, with
+Alfa reads the loaded frontend's current financial layout from its existing
+global store on exact `https://web.alfabank.ru`, with known global or inline
+dashboard bootstrap objects as a fallback when the live store is unavailable.
+Live layout data takes precedence over stale bootstrap accounts. Only bounded,
+validated account projections leave the page; no new HTTP endpoint is invoked.
+The observed host bootstrap uses cached module `51824`'s `globalStore` and
+module `32792`'s financial-layout atom `iZ`; the reader does not initialize module
+factories. This contract was verified in the public
+[host bootstrap](https://alfaonline.servicecdn.ru/public/newclick-host-ui/assets/static-legacy/js/async/desktop_bootstrap.82fb0d00.js).
+Inline scanning considers at most 64 scripts, with
 8 MiB per script and a 16 MiB aggregate budget. Certificate failures remain
 blocking; help opens the fixed bank certificate URL without modifying trust.
 An authentication-host redirect alone does not prove expiry. The coordinator
@@ -177,6 +188,9 @@ optional balance supplement, without labelling the session expired. No financial
 batch is published during restoration. Compatibility status uses fixed codes.
 VTB authentication diagnostics log only an allowlisted request-stage code and
 elapsed milliseconds; cookies, headers, storage, URLs, and response bodies are not logged.
+Frontend availability, pending requests and API-session discovery do not prove
+authentication. Alfa and VTB report success only after validated financial data;
+interactive login is not stopped by the shorter dashboard-loading deadline.
 
 Sources: [T-Bank login](../src/app/tbank_login.cppm),
 [Alfa adapter](../src/app/alfa_browser.cppm),

@@ -378,12 +378,7 @@ TEST_CASE("T-Bank login UI embeds a coordinator-owned native WebView") {
         WEALTHTRACKER_SOURCE_DIR "/src/app/tbank_login.cppm"));
     REQUIRE(coordinatorSource.open(QIODevice::ReadOnly));
     const auto coordinator = coordinatorSource.readAll();
-    CHECK(coordinator.contains(QByteArrayLiteral(
-        "QNetworkRequest::CookieLoadControlAttribute")));
-    CHECK(coordinator.contains(QByteArrayLiteral(
-        "QNetworkRequest::CookieSaveControlAttribute")));
-    CHECK(coordinator.contains(QByteArrayLiteral(
-        "QNetworkRequest::Manual")));
+    CHECK(coordinator.contains(QByteArrayLiteral("tbank_authorization_request")));
     CHECK(coordinator.contains(QByteArrayLiteral(
         "parse_tbank_session_projection")));
     CHECK(coordinator.contains(QByteArrayLiteral("runJavaScript(")));
@@ -542,7 +537,7 @@ TEST_CASE("Alfa projection reads the current inline runApp state after hydration
     CHECK(projection->batch->transactions.isEmpty());
 }
 
-TEST_CASE("Alfa projection reports post-login loading instead of waiting silently") {
+TEST_CASE("Alfa projection reports pending account access without claiming login") {
     using wealthtracker::app::AlfaProjectionStage;
     using wealthtracker::app::parse_alfa_financial_projection;
 
@@ -584,7 +579,8 @@ TEST_CASE("Alfa projection reports post-login loading instead of waiting silentl
     REQUIRE(coordinator.open(QIODevice::ReadOnly));
     const auto coordinatorSource = coordinator.readAll();
     CHECK(coordinatorSource.contains(QByteArrayLiteral(
-        "Вход выполнен. Получаем счета из Альфа-Онлайн")));
+        "Доступ к счетам ещё не подтверждён")));
+    CHECK_FALSE(coordinatorSource.contains(QByteArrayLiteral("Вход выполнен")));
     CHECK(coordinatorSource.contains(QByteArrayLiteral(
         "dashboardStateTimeoutMilliseconds = 30 * 1'000")));
     CHECK(coordinatorSource.contains(QByteArrayLiteral(
@@ -601,6 +597,147 @@ TEST_CASE("Alfa projection reports post-login loading instead of waiting silentl
         "QTimer::singleShot(0, view")));
     CHECK(coordinatorSource.contains(QByteArrayLiteral("view->deleteLater()")));
     CHECK_FALSE(coordinatorSource.contains(QByteArrayLiteral("about:blank")));
+}
+
+TEST_CASE("Alfa login shells do not imply a financial dashboard") {
+    using wealthtracker::app::AlfaProjectionStage;
+    using wealthtracker::app::alfa_financial_projection_script;
+    using wealthtracker::app::parse_alfa_financial_projection;
+
+    QString state;
+    AlfaProjectionStage expected = AlfaProjectionStage::Authentication;
+    SECTION("empty entry page") {}
+    SECTION("login form") {
+        state = QStringLiteral("globalThis.document.forms = [{}]");
+    }
+    SECTION("unrelated bootstrap state") {
+        state = QStringLiteral("globalThis.initialState = { loginForm: {} }");
+    }
+    SECTION("layout without financial collections") {
+        state = QStringLiteral("globalThis.initialState = { layoutData: { header: {} } }");
+    }
+    SECTION("recognized accounts still loading") {
+        state = QStringLiteral("globalThis.initialState = { layoutData: { accounts: [] } }");
+        expected = AlfaProjectionStage::DashboardLoading;
+    }
+    SECTION("recognized dashboard products still loading") {
+        state = QStringLiteral("globalThis.initialState = { layoutData: { allProducts: [] } }");
+        expected = AlfaProjectionStage::DashboardLoading;
+    }
+
+    QJSEngine engine;
+    const auto setup = engine.evaluate(QStringLiteral(R"JS(
+        var globalThis = this
+        globalThis.location = { href: 'https://web.alfabank.ru/' }
+        globalThis.URL = function() {
+            return { protocol: 'https:', hostname: 'web.alfabank.ru', port: '',
+                     username: '', password: '', origin: 'https://web.alfabank.ru',
+                     pathname: '/' }
+        }
+        globalThis.document = { scripts: [], forms: [] }
+    )JS"));
+    REQUIRE_FALSE(setup.isError());
+    REQUIRE_FALSE(engine.evaluate(state).isError());
+    const auto evaluated = engine.evaluate(alfa_financial_projection_script());
+    REQUIRE_FALSE(evaluated.isError());
+    const auto projection = parse_alfa_financial_projection(
+        evaluated.toString(), QDateTime::currentDateTimeUtc());
+    REQUIRE(projection);
+    CHECK(projection->stage == expected);
+    CHECK_FALSE(projection->batch);
+}
+
+TEST_CASE("Alfa projection reads hydrated financial state instead of stale bootstrap") {
+    using wealthtracker::app::AlfaProjectionStage;
+    using wealthtracker::app::alfa_financial_projection_script;
+    using wealthtracker::app::parse_alfa_financial_projection;
+
+    QJSEngine engine;
+    REQUIRE_FALSE(engine.evaluate(QStringLiteral(R"JS(
+        var globalThis = this
+        globalThis.location = { href: 'https://web.alfabank.ru/dashboard' }
+        globalThis.URL = function() {
+            return { protocol: 'https:', hostname: 'web.alfabank.ru', port: '',
+                     username: '', password: '', origin: 'https://web.alfabank.ru',
+                     pathname: '/dashboard' }
+        }
+        globalThis.document = { scripts: [] }
+        globalThis.initialState = { layoutData: { accounts: [
+            { id: 'current', amount: { value: '1.00', currency: 'RUB' } },
+            { id: 'removed', amount: { value: '99.00', currency: 'RUB' } }
+        ] } }
+        globalThis.fixtureAtom = {}
+        globalThis.fixtureLayout = { allProducts: [
+            { id: 'current', sectionId: 'alfa', content: { main: {
+                firstLine: { items: [{ content: { value: 'Current account' } }] },
+                thirdLine: { items: [{ content: { value: {
+                    value: '2550', minorUnits: 100, currency: 'RUR'
+                } } }] }
+            } } }
+        ] }
+        globalThis.fixtureRequire = function() { throw new Error('must not initialize modules') }
+        globalThis.fixtureRequire.c = {
+            51824: { exports: { globalStore: { get: atom => {
+                if (atom !== fixtureAtom) throw new Error('unknown atom')
+                return fixtureLayout
+            } } } },
+            32792: { exports: { iZ: fixtureAtom } }
+        }
+        globalThis.fixtureCaptures = 0
+        globalThis.webpackChunknewclick_host_ui = []
+        globalThis.webpackChunknewclick_host_ui.push = function(entry) {
+            ++fixtureCaptures
+            Array.prototype.push.call(this, entry)
+            entry[2](fixtureRequire)
+        }
+    )JS")).isError());
+
+    const auto read = [&] {
+        const auto evaluated = engine.evaluate(alfa_financial_projection_script());
+        REQUIRE_FALSE(evaluated.isError());
+        return parse_alfa_financial_projection(evaluated.toString(), QDateTime::currentDateTimeUtc());
+    };
+    const auto initial = read();
+    REQUIRE(initial);
+    REQUIRE(initial->stage == AlfaProjectionStage::Ready);
+    REQUIRE(initial->batch);
+    REQUIRE(initial->batch->accounts.size() == 1);
+    CHECK(initial->batch->accounts.front().externalId == QStringLiteral("current"));
+    CHECK(initial->batch->balances.front().balance.minorUnits == 2550);
+    CHECK(engine.evaluate(QStringLiteral("webpackChunknewclick_host_ui.length")).toInt() == 0);
+
+    REQUIRE_FALSE(engine.evaluate(QStringLiteral(
+        "initialState = {}; fixtureLayout.allProducts[0].content.main.thirdLine.items[0].content.value.value = '3075'")).isError());
+    const auto updated = read();
+    REQUIRE(updated);
+    REQUIRE(updated->batch);
+    REQUIRE(updated->batch->accounts.size() == 1);
+    CHECK(updated->batch->balances.front().balance.minorUnits == 3075);
+    CHECK(engine.evaluate(QStringLiteral("fixtureCaptures")).toInt() == 1);
+    REQUIRE_FALSE(engine.evaluate(QStringLiteral(R"JS(
+        initialState = { layoutData: { accounts: [
+            { id: 'stale', amount: { value: '99.00', currency: 'RUB' } }
+        ] } }
+    )JS")).isError());
+
+    QString replacement;
+    SECTION("empty live collections never fall back to stale accounts") {
+        replacement = QStringLiteral("fixtureLayout = { allProducts: [] }");
+    }
+    SECTION("unknown live layout never falls back to stale accounts") {
+        replacement = QStringLiteral("fixtureLayout = { unsupportedProducts: [] }");
+    }
+    SECTION("malformed live layout never falls back to stale accounts") {
+        replacement = QStringLiteral("fixtureLayout = 'unsupported'");
+    }
+    SECTION("malformed live store never falls back to stale accounts") {
+        replacement = QStringLiteral("fixtureRequire.c[51824].exports.globalStore = {}");
+    }
+    REQUIRE_FALSE(engine.evaluate(replacement).isError());
+    const auto unsupported = read();
+    REQUIRE(unsupported);
+    CHECK(unsupported->stage != AlfaProjectionStage::Ready);
+    CHECK_FALSE(unsupported->batch);
 }
 
 TEST_CASE("Alfa projection recognizes the bank certificate landing page") {

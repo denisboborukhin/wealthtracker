@@ -314,6 +314,7 @@ private:
             return;
         }
         if (projection->stage == AlfaProjectionStage::Authentication) {
+            dashboard_observed_elapsed_ = -1;
             return;
         }
         if (projection->stage == AlfaProjectionStage::CertificateRequired) {
@@ -330,15 +331,17 @@ private:
             if (dashboard_observed_elapsed_ < 0) {
                 dashboard_observed_elapsed_ = elapsed_.elapsed();
                 reportStatus(QStringLiteral(
-                    "Вход выполнен. Получаем счета из Альфа-Онлайн…"));
+                    "Альфа-Онлайн загружает данные. Доступ к счетам ещё не подтверждён…"));
                 return;
             }
-            if (elapsed_.elapsed() - dashboard_observed_elapsed_ >
+            if (mode_ == Mode::Synchronize &&
+                elapsed_.elapsed() - dashboard_observed_elapsed_ >
                 dashboardStateTimeoutMilliseconds) {
                 fail({AlfaLoginFailureKind::Protocol,
                       QStringLiteral(
-                          "Вход выполнен, но Alfa Online не передал счета в ожидаемом "
-                          "формате. Возможно, интерфейс банка изменился.")});
+                          "Не удалось подтвердить доступ к счетам Альфа-Онлайн: "
+                          "банк не передал данные в поддерживаемом формате. "
+                          "Проверьте страницу банка.")});
             }
             return;
         }
