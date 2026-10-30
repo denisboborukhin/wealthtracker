@@ -33,7 +33,7 @@ by ten seconds instead of being dropped.
 
 ## Cashback
 
-Open **Кэшбэк** to record categories already selected in the bank's own app.
+Open **Кэшбэк** to view categories already selected in the bank's own app.
 T-Bank, Alfa-Bank, and VTB each have separate lists for the current calendar
 month and the next month. Enter a category and a percentage (0.01–100, up to two
 decimal places). Saving the same category for the same bank and month updates
@@ -41,18 +41,81 @@ its rate; **Удалить** removes only that entry. Entries do not require a c
 bank. A new calendar month promotes next month's entries without copying the
 previous month's choices.
 
-The page uses each bank's existing synchronization status and last balance
-refresh time. **Обновить банки** starts the ordinary balance refresh for
-connected retail banks. Startup, scheduled, and manual refreshes update that
-status too, while preserving manual categories, including on failure. A bank
-refresh does not verify the selections. Automatic category retrieval is not
-implemented: no verified read contract is available for these banks. An empty
-list means no manual entries, not that the bank has no selected categories.
+T-Bank, Alfa-Bank, and VTB categories are read automatically after a successful balance
+refresh, including startup, scheduled, and manual refreshes. VTB's authenticated
+page client makes this exact GET request, without a query or body:
+`/msa/api-gw/private/loya/loya-web/v2/bonus/month/categories`.
+Only bounded category names and rates cross the WebView boundary. Credentials
+and bank response objects remain page-local. The read has its own ten-second
+deadline and never delays publishing balances. The page displays the source of
+each month's list and a separate cashback status and last-success time.
+
+The VTB response's current and next month slots must match their Russian month
+names and HTTP response date. Its `choice: true` means the bank offers selection,
+not that those categories are confirmed; the app reports that state instead of
+promoting offers. Archived categories and the separate available-offer catalog
+are excluded. Percentage qualifiers such as `до` are preserved. Failed reads
+keep the last successful in-memory snapshot and its original timestamp.
+
+Source contract: VTB's public category module `mf_1757_categories` version
+`4.12.18`, [read client](https://s1.vtb.ru/mf/mf_1757_categories/4.12.18/static/js/902.f2200977.js)
+and [month renderer](https://s1.vtb.ru/mf/mf_1757_categories/4.12.18/static/js/138.31748f30.js).
+Synthetic tests exercise that contract; they do not establish live compatibility.
+
+T-Bank's reader uses the existing native session and the loyalty IDs from that
+same `accounts_light_ib` response; it does not repeat account discovery. The
+official frontend's read request is a JSON POST to
+`/api/ms-gateway/loyalty_api/api/bonuses`, with fixed `origin`, `appName`,
+`appVersion`, and the existing `sessionid` query. Its body contains deduplicated
+`loyaltyIds` and `origin`. The optional subscription bundle is omitted, as in
+the bank's own caller. Only `regularEssences` entries and explicitly active
+categories are used. Program account ownership, dates in Europe/Moscow, exact
+rates, and size limits are validated. Different rates from distinct card
+programs retain account/program labels; contradictory rates within a program
+are rejected. The read has a separate ten-second deadline and cannot invalidate
+a successful balance refresh.
+
+Source contract: T-Bank's observed public
+[bonuses module](https://cdn.tbank.ru/s3aas/ib/bonuses/mm/desktop-bonuses-main-aggregated/1.215.1/desktop-bonuses-main-aggregated.client.js)
+and [production API configuration](https://cdn.tbank.ru/s3aas/ib/supreme/assets/platform.b4b97599281fd742.js).
+
+Alfa uses its existing browser-owned API wrappers. It reads eligible account
+types from GET `/api/v1/loyalty/accounts`, then monthly programs from GET
+`/api/v1/loyalty-view/promoted/programs?loyaltyType=...`. Categorical programs
+provide explicit dates, confirmation state, and bank deep links containing
+their basket IDs. GET `/api/v1/loyalty-view/v2/categories?basketOfferId=...`
+provides the free and paid category sections. Only `isConfirmed: true` entries
+are published; draft `isSelected` values are not confirmation. All reads use
+the bank's own authentication and XSRF handling inside the page, with redirects
+rejected, bounded requests, and a separate ten-second overall deadline.
+
+Alfa date strings must match a supported explicit ISO/Russian date or current/
+next Russian month label. Month labels are checked against the HTTP response
+date; month identity is never inferred from basket IDs or response ordering.
+Rich category titles are decoded inertly and must contain exactly one explicit
+percentage; ambiguous rates or unknown fields reject the refresh. No category
+acceptance, purchase, or game methods are invoked.
+
+Source contract: the observed `newclick-marketplace-ui` overview and
+`newclick-loyalty-ui` `0.0.35` API declarations/renderers, served under
+`/newclick-marketplace-ui/assets/` and `/newclick-loyalty-ui/assets/` on the
+official Alfa origin. These software assets were inspected through an
+authenticated WebView; no credentials or bank data were exported for discovery.
+
+**Обновить банки** runs the same balance-and-cashback sequence. A month received from a bank takes
+precedence over its saved manual fallback, without overwriting that fallback.
+Partial responses replace only explicitly covered months. Other previously
+fetched months retain both their categories and original refresh timestamps.
+An empty manual list does not establish that the bank has no selected categories.
 
 Manual names, percentages, and months are stored in local application settings,
 separately from encrypted balance history and OS credentials. The privacy screen
 and demo mode hide them and block edits. Disconnecting a bank preserves manual
 entries; delete them on the cashback page when they are no longer wanted.
+Use **Записать вручную** to open the fallback form. Retrieved categories are
+read-only here; change bank selections through the bank's own application.
+Automatic bank snapshots are held in memory only and cleared on disconnect.
+The privacy screen and demo mode also cancel pending cashback reads.
 
 ## Retail T-Bank
 

@@ -3,8 +3,27 @@
 Manual cashback category names, percentages, and calendar months are saved in
 local application settings without encryption. They contain no bank credentials
 or bank responses. The privacy screen and demo mode hide these entries and block
-changes; they do not encrypt the settings. Cashback refresh uses existing bank
-balance synchronization and does not submit category choices to a bank.
+changes; they do not encrypt the settings. Automatic VTB cashback uses one exact,
+read-only, same-origin route through the page-owned client, with a separate
+deadline and bounded name/rate/month projection. The raw response and browser
+session never cross into C++ or QML. Automatic results stay in process memory;
+failed reads preserve the previous snapshot. No category choices are submitted
+to a bank.
+
+T-Bank cashback uses only the exact bonuses read POST from its frontend, with
+JSON loyalty IDs from validated account discovery. It uses the existing native
+session, exact HTTPS origin, manual redirect/cookie policies, bounded responses,
+and independent cancellation. No cookie extraction is added. The parser checks
+account ownership and explicit category activation before publishing a month.
+
+Alfa cashback invokes only the observed account, promoted-program, and v2
+category GET wrappers. Their service paths and GET declarations must match
+before invocation. Existing bank authentication/XSRF headers stay inside its
+WebView. The verified fetch adapter rejects redirects; no logout or reconnect
+is inferred from a failed optional read. A single abort signal and ten-second
+deadline bound the work. Rich category titles are parsed in an inert template,
+with active/resource markup rejected, and only explicit confirmed categories,
+recognized months, and unambiguous rates reach the application model.
 
 This describes implemented controls. Report vulnerabilities using the
 [security policy](../SECURITY.md).

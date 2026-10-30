@@ -145,6 +145,9 @@ target_sources(
             src/app/reporting.cppm
             src/app/crypto_wallet.cppm
             src/app/cashback.cppm
+            src/app/cashback_sync.cppm
+            src/app/alfa_cashback.cppm
+            src/app/tbank_cashback.cppm
             src/app/balance_history_view.cppm
             src/app/transfer_matching.cppm
             src/app/bank_sync.cppm
@@ -266,6 +269,8 @@ if(BUILD_TESTING)
         tests/app/balance_history_view_test.cpp
         tests/app/crypto_wallet_test.cpp
         tests/app/cashback_test.cpp
+        tests/app/cashback_sync_test.cpp
+        tests/app/tbank_cashback_test.cpp
         tests/app/transfer_matching_test.cpp
         tests/app/bank_connections_test.cpp
         tests/app/alfa_reliability_test.cpp
@@ -292,6 +297,8 @@ if(BUILD_TESTING)
             tests/app/browser_session_probe.cpp
             tests/app/webview_lifecycle_test.cpp
             tests/app/retail_refresh_test.cpp
+            tests/app/cashback_webview_test.cpp
+            tests/app/alfa_cashback_test.cpp
         )
         target_link_libraries(webview_tests PRIVATE app Catch2::Catch2)
         set_property(TARGET webview_tests PROPERTY CXX_SCAN_FOR_MODULES ON)

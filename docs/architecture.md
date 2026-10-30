@@ -81,9 +81,25 @@ The [cashback book](../src/app/cashback.cppm) validates manual bank/month/catego
 selections and stores percentages as integer basis points. The controller saves
 its bounded versioned JSON in `cashback/categories` application settings, not
 the balance-history database. It exposes only this month and next month and
-notifies the cashback view from the existing retail connection signals. The
-cashback page's refresh command uses the existing balance synchronizations;
-manual selections are never interpreted as bank-confirmed results.
+notifies the cashback view from the existing retail connection signals.
+[CashbackSync](../src/app/cashback_sync.cppm) runs the verified VTB read after
+successful balance publication. Its independent deadline, page-owned abort
+signal, and per-request ID prevent failures or late callbacks from replacing
+a prior result or a newer request. [TBankCashbackSync](../src/app/tbank_cashback.cppm)
+reuses validated account loyalty IDs and makes the bank frontend's exact bonuses
+read through the existing native session. Each automatic month has explicit
+coverage, selection state, and an observation timestamp. Partial refreshes
+replace only covered months; never-fetched months use manual fallbacks.
+Automatic snapshots stay in memory, while manual selections retain their
+original settings format.
+
+[Alfa cashback](../src/app/alfa_cashback.cppm) loads the bank-owned loyalty
+reader module without mounting its UI. It discovers monthly baskets through
+the existing account/program GET methods and uses the confirmed category
+sections. Each wrapper's declared GET and service path are checked before
+invocation; its authentication headers remain in the page. The shared
+`CashbackSync` coordinator handles Alfa and VTB origin checks, cancellation,
+timeouts, and normalized month projections.
 
 [Reporting](../src/app/reporting.cppm) filters operations by an inclusive date
 range, initially the latest month through today. Current balances and portfolio

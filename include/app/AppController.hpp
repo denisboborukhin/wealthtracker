@@ -275,6 +275,12 @@ signals:
 
 private:
     void initializeCashback();
+    void startVtbCashback();
+    void stopVtbCashback(bool clearData = false);
+    void startTBankCashback();
+    void stopTBankCashback(bool clearData = false);
+    void startAlfaCashback();
+    void stopAlfaCashback(bool clearData = false);
     bool persistCashback(const QByteArray& data);
     void startNextCryptoWallet();
     void stopCryptoRefresh();

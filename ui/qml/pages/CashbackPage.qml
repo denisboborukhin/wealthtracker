@@ -12,6 +12,7 @@ Flickable {
     readonly property var months: app.cashbackMonths
     readonly property var bankIds: ["tbank", "alfa", "vtb"]
     readonly property bool editable: !app.locked && !app.demoMode
+    property bool manualEditorOpen: false
 
     contentWidth: width
     contentHeight: Math.max(height, content.implicitHeight + Theme.pageMargin * 2)
@@ -54,21 +55,27 @@ Flickable {
                 }
             }
             ActionButton {
+                text: page.manualEditorOpen ? qsTr("Скрыть форму") : qsTr("Записать вручную")
+                enabled: page.editable
+                onClicked: page.manualEditorOpen = !page.manualEditorOpen
+            }
+            ActionButton {
                 text: qsTr("Обновить банки")
-                enabled: page.editable && page.banks.some(bank => bank.connected && !bank.syncRunning)
+                enabled: page.editable && page.banks.some(bank => bank.connected && !bank.syncRunning && !bank.cashbackRunning)
                 onClicked: page.app.refreshCashbackBanks()
             }
         }
 
         Text {
             Layout.fillWidth: true
-            text: qsTr("Категории записываются вручную. Автоматическое получение из банков пока недоступно. Обновление банков сохраняет ваши записи, но не подтверждает выбор категорий. Выберите категории в приложении банка, затем запишите их здесь.")
+            text: qsTr("Выбранные категории запрашиваются вместе с обновлением Т-Банка, Альфа-Банка и ВТБ. Источник и время обновления указаны отдельно для каждого месяца. Если банк не передал категории, доступны ручные записи.")
             color: Theme.textMuted
             font.pixelSize: 12
             wrapMode: Text.WordWrap
         }
 
         SectionCard {
+            visible: page.manualEditorOpen
             Layout.fillWidth: true
             implicitHeight: editor.implicitHeight + 32
             ColumnLayout {
@@ -166,7 +173,7 @@ Flickable {
                 }
                 Text {
                     Layout.fillWidth: true
-                    text: qsTr("Та же категория в том же банке и месяце обновляет процент. Допускается до двух знаков после запятой.")
+                    text: qsTr("Ручные записи — резервный вариант. Полученные из банка категории имеют приоритет. Та же категория в том же банке и месяце обновляет ручную запись.")
                     color: Theme.textMuted
                     font.pixelSize: 11
                     wrapMode: Text.WordWrap
@@ -207,10 +214,19 @@ Flickable {
                     Text {
                         Layout.fillWidth: true
                         text: !bankCard.modelData.connected ? qsTr("Банк не подключён · записи доступны без входа")
-                            : bankCard.modelData.syncRunning ? qsTr("Обновляем банк… · категории введены вручную")
-                            : qsTr("Обновление банка: %1 · категории введены вручную").arg(bankCard.modelData.lastSync || qsTr("нет данных"))
+                            : bankCard.modelData.syncRunning ? qsTr("Обновляем остатки банка…")
+                            : qsTr("Остатки банка обновлены: %1").arg(bankCard.modelData.lastSync || qsTr("нет данных"))
                         color: Theme.textMuted
                         font.pixelSize: 11
+                        wrapMode: Text.WordWrap
+                    }
+                    Text {
+                        Layout.fillWidth: true
+                        text: bankCard.modelData.cashbackStatus
+                            + (bankCard.modelData.cashbackLastSync ? " · " + bankCard.modelData.cashbackLastSync : "")
+                        textFormat: Text.PlainText
+                        color: Theme.textMuted
+                        font.pixelSize: 12
                         wrapMode: Text.WordWrap
                     }
                     Text {
@@ -234,6 +250,9 @@ Flickable {
                                 required property var modelData
                                 required property int index
                                 readonly property var rows: index === 0 ? bankCard.modelData.current : bankCard.modelData.next
+                                readonly property bool fromBank: index === 0 ? bankCard.modelData.currentFromBank : bankCard.modelData.nextFromBank
+                                readonly property bool selectionRequired: index === 0 ? bankCard.modelData.currentSelectionRequired : bankCard.modelData.nextSelectionRequired
+                                readonly property string lastSync: (index === 0 ? bankCard.modelData.currentLastSync : bankCard.modelData.nextLastSync) || ""
                                 Layout.fillWidth: true
                                 Layout.alignment: Qt.AlignTop
                                 spacing: 8
@@ -245,8 +264,17 @@ Flickable {
                                 }
                                 Text {
                                     Layout.fillWidth: true
+                                    text: monthColumn.fromBank ? qsTr("Из банка · %1").arg(monthColumn.lastSync) : qsTr("Вручную · не подтверждено банком")
+                                    color: Theme.textMuted
+                                    font.pixelSize: 11
+                                    wrapMode: Text.WordWrap
+                                }
+                                Text {
+                                    Layout.fillWidth: true
                                     visible: monthColumn.rows.length === 0
-                                    text: monthColumn.index === 0 ? qsTr("Категории не записаны") : qsTr("Категории ещё не записаны или выбор пока недоступен в банке")
+                                    text: monthColumn.selectionRequired ? qsTr("В банке доступен выбор категорий. Подтверждённый выбор не получен.")
+                                        : monthColumn.fromBank ? qsTr("Банк не передал выбранных категорий")
+                                        : qsTr("Категории не записаны")
                                     color: Theme.textMuted
                                     font.pixelSize: 12
                                     wrapMode: Text.WordWrap
@@ -275,6 +303,7 @@ Flickable {
                                         }
                                         ActionButton {
                                             text: qsTr("Удалить")
+                                            visible: !monthColumn.fromBank
                                             enabled: page.editable
                                             Accessible.name: qsTr("Удалить категорию %1").arg(categoryRow.modelData.name)
                                             onClicked: page.app.removeCashbackCategory(bankCard.modelData.id,

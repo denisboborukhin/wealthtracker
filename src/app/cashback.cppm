@@ -119,6 +119,18 @@ public:
         }) > 0;
     }
 
+    void replaceMonths(const CashbackBook& source, const QString& bank,
+        const QSet<QDate>& covered, const QDate& today) {
+        const auto current = monthStart(today);
+        categories_.removeIf([&](const auto& item) {
+            return item.bank == bank && (covered.contains(item.month) || item.month < current || item.month > current.addMonths(1));
+        });
+        for (const auto& item : source.categories_) {
+            if (item.bank == bank && covered.contains(item.month) && item.month >= current && item.month <= current.addMonths(1))
+                categories_.append(item);
+        }
+    }
+
     [[nodiscard]] QVariantList rows(const QString& bank, const QDate& month) const {
         QVariantList result;
         for (const auto& item : categories_) {

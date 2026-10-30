@@ -14,8 +14,10 @@
 #include <QSettings>
 #include <QTemporaryDir>
 #include <QTimer>
+#include <QTimeZone>
 
 #include <algorithm>
+#include <functional>
 #include <memory>
 
 import wt.cashback;
@@ -55,14 +57,15 @@ public:
 
 class AccountReply final : public QNetworkReply {
 public:
-    explicit AccountReply(const QNetworkRequest& request, bool fail, QObject* parent) : QNetworkReply(parent) {
+    explicit AccountReply(const QNetworkRequest& request, bool fail, QObject* parent,
+        QByteArray body = R"({"resultCode":"OK","payload":[{"id":"fixture-account","accountType":"Current","moneyAmount":{"value":"125.50","currency":"RUB"}}]})") : QNetworkReply(parent) {
         setRequest(request);
         setUrl(request.url());
         open(QIODevice::ReadOnly | QIODevice::Unbuffered);
-        QTimer::singleShot(0, this, [this, fail] {
+        QTimer::singleShot(0, this, [this, fail, body = std::move(body)] {
             if (isFinished()) return;
             if (fail) setError(QNetworkReply::TimeoutError, QStringLiteral("Fixture timeout"));
-            else body_ = R"({"resultCode":"OK","payload":[]})";
+            else body_ = body;
             setAttribute(QNetworkRequest::HttpStatusCodeAttribute, 200);
             setFinished(true);
             emit readyRead();
@@ -85,8 +88,20 @@ private:
 class AccountNetwork final : public QNetworkAccessManager {
 public:
     bool fail = false;
+    bool automaticCashback = false;
+    bool cashbackFail = false;
+    QByteArray cashbackBody;
+    int accountReads = 0;
+    int cashbackReads = 0;
 protected:
     QNetworkReply* createRequest(Operation, const QNetworkRequest& request, QIODevice*) override {
+        if (request.url().path() == QStringLiteral("/api/ms-gateway/loyalty_api/api/bonuses")) {
+            ++cashbackReads;
+            return new AccountReply(request,cashbackFail,this,cashbackBody);
+        }
+        ++accountReads;
+        if (automaticCashback) return new AccountReply(request,fail,this,
+            R"({"resultCode":"OK","payload":[{"id":"fixture-account","accountType":"Current","loyaltyId":"Cashback","moneyAmount":{"value":"125.50","currency":"RUB"}}]})");
         return new AccountReply(request, fail, this);
     }
 };
@@ -219,4 +234,49 @@ TEST_CASE("Cashback observes the existing bank synchronization without replacing
     CHECK(controller.cashbackBanks().front().toMap()["current"] == bank["current"]);
     CHECK(controller.cashbackBanks().front().toMap()["lastSync"] == bank["lastSync"]);
     CHECK_FALSE(controller.cashbackBanks().front().toMap()["syncStatus"].toString().isEmpty());
+}
+
+TEST_CASE("T-Bank balance synchronization also publishes bank cashback without repeating account discovery") {
+    SettingsScope settings;
+    auto network = std::make_unique<AccountNetwork>();
+    auto* fixture = network.get();
+    fixture->automaticCashback = true;
+    const auto today = QDate::currentDate();
+    const auto month = QDate(today.year(),today.month(),1);
+    const QTimeZone moscow("Europe/Moscow");
+    fixture->cashbackBody = QJsonDocument(QJsonObject{{"payload",QJsonObject{{"data",QJsonArray{
+        QJsonObject{{"serviceType","regularEssences"},{"data",QJsonObject{
+            {"accountIds",QJsonArray{"fixture-account"}}, {"activePeriod",QJsonObject{
+                {"fromMs",QDateTime(month,QTime(0,0),moscow).toMSecsSinceEpoch()},
+                {"toMs",QDateTime(month.addMonths(1).addDays(-1),QTime(23,59,59),moscow).toMSecsSinceEpoch()}}},
+            {"essences",QJsonArray{QJsonObject{{"name","Кафе"},{"percent",5},{"isActive",true}}}}}}}
+    }}}}}).toJson();
+    AppController controller(std::make_unique<Credentials>(),std::move(network),nullptr);
+    REQUIRE(controller.saveCashbackCategory("tbank",month.toString(Qt::ISODate),"Manual fallback","3"));
+    controller.refreshCashbackBanks();
+    const auto wait = [&](const std::function<bool()>& ready) {
+        QEventLoop loop;
+        QTimer poll;
+        QObject::connect(&poll,&QTimer::timeout,&loop,[&] {if (ready()) loop.quit();});
+        poll.start(5);
+        QTimer::singleShot(1000,&loop,&QEventLoop::quit);
+        loop.exec();
+        return ready();
+    };
+    REQUIRE(wait([&] {return controller.cashbackBanks().front().toMap()["currentFromBank"].toBool();}));
+    CHECK(fixture->accountReads == 1);
+    CHECK(fixture->cashbackReads == 1);
+    const auto initial = controller.cashbackBanks().front().toMap();
+    CHECK(initial["current"].toList().front().toMap()["name"] == "Кафе");
+    CHECK_FALSE(initial["currentLastSync"].toString().isEmpty());
+    fixture->cashbackFail = true;
+    REQUIRE(controller.synchronizeTBank());
+    REQUIRE(wait([&] {return !controller.tbankSyncRunning() &&
+        controller.cashbackBanks().front().toMap()["cashbackStatus"] != initial["cashbackStatus"] &&
+        !controller.cashbackBanks().front().toMap()["cashbackRunning"].toBool();}));
+    CHECK(controller.cashbackBanks().front().toMap()["current"] == initial["current"]);
+    CHECK(controller.cashbackBanks().front().toMap()["currentLastSync"] == initial["currentLastSync"]);
+    controller.disconnectTBank();
+    CHECK_FALSE(controller.cashbackBanks().front().toMap()["currentFromBank"].toBool());
+    CHECK(controller.cashbackBanks().front().toMap()["current"].toList().front().toMap()["name"] == "Manual fallback");
 }

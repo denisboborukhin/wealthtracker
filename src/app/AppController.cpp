@@ -17,6 +17,7 @@
 #include <QStandardPaths>
 #include <QTimer>
 #include <QUrl>
+#include <QtWebView/QWebView>
 
 #include <algorithm>
 #include <cstddef>
@@ -37,6 +38,8 @@ import wt.bank_sync;
 import wt.balance_history_view;
 import wt.crypto_wallet;
 import wt.cashback;
+import wt.cashback_sync;
+import wt.tbank_cashback;
 import wt.storage;
 import wt.investment_sync;
 import wt.platform;
@@ -479,7 +482,55 @@ public:
     bool cashback_storage_ready = false;
     QTimer cashback_month_timer;
     QDate cashback_month;
+    QHash<QString,CashbackSnapshot> bank_cashback;
+    QPointer<CashbackSync> vtb_cashback_sync;
+    QPointer<CashbackSync> alfa_cashback_sync;
+    QHash<QString,QString> cashback_status;
+    QHash<QString,QDateTime> cashback_updated_at;
+    QPointer<TBankCashbackSync> tbank_cashback_sync;
+    std::optional<TBankCashbackContext> tbank_cashback_context;
 };
+
+void AppController::startVtbCashback() {
+    if (locked_ || demo_mode_ || !vtb_connected_ || vtb_login_active_ || private_->vtb_sync_running || private_->vtb_cashback_sync) return;
+    auto* page = static_cast<QWebView*>(private_->vtb_login->existingWebView());
+    if (!page) return;
+    private_->cashback_status[QStringLiteral("vtb")] = QStringLiteral("Получаем выбранные категории кэшбэка…");
+    auto* coordinator = new CashbackSync(
+        [this](CashbackSnapshot snapshot) {
+            auto* finished = private_->vtb_cashback_sync.data();
+            private_->vtb_cashback_sync.clear();
+            if (finished) finished->deleteLater();
+            private_->bank_cashback[QStringLiteral("vtb")].merge(QStringLiteral("vtb"),snapshot,QDateTime::currentDateTime());
+            private_->cashback_updated_at[QStringLiteral("vtb")] = QDateTime::currentDateTimeUtc();
+            private_->cashback_status[QStringLiteral("vtb")] = QStringLiteral("Категории получены из ВТБ");
+            emit cashbackChanged();
+        }, [this](QString error) {
+            auto* finished = private_->vtb_cashback_sync.data();
+            private_->vtb_cashback_sync.clear();
+            if (finished) finished->deleteLater();
+            private_->cashback_status[QStringLiteral("vtb")] = std::move(error);
+            emit cashbackChanged();
+        }, this);
+    private_->vtb_cashback_sync = coordinator;
+    coordinator->startVtb(page);
+    emit cashbackChanged();
+}
+
+void AppController::stopVtbCashback(const bool clearData) {
+    if (private_->vtb_cashback_sync) {
+        private_->vtb_cashback_sync->cancel();
+        private_->vtb_cashback_sync->deleteLater();
+        private_->vtb_cashback_sync.clear();
+        private_->cashback_status[QStringLiteral("vtb")] = QStringLiteral("Обновление кэшбэка остановлено. Предыдущие данные сохранены.");
+    }
+    if (clearData) {
+        private_->bank_cashback.remove(QStringLiteral("vtb"));
+        private_->cashback_updated_at[QStringLiteral("vtb")] = {};
+        private_->cashback_status[QStringLiteral("vtb")].clear();
+    }
+    emit cashbackChanged();
+}
 
 void AppController::initializeCashback() {
     const auto loaded = CashbackBook::parse(QSettings{}.value(QStringLiteral("cashback/categories")).toByteArray());
@@ -505,6 +556,94 @@ void AppController::initializeCashback() {
     private_->cashback_month_timer.start(60'000);
 }
 
+void AppController::startAlfaCashback() {
+    if (locked_ || demo_mode_ || !alfa_connected_ || alfa_login_active_ || private_->alfa_sync_running || private_->alfa_cashback_sync) return;
+    auto* page = static_cast<QWebView*>(private_->alfa_login->existingWebView());
+    if (!page) return;
+    private_->cashback_status[QStringLiteral("alfa")] = QStringLiteral("Получаем выбранные категории кэшбэка…");
+    auto* coordinator = new CashbackSync(
+        [this](CashbackSnapshot snapshot) {
+            auto* finished = private_->alfa_cashback_sync.data();
+            private_->alfa_cashback_sync.clear();
+            if (finished) finished->deleteLater();
+            private_->bank_cashback[QStringLiteral("alfa")].merge(QStringLiteral("alfa"),snapshot,QDateTime::currentDateTime());
+            private_->cashback_updated_at[QStringLiteral("alfa")] = QDateTime::currentDateTimeUtc();
+            private_->cashback_status[QStringLiteral("alfa")] = QStringLiteral("Категории получены из Альфа-Банка");
+            emit cashbackChanged();
+        }, [this](QString error) {
+            auto* finished = private_->alfa_cashback_sync.data();
+            private_->alfa_cashback_sync.clear();
+            if (finished) finished->deleteLater();
+            private_->cashback_status[QStringLiteral("alfa")] = std::move(error);
+            emit cashbackChanged();
+        },this);
+    private_->alfa_cashback_sync = coordinator;
+    coordinator->startAlfa(page);
+    emit cashbackChanged();
+}
+
+void AppController::stopAlfaCashback(const bool clearData) {
+    if (private_->alfa_cashback_sync) {
+        private_->alfa_cashback_sync->cancel();
+        private_->alfa_cashback_sync->deleteLater();
+        private_->alfa_cashback_sync.clear();
+        private_->cashback_status[QStringLiteral("alfa")] = QStringLiteral("Обновление кэшбэка остановлено. Предыдущие данные сохранены.");
+    }
+    if (clearData) {
+        private_->bank_cashback.remove(QStringLiteral("alfa"));
+        private_->cashback_updated_at.remove(QStringLiteral("alfa"));
+        private_->cashback_status.remove(QStringLiteral("alfa"));
+    }
+    emit cashbackChanged();
+}
+
+void AppController::startTBankCashback() {
+    if (locked_ || demo_mode_ || !tbank_connected_ || tbank_login_active_ || private_->tbank_sync_running ||
+        private_->tbank_cashback_sync || !private_->tbank_cashback_context || !private_->credentials) return;
+    auto credential = private_->credentials->get(QString::fromLatin1(tbankRetailCredentialKey));
+    if (!credential || !*credential) {
+        private_->cashback_status[QStringLiteral("tbank")] = QStringLiteral("Сессия для чтения кэшбэка Т-Банка недоступна.");
+        emit cashbackChanged();
+        return;
+    }
+    auto* coordinator = new TBankCashbackSync(*private_->network,
+        [this](CashbackSnapshot snapshot) {
+            auto* finished = private_->tbank_cashback_sync.data();
+            private_->tbank_cashback_sync.clear();
+            if (finished) finished->deleteLater();
+            private_->bank_cashback[QStringLiteral("tbank")].merge(QStringLiteral("tbank"),snapshot,QDateTime::currentDateTime());
+            private_->cashback_updated_at[QStringLiteral("tbank")] = QDateTime::currentDateTimeUtc();
+            private_->cashback_status[QStringLiteral("tbank")] = QStringLiteral("Категории получены из Т-Банка");
+            emit cashbackChanged();
+        }, [this](QString error) {
+            auto* finished = private_->tbank_cashback_sync.data();
+            private_->tbank_cashback_sync.clear();
+            if (finished) finished->deleteLater();
+            private_->cashback_status[QStringLiteral("tbank")] = std::move(error);
+            emit cashbackChanged();
+        },this);
+    private_->tbank_cashback_sync = coordinator;
+    private_->cashback_status[QStringLiteral("tbank")] = QStringLiteral("Получаем выбранные категории кэшбэка…");
+    coordinator->start(std::move(**credential),*private_->tbank_cashback_context);
+    emit cashbackChanged();
+}
+
+void AppController::stopTBankCashback(const bool clearData) {
+    if (private_->tbank_cashback_sync) {
+        private_->tbank_cashback_sync->cancel();
+        private_->tbank_cashback_sync->deleteLater();
+        private_->tbank_cashback_sync.clear();
+        private_->cashback_status[QStringLiteral("tbank")] = QStringLiteral("Обновление кэшбэка остановлено. Предыдущие данные сохранены.");
+    }
+    if (clearData) {
+        private_->bank_cashback.remove(QStringLiteral("tbank"));
+        private_->cashback_updated_at.remove(QStringLiteral("tbank"));
+        private_->cashback_status.remove(QStringLiteral("tbank"));
+        private_->tbank_cashback_context.reset();
+    }
+    emit cashbackChanged();
+}
+
 QVariantList AppController::cashbackMonths() const {
     QVariantList result;
     const QLocale russian(QLocale::Russian);
@@ -522,11 +661,27 @@ QVariantList AppController::cashbackBanks() const {
     const auto current = CashbackBook::monthStart(QDate::currentDate());
     const auto append = [&](const QString& id, const QString& name, bool connected, bool running,
                             const QString& lastSync, const QString& status) {
+        const auto found = private_->bank_cashback.constFind(id);
+        const auto* automatic = found == private_->bank_cashback.cend() ? nullptr : &*found;
+        const bool currentFromBank = automatic && automatic->months.contains(current);
+        const bool nextFromBank = automatic && automatic->months.contains(current.addMonths(1));
+        const auto cashbackStatus = private_->cashback_status.value(id,QStringLiteral("Категории ещё не получены из банка"));
         result.push_back(QVariantMap{{QStringLiteral("id"), id}, {QStringLiteral("name"), name},
             {QStringLiteral("connected"), connected}, {QStringLiteral("syncRunning"), running},
             {QStringLiteral("lastSync"), lastSync}, {QStringLiteral("syncStatus"), status},
-            {QStringLiteral("current"), private_->cashback.rows(id, current)},
-            {QStringLiteral("next"), private_->cashback.rows(id, current.addMonths(1))}});
+            {QStringLiteral("cashbackRunning"), (id == QStringLiteral("vtb") && !private_->vtb_cashback_sync.isNull()) ||
+                (id == QStringLiteral("alfa") && !private_->alfa_cashback_sync.isNull()) ||
+                (id == QStringLiteral("tbank") && !private_->tbank_cashback_sync.isNull())},
+            {QStringLiteral("cashbackStatus"), cashbackStatus},
+            {QStringLiteral("cashbackLastSync"), private_->cashback_updated_at.value(id).isValid()
+                ? private_->cashback_updated_at.value(id).toLocalTime().toString(QStringLiteral("dd.MM.yyyy HH:mm:ss")) : QString{}},
+            {QStringLiteral("currentFromBank"), currentFromBank}, {QStringLiteral("nextFromBank"), nextFromBank},
+            {QStringLiteral("currentLastSync"), currentFromBank ? automatic->observedAt.value(current).toLocalTime().toString(QStringLiteral("dd.MM.yyyy HH:mm:ss")) : QString{}},
+            {QStringLiteral("nextLastSync"), nextFromBank ? automatic->observedAt.value(current.addMonths(1)).toLocalTime().toString(QStringLiteral("dd.MM.yyyy HH:mm:ss")) : QString{}},
+            {QStringLiteral("currentSelectionRequired"), currentFromBank && automatic->selectionRequired.contains(current)},
+            {QStringLiteral("nextSelectionRequired"), nextFromBank && automatic->selectionRequired.contains(current.addMonths(1))},
+            {QStringLiteral("current"), currentFromBank ? automatic->rows(id, current) : private_->cashback.rows(id, current)},
+            {QStringLiteral("next"), nextFromBank ? automatic->rows(id, current.addMonths(1)) : private_->cashback.rows(id, current.addMonths(1))}});
     };
     append(QStringLiteral("tbank"), QStringLiteral("Т-Банк"), tbankConnected(), tbankSyncRunning(), tbankLastSync(), tbankLoginStatus());
     append(QStringLiteral("alfa"), QStringLiteral("Альфа-Банк"), alfaConnected(), alfaSyncRunning(), alfaLastSync(), alfaLoginStatus());
@@ -581,9 +736,9 @@ bool AppController::removeCashbackCategory(const QString& bank, const QString& m
 
 void AppController::refreshCashbackBanks() {
     if (locked_ || demo_mode_) return;
-    if (tbankConnected() && !tbankSyncRunning()) (void)synchronizeTBank();
-    if (alfaConnected() && !alfaSyncRunning()) (void)synchronizeAlfa();
-    if (vtbConnected() && !vtbSyncRunning()) (void)synchronizeVtb();
+    if (tbankConnected() && !tbankSyncRunning() && !private_->tbank_cashback_sync) (void)synchronizeTBank();
+    if (alfaConnected() && !alfaSyncRunning() && !private_->alfa_cashback_sync) (void)synchronizeAlfa();
+    if (vtbConnected() && !vtbSyncRunning() && !private_->vtb_cashback_sync) (void)synchronizeVtb();
 }
 
 void AppController::initializeBalanceHistory(const QString& path) {
@@ -968,6 +1123,7 @@ AppController::AppController(std::unique_ptr<CredentialBackend> credentials,
             emit dashboardChanged();
             emit syncStatusChanged();
             emit alfaConnectionChanged();
+            QTimer::singleShot(0,this,&AppController::startAlfaCashback);
         },
         [this](AlfaLoginFailure failure) {
             private_->alfa_sync_running = false;
@@ -1016,6 +1172,7 @@ AppController::AppController(std::unique_ptr<CredentialBackend> credentials,
             emit dashboardChanged();
             emit syncStatusChanged();
             emit vtbConnectionChanged();
+            QTimer::singleShot(0, this, &AppController::startVtbCashback);
         },
         [this](VtbLoginFailure failure) {
             private_->vtb_sync_running = false;
@@ -1652,6 +1809,9 @@ void AppController::scheduleVtbAutoUpdateAfter(const QDateTime& from) {
 }
 
 void AppController::loadDemoData() {
+    stopAlfaCashback();
+    stopTBankCashback();
+    stopVtbCashback();
     stopCryptoRefresh();
     demo_mode_ = true;
     const auto today = QDate::currentDate();
@@ -1787,6 +1947,9 @@ void AppController::clearDemoData() {
 }
 
 void AppController::lock() {
+    stopAlfaCashback();
+    stopTBankCashback();
+    stopVtbCashback();
     stopCryptoRefresh();
     if (tbank_login_active_) {
         cancelTBankLogin();
@@ -3031,6 +3194,8 @@ bool AppController::synchronizeTBank() {
         return false;
     }
 
+    stopTBankCashback();
+    private_->tbank_cashback_context.reset();
     private_->tbank_auto_update_timer.stop();
     private_->tbank_sync_running = true;
     tbank_login_status_ = QStringLiteral("Обновляем остатки по счетам…");
@@ -3042,8 +3207,20 @@ bool AppController::synchronizeTBank() {
     BankRuntime runtime{
         nullptr,
         1'000,
-        [](const QByteArray& body, const QDateTime& observedAt) {
-            return TBankRetailClient::parseAccountsResponse(body, observedAt);
+        [this](const QByteArray& body, const QDateTime& observedAt) {
+            auto batch = TBankRetailClient::parseAccountsResponse(body, observedAt);
+            if (batch) {
+                auto context = tbank_cashback_context(body);
+                if (context) {
+                    for (const auto& account : batch->accounts) {
+                        if (!account.maskedNumber.isEmpty() && context->accountIds.contains(account.externalId))
+                            context->accountNames[account.externalId] = (account.name + QLatin1Char(' ') + account.maskedNumber).left(48);
+                    }
+                    private_->tbank_cashback_context = std::move(*context);
+                }
+                else private_->cashback_status[QStringLiteral("tbank")] = context.error();
+            }
+            return batch;
         },
         {},
     };
@@ -3074,6 +3251,7 @@ bool AppController::synchronizeTBank() {
             emit dashboardChanged();
             emit syncStatusChanged();
             emit tbankConnectionChanged();
+            QTimer::singleShot(0,this,&AppController::startTBankCashback);
         },
         [this](ConnectorError error) {
             private_->tbank_sync_coordinator.clear();
@@ -3120,6 +3298,7 @@ void AppController::setTBankAutoUpdate(const bool enabled) {
 }
 
 void AppController::disconnectTBank() {
+    stopTBankCashback(true);
     if (private_->tbank_sync_coordinator) {
         private_->tbank_sync_coordinator->cancel();
         private_->tbank_sync_coordinator.clear();
@@ -3166,6 +3345,7 @@ void AppController::beginAlfaLogin() {
     if (!prepareAlfaConnection()) {
         return;
     }
+    stopAlfaCashback();
     private_->alfa_sync_running = false;
     alfa_login_active_ = true;
     private_->alfa_login->startLogin(alfaLoginUrl());
@@ -3225,6 +3405,7 @@ bool AppController::synchronizeAlfa() {
         return false;
     }
 
+    stopAlfaCashback();
     private_->alfa_auto_update_timer.stop();
     private_->alfa_sync_running = true;
     alfa_login_status_ = QStringLiteral("Обновляем остатки по счетам…");
@@ -3244,6 +3425,7 @@ void AppController::setAlfaAutoUpdate(const bool enabled) {
 }
 
 void AppController::disconnectAlfa() {
+    stopAlfaCashback(true);
     private_->alfa_login->disconnectBank();
     private_->alfa_sync_running = false;
     alfa_connected_ = false;
@@ -3282,6 +3464,7 @@ void AppController::beginVtbLogin() {
     if (!prepareVtbConnection()) {
         return;
     }
+    stopVtbCashback();
     private_->vtb_sync_running = false;
     vtb_login_active_ = true;
     private_->vtb_login->startLogin(vtbLoginUrl());
@@ -3329,6 +3512,7 @@ bool AppController::synchronizeVtb() {
         return false;
     }
 
+    stopVtbCashback();
     private_->vtb_auto_update_timer.stop();
     private_->vtb_sync_running = true;
     vtb_login_status_ = QStringLiteral("Обновляем остатки по счетам…");
@@ -3348,6 +3532,7 @@ void AppController::setVtbAutoUpdate(const bool enabled) {
 }
 
 void AppController::disconnectVtb() {
+    stopVtbCashback(true);
     private_->vtb_login->disconnectBank();
     private_->vtb_sync_running = false;
     vtb_connected_ = false;

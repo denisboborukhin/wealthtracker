@@ -240,6 +240,7 @@ When the user corrects your approach, append a one-line rule here before ending 
 - Reduce startup Keychain reads through one protected bundle; preserve legacy secrets until successful migration and never promise an exact OS dialog count.
 
 - A short successful reopen followed by later bank verification is evidence of time-dependent authentication; preserve saved sessions and allow inspecting a bank page during its refresh without waiting for a timeout.
+- Cashback synchronization must read cashback categories; a balance-refresh timestamp never proves that the selected categories were updated.
 
 ## 12. How this file was built
 
