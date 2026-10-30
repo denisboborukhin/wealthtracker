@@ -1,5 +1,8 @@
 module;
 
+// Keep Qt template declarations in the global module on NDK Clang.
+extern "C++" {
+
 #include <QByteArray>
 #include <QJsonDocument>
 #include <QJsonObject>
@@ -10,6 +13,8 @@ module;
 
 #include <expected>
 #include <string_view>
+
+}
 
 export module wt.tbank_auth;
 

@@ -1,5 +1,8 @@
 module;
 
+// Keep Qt template declarations in the global module on NDK Clang.
+extern "C++" {
+
 #include "app/BrowserSession.hpp"
 
 #include <QDateTime>
@@ -20,6 +23,8 @@ module;
 #include <functional>
 #include <memory>
 #include <utility>
+
+}
 
 export module wt.vtb_login;
 
@@ -70,7 +75,7 @@ public:
             session_ready_ = false;
             auto* settings = web_view_->settings();
             settings->setAttribute(QWebViewSettings::WebAttribute::LocalStorageEnabled,
-                                   persistentBankBrowserSessions);
+                                   bankBrowserLocalStorageEnabled);
             settings->setAttribute(QWebViewSettings::WebAttribute::AllowFileAccess, false);
             settings->setAttribute(QWebViewSettings::WebAttribute::LocalContentCanAccessFileUrls,
                                    false);
@@ -88,6 +93,10 @@ public:
                         }
                         if (information.status() == QWebViewLoadingInfo::LoadStatus::Failed) {
                             load_succeeded_ = false;
+                            if (information.errorString() == QStringLiteral("Bank page certificate verification failed")) {
+                                reportStatus(QStringLiteral("Android не подтвердил сертификат банка. Защищённое соединение остановлено. Проверьте дату, сеть и доверенные сертификаты устройства."));
+                                return;
+                            }
                             const auto host = information.url().host().toLower();
                             const auto target = host == QStringLiteral("online.vtb.ru")
                                 ? host : QStringLiteral("официальную страницу ВТБ");
@@ -135,6 +144,15 @@ public:
             if (guard) guard->clearing_browser_data_ = false;
         });
         stop(true);
+#elif defined(Q_OS_ANDROID)
+        clearing_browser_data_ = true;
+        const QPointer<VtbLoginCoordinator> guard(this);
+        clearAndroidBankData(web_view_.get(), {QStringLiteral("vtb.ru")}, [guard](bool success) {
+            if (!guard) return;
+            guard->clearing_browser_data_ = !success;
+            if (!success) guard->reportStatus(QStringLiteral("Не удалось удалить данные банка. Новый вход заблокирован."));
+        });
+        stop(true, false);
 #else
         stop(true, true);
 #endif

@@ -1,5 +1,8 @@
 module;
 
+// Keep Qt template declarations in the global module on NDK Clang.
+extern "C++" {
+
 #include <QDate>
 #include <QDateTime>
 #include <QJsonArray>
@@ -18,6 +21,8 @@ module;
 #include <expected>
 #include <functional>
 #include <utility>
+
+}
 
 export module wt.cashback_sync;
 

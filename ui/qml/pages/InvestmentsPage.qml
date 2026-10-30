@@ -1,20 +1,31 @@
 pragma ComponentBehavior: Bound
 
 import QtQuick
+import QtQuick.Controls
 import QtQuick.Layouts
 import "../components"
 
-Item {
+Flickable {
     id: page
     required property var app
 
+    contentWidth: width
+    contentHeight: Math.max(height, content.implicitHeight + Theme.pageMargin * 2)
+    clip: true
+    boundsBehavior: Flickable.StopAtBounds
+    ScrollBar.vertical: ScrollBar {}
+
     ColumnLayout {
-        anchors.fill: parent
-        anchors.margins: Theme.pageMargin
+        id: content
+        x: Theme.pageMargin
+        y: Theme.pageMargin
+        width: page.width - Theme.pageMargin * 2
         spacing: 16
 
-        RowLayout {
+        GridLayout {
+            id: pageHeader
             Layout.fillWidth: true
+            columns: page.width < 600 ? 1 : 2
             ColumnLayout {
                 Layout.fillWidth: true
                 Layout.minimumWidth: 0
@@ -29,6 +40,7 @@ Item {
                 }
             }
             ActionButton {
+                Layout.fillWidth: page.width < 600
                 text: qsTr("Синхронизировать")
                 primary: true
                 onClicked: page.app.synchronizeInvestments()
@@ -36,8 +48,9 @@ Item {
         }
 
         GridLayout {
+            id: metrics
             Layout.fillWidth: true
-            columns: 3
+            columns: page.width > 600 ? 3 : 1
             columnSpacing: 12
             MetricCard {
                 Layout.fillWidth: true
@@ -68,7 +81,9 @@ Item {
 
         SectionCard {
             Layout.fillWidth: true
-            Layout.fillHeight: true
+            Layout.preferredHeight: page.width < 600
+                ? Math.max(160, holdingList.count * 84 + 44)
+                : Math.max(180, page.height - pageHeader.implicitHeight - metrics.implicitHeight - Theme.pageMargin * 2 - content.spacing * 2)
 
             ColumnLayout {
                 anchors.fill: parent
@@ -79,10 +94,11 @@ Item {
                     Layout.leftMargin: 18
                     Layout.rightMargin: 18
                     Layout.preferredHeight: 42
+                    visible: page.width >= 600
                     Text { Layout.preferredWidth: 92; text: qsTr("Тикер"); color: Theme.textMuted; font.pixelSize: 11 }
                     Text { Layout.fillWidth: true; text: qsTr("Актив"); color: Theme.textMuted; font.pixelSize: 11 }
-                    Text { Layout.preferredWidth: 90; horizontalAlignment: Text.AlignRight; text: qsTr("Доля"); color: Theme.textMuted; font.pixelSize: 11 }
-                    Text { Layout.preferredWidth: 100; horizontalAlignment: Text.AlignRight; text: qsTr("Доходность"); color: Theme.textMuted; font.pixelSize: 11 }
+                    Text { Layout.preferredWidth: 90; visible: page.width >= 680; horizontalAlignment: Text.AlignRight; text: qsTr("Доля"); color: Theme.textMuted; font.pixelSize: 11 }
+                    Text { Layout.preferredWidth: 100; visible: page.width >= 680; horizontalAlignment: Text.AlignRight; text: qsTr("Доходность"); color: Theme.textMuted; font.pixelSize: 11 }
                     Text { Layout.preferredWidth: 125; horizontalAlignment: Text.AlignRight; text: qsTr("Стоимость"); color: Theme.textMuted; font.pixelSize: 11 }
                 }
                 Rectangle { Layout.fillWidth: true; Layout.preferredHeight: 1; color: Theme.border }
@@ -104,16 +120,17 @@ Item {
                         required property bool positive
 
                         width: ListView.view.width
-                        height: 54
-                        RowLayout {
+                        height: page.width < 600 ? 84 : 54
+                        GridLayout {
+                            columns: page.width < 600 ? 1 : 5
                             anchors.fill: parent
                             anchors.leftMargin: 18
                             anchors.rightMargin: 18
-                            Text { Layout.preferredWidth: 92; text: holdingRow.ticker; color: Theme.text; font.pixelSize: 12; font.weight: Font.DemiBold }
-                            Text { Layout.fillWidth: true; text: holdingRow.name; color: Theme.text; font.pixelSize: 12; elide: Text.ElideRight }
-                            Text { Layout.preferredWidth: 90; horizontalAlignment: Text.AlignRight; text: holdingRow.allocation; color: Theme.textMuted; font.pixelSize: 12 }
-                            Text { Layout.preferredWidth: 100; horizontalAlignment: Text.AlignRight; text: holdingRow.performance; color: holdingRow.positive ? Theme.positive : Theme.negative; font.pixelSize: 12 }
-                            Text { Layout.preferredWidth: 125; horizontalAlignment: Text.AlignRight; text: holdingRow.value; color: Theme.text; font.pixelSize: 12; font.weight: Font.Medium }
+                            Text { Layout.fillWidth: page.width < 600; Layout.preferredWidth: 92; elide: Text.ElideRight; text: holdingRow.ticker; color: Theme.text; font.pixelSize: 12; font.weight: Font.DemiBold }
+                            Text { Layout.fillWidth: true; Layout.minimumWidth: 0; text: holdingRow.name; color: Theme.text; font.pixelSize: 12; elide: Text.ElideRight }
+                            Text { Layout.preferredWidth: 90; visible: page.width >= 680; horizontalAlignment: Text.AlignRight; text: holdingRow.allocation; color: Theme.textMuted; font.pixelSize: 12 }
+                            Text { Layout.preferredWidth: 100; visible: page.width >= 680; horizontalAlignment: Text.AlignRight; text: holdingRow.performance; color: holdingRow.positive ? Theme.positive : Theme.negative; font.pixelSize: 12 }
+                            Text { Layout.fillWidth: page.width < 600; Layout.preferredWidth: 125; elide: Text.ElideRight; horizontalAlignment: page.width < 600 ? Text.AlignLeft : Text.AlignRight; text: holdingRow.value; color: Theme.text; font.pixelSize: 12; font.weight: Font.Medium }
                         }
                         Rectangle { width: parent.width; height: 1; anchors.bottom: parent.bottom; color: Theme.border }
                     }
@@ -122,6 +139,7 @@ Item {
                     Layout.fillWidth: true
                     Layout.fillHeight: true
                     visible: holdingList.count === 0
+                    wrapMode: Text.WordWrap
                     text: qsTr("Активов пока нет. Подключите инвестиционный счёт.")
                     color: Theme.textMuted
                     font.pixelSize: 12

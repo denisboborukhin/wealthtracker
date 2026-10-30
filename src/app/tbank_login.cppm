@@ -1,5 +1,8 @@
 module;
 
+// Keep Qt template declarations in the global module on NDK Clang.
+extern "C++" {
+
 #include "app/BrowserSession.hpp"
 
 #include <QByteArray>
@@ -23,6 +26,8 @@ module;
 #include <functional>
 #include <memory>
 #include <utility>
+
+}
 
 export module wt.tbank_login;
 
@@ -76,7 +81,7 @@ class TBankLoginCoordinator final : public QObject {
             web_view_ = std::make_unique<QWebView>();
             auto* settings = web_view_->settings();
             settings->setAttribute(QWebViewSettings::WebAttribute::LocalStorageEnabled,
-                                   persistentBankBrowserSessions);
+                                   bankBrowserLocalStorageEnabled);
             settings->setAttribute(QWebViewSettings::WebAttribute::AllowFileAccess, false);
             settings->setAttribute(QWebViewSettings::WebAttribute::LocalContentCanAccessFileUrls,
                                    false);
@@ -91,6 +96,10 @@ class TBankLoginCoordinator final : public QObject {
                         }
                         if (active_ &&
                             information.status() == QWebViewLoadingInfo::LoadStatus::Failed) {
+                            if (information.errorString() == QStringLiteral("Bank page certificate verification failed")) {
+                                reportStatus(QStringLiteral("Android не подтвердил сертификат банка. Защищённое соединение остановлено. Проверьте дату, сеть и доверенные сертификаты устройства."));
+                                return;
+                            }
                             reportStatus(QStringLiteral("Не удалось загрузить страницу Т-Банка. "
                                                         "Проверьте сеть и нажмите «Повторить»."));
                         }
@@ -136,6 +145,15 @@ class TBankLoginCoordinator final : public QObject {
         const QPointer<TBankLoginCoordinator> guard(this);
         clearBankBrowserData({QStringLiteral("tbank.ru"), QStringLiteral("tinkoff.ru")},
                              [guard] { if (guard) guard->clearing_browser_data_ = false; });
+        stop(true, true);
+#elif defined(Q_OS_ANDROID)
+        clearing_browser_data_ = true;
+        const QPointer<TBankLoginCoordinator> guard(this);
+        clearAndroidBankData(web_view_.get(), {QStringLiteral("tbank.ru"), QStringLiteral("tinkoff.ru")}, [guard](bool success) {
+            if (!guard) return;
+            guard->clearing_browser_data_ = !success;
+            if (!success) guard->reportStatus(QStringLiteral("Не удалось удалить данные банка. Новый вход заблокирован."));
+        });
         stop(true, true);
 #else
         cancel();

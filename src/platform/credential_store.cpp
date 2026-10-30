@@ -499,6 +499,10 @@ private:
 
 }  // namespace
 
+#if defined(__ANDROID__)
+std::unique_ptr<CredentialStore> make_android_credential_store(std::string service);
+#endif
+
 std::unique_ptr<CredentialStore> make_system_credential_store(std::string service_name) {
     if (!valid_identifier(service_name)) {
         return std::make_unique<UnsupportedCredentialStore>(std::move(service_name));
@@ -508,6 +512,9 @@ std::unique_ptr<CredentialStore> make_system_credential_store(std::string servic
         std::make_unique<MacCredentialStore>(std::move(service_name)));
 #elif defined(_WIN32)
     return std::make_unique<WindowsCredentialStore>(std::move(service_name));
+#elif defined(__ANDROID__)
+    return make_bundled_credential_store(
+        make_android_credential_store(std::move(service_name)));
 #else
     return std::make_unique<UnsupportedCredentialStore>(std::move(service_name));
 #endif

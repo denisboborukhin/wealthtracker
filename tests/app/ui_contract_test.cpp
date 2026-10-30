@@ -48,7 +48,7 @@ TEST_CASE("dashboard keeps populated summaries inside responsive surfaces") {
     CHECK(source.contains(QByteArrayLiteral("value: page.app.savings")));
     CHECK_FALSE(source.contains(QByteArrayLiteral("savingsRate")));
     CHECK(source.contains(QByteArrayLiteral(
-        "columns: page.width > 900 ? 4 : 2")));
+        "columns: page.width > 900 ? 4 : page.width < 600 ? 1 : 2")));
     CHECK(source.contains(QByteArrayLiteral(
         "columns: page.width > 860 ? 2 : 1")));
 
@@ -97,7 +97,7 @@ TEST_CASE("privacy screen describes its scope and limitations") {
 
     const auto connections =
         readQml(QStringLiteral("pages/ConnectionsPage.qml"));
-    CHECK(connections.contains(QByteArrayLiteral("contentItem: ScrollView")));
+    CHECK(connections.contains(QByteArrayLiteral("ScrollView {")));
     CHECK(connections.contains(QByteArrayLiteral("parent.height - 32")));
 
     const auto actionButton =

@@ -1,5 +1,7 @@
 module;
 
+// Keep Qt template declarations in the global module on NDK Clang.
+extern "C++" {
 #include <QDate>
 #include <QDateTime>
 #include <QHash>
@@ -15,6 +17,8 @@ module;
 #include <limits>
 #include <optional>
 #include <span>
+
+}
 
 export module wt.transfer_matching;
 

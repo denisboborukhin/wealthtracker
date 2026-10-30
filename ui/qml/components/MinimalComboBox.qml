@@ -57,12 +57,13 @@ ComboBox {
         required property int index
 
         width: root.width - 8
-        height: 36
+        height: Qt.platform.os === "android" ? 44 : 36
         leftPadding: 10
         text: modelData
         highlighted: root.highlightedIndex === index
 
         contentItem: Text {
+            elide: Text.ElideRight
             text: optionDelegate.text
             color: Theme.text
             font.pixelSize: 12
@@ -78,7 +79,7 @@ ComboBox {
     popup: Popup {
         y: root.height + 4
         width: root.width
-        implicitHeight: Math.min(contentItem.implicitHeight + 8, 220)
+        implicitHeight: Math.min(contentItem.implicitHeight + 8, Qt.platform.os === "android" ? 320 : 220)
         padding: 4
 
         contentItem: ListView {

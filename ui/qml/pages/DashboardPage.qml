@@ -164,7 +164,7 @@ Flickable {
         GridLayout {
             id: metricGrid
             Layout.fillWidth: true
-            columns: page.width > 900 ? 4 : 2
+            columns: page.width > 900 ? 4 : page.width < 600 ? 1 : 2
             columnSpacing: 12
             rowSpacing: 12
 
@@ -242,6 +242,7 @@ Flickable {
 
                         Text {
                             anchors.centerIn: parent
+                            width: parent.width
                             visible: categoryList.count === 0
                             text: qsTr("Категории появятся после загрузки операций")
                             color: Theme.textMuted
@@ -416,6 +417,7 @@ Flickable {
                                     elide: Text.ElideRight
                                 }
                                 Text {
+                                    visible: page.width >= 600
                                     Layout.preferredWidth: 160
                                     Layout.minimumWidth: 92
                                     Layout.maximumWidth: 160

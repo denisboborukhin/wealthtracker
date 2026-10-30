@@ -11,13 +11,14 @@ ApplicationWindow {
     required property var app
     width: 1320
     height: 820
-    minimumWidth: 1020
-    minimumHeight: 680
+    minimumWidth: Qt.platform.os === "android" ? 320 : 1020
+    minimumHeight: Qt.platform.os === "android" ? 0 : 680
     visible: true
     title: "WealthTracker"
     color: Theme.background
     property alias currentPage: navigation.currentIndex
     readonly property real navigationWidth: 204
+    readonly property bool compact: Qt.platform.os === "android" || width < 760
 
     readonly property var navigationItems: [
         { "title": qsTr("Обзор") },
@@ -32,6 +33,34 @@ ApplicationWindow {
     Item {
         anchors.fill: parent
 
+        ToolBar {
+            id: mobileNavigation
+            anchors.left: parent.left
+            anchors.right: parent.right
+            anchors.top: parent.top
+            visible: window.compact
+            height: visible ? 56 : 0
+            RowLayout {
+                anchors.fill: parent
+                anchors.leftMargin: 16
+                anchors.rightMargin: 16
+                Text {
+                    text: "WealthTracker"
+                    color: Theme.text
+                    font.pixelSize: 17
+                    font.weight: Font.DemiBold
+                }
+                Item { Layout.fillWidth: true }
+                MinimalComboBox {
+                    Layout.preferredWidth: 160
+                    model: window.navigationItems.map(item => item.title)
+                    currentIndex: navigation.currentIndex
+                    onActivated: navigation.currentIndex = currentIndex
+                    enabled: !window.app.locked
+                }
+            }
+        }
+
         Rectangle {
             id: navigationRail
             anchors {
@@ -39,7 +68,8 @@ ApplicationWindow {
                 top: parent.top
                 bottom: parent.bottom
             }
-            width: window.navigationWidth
+            width: window.compact ? 0 : window.navigationWidth
+            visible: !window.compact
             color: Theme.surface
 
             ColumnLayout {
@@ -117,7 +147,7 @@ ApplicationWindow {
             anchors {
                 left: navigationRail.right
                 right: parent.right
-                top: parent.top
+                top: mobileNavigation.bottom
                 bottom: parent.bottom
             }
             currentIndex: 0
@@ -161,17 +191,22 @@ ApplicationWindow {
         Rectangle {
             anchors.centerIn: parent
             width: Math.min(440, parent.width - 48)
-            height: 276
+            height: privacyContent.implicitHeight + 56
             radius: 12
             color: Theme.surface
             border.color: Theme.border
 
             ColumnLayout {
-                anchors.fill: parent
+                id: privacyContent
+                anchors.left: parent.left
+                anchors.right: parent.right
+                anchors.top: parent.top
                 anchors.margins: 28
                 spacing: 14
                 Text {
-                    Layout.alignment: Qt.AlignHCenter
+                    Layout.fillWidth: true
+                    horizontalAlignment: Text.AlignHCenter
+                    wrapMode: Text.WordWrap
                     text: qsTr("Экран приватности включён")
                     color: Theme.text
                     font.pixelSize: 20

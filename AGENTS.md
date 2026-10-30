@@ -242,6 +242,8 @@ When the user corrects your approach, append a one-line rule here before ending 
 - A short successful reopen followed by later bank verification is evidence of time-dependent authentication; preserve saved sessions and allow inspecting a bank page during its refresh without waiting for a timeout.
 - Cashback synchronization must read cashback categories; a balance-refresh timestamp never proves that the selected categories were updated.
 - Use QLocale::standaloneMonthName for month headings; Qt date formats do not support the ICU token LLLL.
+- Keep Android packaging tools, outputs, and local signing files under `android/`.
+- Verify phone layouts and native WebView rendering before delivering an APK; bank frontends require DOM storage, which must be cleared with a site-scoped API on disconnect.
 
 ## 12. How this file was built
 

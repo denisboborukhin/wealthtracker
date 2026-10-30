@@ -1,4 +1,5 @@
 #include "app/AppController.hpp"
+#include "app/BrowserSession.hpp"
 
 #include <QDate>
 #include <QDir>
@@ -56,6 +57,30 @@ using wealthtracker::connectors::ExternalAccount;
 using wealthtracker::connectors::Money;
 using wealthtracker::connectors::NormalizedBatch;
 using wealthtracker::connectors::ZenPluginDescriptor;
+
+#ifdef Q_OS_ANDROID
+struct BankWindowDisplay {
+    QPointer<QWindow> owner;
+    QPointer<QWindow> native;
+
+    QWindow* forView(QWindow* view) {
+        if (owner != view) {
+            owner = view;
+            native.clear();
+            if (view) {
+                // Qt's QQuickWebView embeds this native child, not QWebView's wrapper.
+                // Cache it before WindowContainer reparents it into the Quick window.
+                const auto children = view->findChildren<QWindow*>(QString{}, Qt::FindDirectChildrenOnly);
+                if (children.size() == 1) {
+                    native = children.front();
+                    prepareAndroidBankWindow(native);
+                }
+            }
+        }
+        return native;
+    }
+};
+#endif
 
 class SystemCredentialBackend final : public CredentialBackend {
 public:
@@ -473,6 +498,11 @@ public:
     QDateTime next_alfa_auto_update_at;
     bool alfa_sync_running = false;
     std::unique_ptr<VtbLoginCoordinator> vtb_login;
+#ifdef Q_OS_ANDROID
+    BankWindowDisplay tbank_display;
+    BankWindowDisplay alfa_display;
+    BankWindowDisplay vtb_display;
+#endif
     QTimer vtb_auto_update_timer;
     QDateTime next_vtb_auto_update_at;
     bool vtb_sync_running = false;
@@ -1526,7 +1556,11 @@ QUrl AppController::tbankLoginUrl() const {
 }
 
 QWindow* AppController::tbankWebView() {
+#ifdef Q_OS_ANDROID
+    return private_->tbank_display.forView(private_->tbank_login->existingWebView());
+#else
     return private_->tbank_login->existingWebView();
+#endif
 }
 
 bool AppController::alfaConnected() const noexcept { return alfa_connected_; }
@@ -1570,7 +1604,11 @@ QUrl AppController::alfaLoginUrl() const {
 }
 
 QWindow* AppController::alfaWebView() {
+#ifdef Q_OS_ANDROID
+    return private_->alfa_display.forView(private_->alfa_login->existingWebView());
+#else
     return private_->alfa_login->existingWebView();
+#endif
 }
 
 bool AppController::vtbConnected() const noexcept { return vtb_connected_; }
@@ -1610,7 +1648,11 @@ QUrl AppController::vtbLoginUrl() const {
 }
 
 QWindow* AppController::vtbWebView() {
+#ifdef Q_OS_ANDROID
+    return private_->vtb_display.forView(private_->vtb_login->existingWebView());
+#else
     return private_->vtb_login->existingWebView();
+#endif
 }
 
 void AppController::refreshBankConnections() {
@@ -2005,7 +2047,12 @@ bool AppController::unlock() {
 }
 
 void AppController::previewImport(const QUrl& source) {
+#ifdef Q_OS_ANDROID
+    const QFileInfo file(source.scheme() == QStringLiteral("content")
+        ? source.toString() : source.toLocalFile());
+#else
     const QFileInfo file(source.toLocalFile());
+#endif
     if (!file.exists() || !file.isFile()) {
         import_status_ = QStringLiteral("Не удалось открыть выбранный файл");
     } else {
@@ -2571,6 +2618,12 @@ void AppController::rebuildBankModels() {
 }
 
 bool AppController::inspectZenPluginBundle(const QUrl& source) {
+#ifdef Q_OS_ANDROID
+    Q_UNUSED(source);
+    sync_status_ = QStringLiteral("Локальные ZenPlugins доступны только в настольной версии");
+    emit syncStatusChanged();
+    return false;
+#endif
     if (zen_plugin_running_) {
         sync_status_ =
             QStringLiteral("Сначала завершите текущую синхронизацию");
@@ -3044,6 +3097,13 @@ bool AppController::prepareTBankConnection() {
 }
 
 void AppController::beginTBankLogin() {
+#ifdef Q_OS_ANDROID
+    if (!androidBankBrowserStorageSupported()) {
+        tbank_login_status_ = QStringLiteral("Обновите Android System WebView: текущая версия не поддерживает безопасное хранение и удаление данных банка.");
+        emit tbankConnectionChanged();
+        return;
+    }
+#endif
     if (tbank_login_active_) {
         tbank_login_status_ = QStringLiteral("Вход в Т-Банк уже выполняется");
         emit tbankConnectionChanged();
@@ -3343,6 +3403,13 @@ bool AppController::prepareAlfaConnection() {
 }
 
 void AppController::beginAlfaLogin() {
+#ifdef Q_OS_ANDROID
+    if (!androidBankBrowserStorageSupported()) {
+        alfa_login_status_ = QStringLiteral("Обновите Android System WebView: текущая версия не поддерживает безопасное хранение и удаление данных банка.");
+        emit alfaConnectionChanged();
+        return;
+    }
+#endif
     if (!prepareAlfaConnection()) {
         return;
     }
@@ -3462,6 +3529,13 @@ bool AppController::prepareVtbConnection() {
 }
 
 void AppController::beginVtbLogin() {
+#ifdef Q_OS_ANDROID
+    if (!androidBankBrowserStorageSupported()) {
+        vtb_login_status_ = QStringLiteral("Обновите Android System WebView: текущая версия не поддерживает безопасное хранение и удаление данных банка.");
+        emit vtbConnectionChanged();
+        return;
+    }
+#endif
     if (!prepareVtbConnection()) {
         return;
     }

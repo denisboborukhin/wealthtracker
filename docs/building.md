@@ -3,6 +3,7 @@
 The checked-in presets target macOS arm64 and Windows x86_64. Run commands from
 the repository root. Linux requires a manually supplied Qt/compiler toolchain
 and has no supported credential backend for stored-token connections.
+The separate [Android build script](../android/README.md) produces an ARM64 APK on macOS.
 
 These instructions follow [CMake presets](../CMakePresets.json), the
 [Conan recipe](../conanfile.py), and the scripts under `scripts/`. Windows

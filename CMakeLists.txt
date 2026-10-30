@@ -19,6 +19,10 @@ set(CMAKE_CXX_SCAN_FOR_MODULES OFF)
 set(CMAKE_AUTOMOC ON)
 set(CMAKE_AUTORCC ON)
 set(CMAKE_INCLUDE_CURRENT_DIR ON)
+if(ANDROID)
+    # All module producers and consumers must agree on Clang's thread mode.
+    add_compile_options(-pthread)
+endif()
 
 find_package(Boost REQUIRED)
 find_package(
@@ -29,6 +33,9 @@ find_package(sqlcipher REQUIRED CONFIG)
 find_package(OpenSSL REQUIRED CONFIG)
 find_package(libsodium REQUIRED CONFIG)
 find_package(xlsxio REQUIRED CONFIG)
+if(ANDROID)
+    include(android/cmake/TLS.cmake)
+endif()
 
 qt_standard_project_setup(REQUIRES 6.11)
 
@@ -74,6 +81,9 @@ target_sources(
         src/storage/balance_history.cpp
 )
 target_link_libraries(storage PUBLIC sqlcipher::sqlcipher)
+if(ANDROID)
+    target_link_libraries(storage PRIVATE log)
+endif()
 set_property(TARGET storage PROPERTY CXX_SCAN_FOR_MODULES ON)
 enable_strict_warnings(storage)
 enable_sanitizers(storage)
@@ -97,6 +107,9 @@ target_link_libraries(platform PUBLIC libsodium::libsodium)
 set_property(TARGET platform PROPERTY CXX_SCAN_FOR_MODULES ON)
 if(APPLE)
     target_link_libraries(platform PRIVATE "-framework CoreFoundation" "-framework Security")
+elseif(ANDROID)
+    target_sources(platform PRIVATE src/platform/android_credential_store.cpp)
+    target_link_libraries(platform PRIVATE Qt6::Core)
 elseif(WIN32)
     target_link_libraries(platform PRIVATE Advapi32)
 endif()
@@ -166,6 +179,9 @@ target_sources(
         src/app/AppController.cpp
         src/app/FinanceModels.cpp
 )
+if(ANDROID)
+    target_sources(app PRIVATE src/app/BrowserSessionAndroid.cpp)
+endif()
 if(APPLE)
     enable_language(OBJCXX)
     target_sources(app PRIVATE src/app/BrowserSession.mm)
@@ -313,6 +329,7 @@ install(
     TARGETS wealthtracker
     BUNDLE DESTINATION .
     RUNTIME DESTINATION "${CMAKE_INSTALL_BINDIR}"
+    LIBRARY DESTINATION "${CMAKE_INSTALL_LIBDIR}"
 )
 # CMake strips build rpaths before macdeployqt runs. Stage the pinned TLS
 # libraries first so deployment resolves them without a system installation.

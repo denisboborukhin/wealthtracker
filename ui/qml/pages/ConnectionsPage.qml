@@ -9,6 +9,8 @@ import "../components"
 Item {
     id: page
     required property var app
+    readonly property var hostWindow: ApplicationWindow.window
+    readonly property bool mobileLogin: Qt.platform.os === "android" && connectionDialog.retailLoginActive
 
     function openConnection(connectorId, institution, method, status,
                             connected, available) {
@@ -43,13 +45,17 @@ Item {
         parent: Overlay.overlay
         modal: true
         focus: true
-        width: Math.min(parent.width - 32,
+        width: page.mobileLogin ? parent.width : Math.min(parent.width - 32,
                         connectionDialog.retailLoginActive ? 760 : 520)
-        height: Math.min(parent.height - 32,
+        height: page.mobileLogin ? parent.height : Math.min(parent.height - 32,
                          connectionDialog.retailLoginActive ? 760 : implicitHeight)
         x: Math.round((parent.width - width) / 2)
         y: Math.round((parent.height - height) / 2)
         padding: 0
+        topPadding: page.mobileLogin ? SafeArea.margins.top : 0
+        bottomPadding: page.mobileLogin ? SafeArea.margins.bottom : 0
+        leftPadding: page.mobileLogin ? SafeArea.margins.left : 0
+        rightPadding: page.mobileLogin ? SafeArea.margins.right : 0
 
         property string connectorId: ""
         property string institution: ""
@@ -176,7 +182,12 @@ Item {
             border.color: Theme.border
         }
 
-        contentItem: ScrollView {
+        contentItem: Item {
+            implicitHeight: connectionScroll.implicitHeight
+
+        ScrollView {
+            anchors.fill: parent
+            visible: !page.mobileLogin
             id: connectionScroll
             clip: true
             contentWidth: availableWidth
@@ -317,8 +328,8 @@ Item {
                         WindowContainer {
                             anchors.fill: parent
                             anchors.margins: 1
-                            visible: connectionDialog.retailLoginActive
-                            window: connectionDialog.retailLoginActive
+                            visible: connectionDialog.retailLoginActive && !page.mobileLogin
+                            window: connectionDialog.retailLoginActive && !page.mobileLogin
                                     ? connectionDialog.retailWebView : null
                         }
                     }
@@ -772,10 +783,57 @@ Item {
         }
         }
 
+        ColumnLayout {
+            anchors.fill: parent
+            anchors.margins: 12
+            spacing: 10
+            visible: page.mobileLogin
+            RowLayout {
+                Layout.fillWidth: true
+                Text {
+                    Layout.fillWidth: true
+                    Layout.minimumWidth: 0
+                    text: connectionDialog.institution
+                    color: Theme.text
+                    font.pixelSize: 18
+                    font.weight: Font.DemiBold
+                    elide: Text.ElideRight
+                }
+                ActionButton {
+                    text: qsTr("Закрыть")
+                    onClicked: connectionDialog.close()
+                }
+            }
+            Text {
+                Layout.fillWidth: true
+                text: connectionDialog.retailLoginStatus
+                color: Theme.textMuted
+                font.pixelSize: 12
+                wrapMode: Text.WordWrap
+                maximumLineCount: 3
+                elide: Text.ElideRight
+            }
+            WindowContainer {
+                objectName: "mobileBankWindow"
+                Layout.fillWidth: true
+                Layout.fillHeight: true
+                Layout.minimumHeight: 0
+                window: page.mobileLogin ? connectionDialog.retailWebView : null
+            }
+            ActionButton {
+                Layout.fillWidth: true
+                text: qsTr("Перезагрузить страницу")
+                onClicked: connectionDialog.reloadRetailLogin()
+            }
+        }
+        }
+
         onClosed: {
             if (connectionDialog.builtinRetail
                     && connectionDialog.retailLoginActive)
                 connectionDialog.cancelRetailLogin()
+            const hostWindow = page.hostWindow
+            if (Qt.platform.os === "android" && hostWindow) Qt.callLater(() => hostWindow.requestActivate())
             tokenField.clear()
             pluginPromptField.clear()
             clearSensitivePluginFields()
@@ -827,12 +885,14 @@ Item {
                     }
                     Text {
                         Layout.preferredWidth: 190
+                        visible: page.width >= 680
                         text: qsTr("Данные")
                         color: Theme.textMuted
                         font.pixelSize: 11
                     }
                     Text {
                         Layout.preferredWidth: 132
+                        visible: page.width >= 680
                         text: qsTr("Статус")
                         color: Theme.textMuted
                         font.pixelSize: 11
@@ -864,17 +924,22 @@ Item {
                         required property bool available
 
                         width: ListView.view.width
-                        height: 76
+                        height: page.width < 600 ? connectorContent.implicitHeight + 32 : 76
 
-                        RowLayout {
-                            anchors.fill: parent
-                            anchors.leftMargin: 20
-                            anchors.rightMargin: 20
-                            spacing: 18
+                        GridLayout {
+                            id: connectorContent
+                            columns: page.width < 600 ? 1 : 4
+                            anchors.left: parent.left
+                            anchors.right: parent.right
+                            anchors.verticalCenter: parent.verticalCenter
+                            anchors.leftMargin: 16
+                            anchors.rightMargin: 16
+                            columnSpacing: 18
+                            rowSpacing: 10
 
                             ColumnLayout {
                                 Layout.fillWidth: true
-                                Layout.minimumWidth: 230
+                                Layout.minimumWidth: 0
                                 spacing: 3
                                 Text {
                                     Layout.fillWidth: true
@@ -895,6 +960,7 @@ Item {
 
                             Text {
                                 Layout.preferredWidth: 190
+                                visible: page.width >= 680
                                 text: connectorRow.scope
                                 color: Theme.textMuted
                                 font.pixelSize: 12
@@ -903,6 +969,7 @@ Item {
 
                             StatusBadge {
                                 Layout.preferredWidth: 132
+                                visible: page.width >= 680
                                 text: connectorRow.status
                                 tone: connectorRow.connected ? "positive"
                                       : connectorRow.available ? "neutral"
@@ -911,6 +978,7 @@ Item {
 
                             ActionButton {
                                 Layout.preferredWidth: 116
+                                Layout.fillWidth: page.width < 600
                                 text: connectorRow.connected ? qsTr("Управление")
                                       : connectorRow.available ? qsTr("Подключить")
                                                                : qsTr("Подробнее")

@@ -1,11 +1,16 @@
 module;
 
+// Keep Qt template declarations in the global module on NDK Clang.
+extern "C++" {
+
 #include <QDate>
 #include <QLocale>
 #include <QRegularExpression>
 #include <QString>
 
 #include <expected>
+
+}
 
 export module wt.reporting;
 

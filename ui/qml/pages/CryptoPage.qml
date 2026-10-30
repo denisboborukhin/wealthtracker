@@ -26,9 +26,11 @@ Flickable {
         y: Theme.pageMargin
         spacing: 16
 
-        RowLayout {
+        GridLayout {
             Layout.fillWidth: true
-            spacing: 16
+            columns: page.width < 600 ? 1 : 2
+            columnSpacing: 16
+            rowSpacing: 10
             ColumnLayout {
                 Layout.fillWidth: true
                 Layout.minimumWidth: 0
@@ -50,6 +52,7 @@ Flickable {
                 }
             }
             ActionButton {
+                Layout.fillWidth: page.width < 600
                 text: page.app.cryptoSyncRunning ? qsTr("Обновляем…") : qsTr("Обновить всё")
                 primary: true
                 enabled: !page.app.demoMode && !page.app.cryptoSyncRunning
@@ -82,13 +85,16 @@ Flickable {
                     font.pixelSize: 14
                     font.weight: Font.DemiBold
                 }
-                RowLayout {
+                GridLayout {
                     Layout.fillWidth: true
-                    spacing: 10
+                    columns: page.width < 600 ? 1 : 3
+                    columnSpacing: 10
+                    rowSpacing: 10
                     TextField {
                         id: nameField
+                        Layout.fillWidth: page.width < 600
                         Layout.preferredWidth: 180
-                        Layout.minimumWidth: 100
+                        Layout.minimumWidth: 0
                         Layout.preferredHeight: 40
                         placeholderText: qsTr("Название кошелька")
                         maximumLength: 80
@@ -120,6 +126,7 @@ Flickable {
                         }
                     }
                     ActionButton {
+                        Layout.fillWidth: page.width < 600
                         text: qsTr("Добавить")
                         primary: true
                         enabled: !page.app.demoMode && !page.app.cryptoSyncRunning
@@ -171,9 +178,11 @@ Flickable {
                     anchors.margins: 16
                     spacing: 10
 
-                    RowLayout {
+                    GridLayout {
                         Layout.fillWidth: true
-                        spacing: 12
+                        columns: page.width < 600 ? 1 : 2
+                        columnSpacing: 12
+                        rowSpacing: 8
                         Text {
                             Layout.fillWidth: true
                             Layout.minimumWidth: 0
@@ -185,6 +194,7 @@ Flickable {
                             wrapMode: Text.WordWrap
                         }
                         ActionButton {
+                            Layout.fillWidth: page.width < 600
                             text: qsTr("Удалить кошелёк")
                             destructive: true
                             enabled: !page.app.cryptoSyncRunning
@@ -270,7 +280,7 @@ Flickable {
                     }
                     RowLayout {
                         Layout.fillWidth: true
-                        visible: walletCard.modelData.holdings.length > 0
+                        visible: page.width >= 600 && walletCard.modelData.holdings.length > 0
                         spacing: 16
                         Text {
                             Layout.fillWidth: true
@@ -307,9 +317,11 @@ Flickable {
                                 Layout.preferredHeight: 1
                                 color: Theme.border
                             }
-                            RowLayout {
+                            GridLayout {
                                 Layout.fillWidth: true
-                                spacing: 16
+                                columns: page.width < 600 ? 1 : 3
+                                columnSpacing: 16
+                                rowSpacing: 6
                                 Text {
                                     Layout.fillWidth: true
                                     Layout.minimumWidth: 0
@@ -320,23 +332,25 @@ Flickable {
                                     wrapMode: Text.WordWrap
                                 }
                                 Text {
-                                    Layout.minimumWidth: 180
-                                    Layout.maximumWidth: 180
-                                    text: holdingRow.modelData.quantity
+                                    Layout.fillWidth: page.width < 600
+                                    Layout.minimumWidth: page.width < 600 ? 0 : 180
+                                    Layout.maximumWidth: page.width < 600 ? Infinity : 180
+                                    text: (page.width < 600 ? qsTr("Количество: ") : "") + holdingRow.modelData.quantity
                                     textFormat: Text.PlainText
                                     color: Theme.text
                                     font.pixelSize: 12
-                                    horizontalAlignment: Text.AlignRight
+                                    horizontalAlignment: page.width < 600 ? Text.AlignLeft : Text.AlignRight
                                     wrapMode: Text.WrapAnywhere
                                 }
                                 Text {
-                                    Layout.minimumWidth: 160
-                                    Layout.maximumWidth: 160
-                                    text: holdingRow.modelData.priced ? holdingRow.modelData.value : qsTr("Нет цены")
+                                    Layout.fillWidth: page.width < 600
+                                    Layout.minimumWidth: page.width < 600 ? 0 : 160
+                                    Layout.maximumWidth: page.width < 600 ? Infinity : 160
+                                    text: (page.width < 600 ? qsTr("Оценка: ") : "") + (holdingRow.modelData.priced ? holdingRow.modelData.value : qsTr("Нет цены"))
                                     textFormat: Text.PlainText
                                     color: holdingRow.modelData.priced ? Theme.text : Theme.textMuted
                                     font.pixelSize: 12
-                                    horizontalAlignment: Text.AlignRight
+                                    horizontalAlignment: page.width < 600 ? Text.AlignLeft : Text.AlignRight
                                     wrapMode: Text.WrapAnywhere
                                 }
                             }

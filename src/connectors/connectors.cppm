@@ -1,5 +1,7 @@
 module;
 
+// Keep Qt's instantiated friend templates in the global module on NDK Clang.
+extern "C++" {
 #include <QByteArray>
 #include <QDate>
 #include <QDateTime>
@@ -22,6 +24,7 @@ module;
 #include <memory>
 #include <optional>
 #include <string_view>
+}
 
 export module wt.connectors;
 

@@ -1,5 +1,8 @@
 module;
 
+// Keep Qt template declarations in the global module on NDK Clang.
+extern "C++" {
+
 #include "app/BrowserSession.hpp"
 
 #include <QDateTime>
@@ -19,6 +22,8 @@ module;
 #include <functional>
 #include <memory>
 #include <utility>
+
+}
 
 export module wt.alfa_login;
 
@@ -124,7 +129,7 @@ public:
             web_view_ = std::make_unique<QWebView>();
             auto* settings = web_view_->settings();
             settings->setAttribute(QWebViewSettings::WebAttribute::LocalStorageEnabled,
-                                   persistentBankBrowserSessions);
+                                   bankBrowserLocalStorageEnabled);
             settings->setAttribute(QWebViewSettings::WebAttribute::AllowFileAccess, false);
             settings->setAttribute(QWebViewSettings::WebAttribute::LocalContentCanAccessFileUrls,
                                    false);
@@ -142,6 +147,10 @@ public:
                         }
                         if (information.status() == QWebViewLoadingInfo::LoadStatus::Failed) {
                             load_succeeded_ = false;
+                            if (information.errorString() == QStringLiteral("Bank page certificate verification failed")) {
+                                reportStatus(QStringLiteral("Android не подтвердил сертификат банка. Защищённое соединение остановлено. Проверьте дату, сеть и доверенные сертификаты устройства."));
+                                return;
+                            }
                             auto failure = classify_alfa_load_failure(
                                 information.url(), information.errorString());
                             certificate_help_required_ =
@@ -193,6 +202,15 @@ public:
             if (guard) guard->clearing_browser_data_ = false;
         });
         stop(true);
+#elif defined(Q_OS_ANDROID)
+        clearing_browser_data_ = true;
+        const QPointer<AlfaLoginCoordinator> guard(this);
+        clearAndroidBankData(web_view_.get(), {QStringLiteral("alfabank.ru")}, [guard](bool success) {
+            if (!guard) return;
+            guard->clearing_browser_data_ = !success;
+            if (!success) guard->reportStatus(QStringLiteral("Не удалось удалить данные банка. Новый вход заблокирован."));
+        });
+        stop(true, false);
 #else
         stop(true, true);
 #endif

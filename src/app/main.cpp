@@ -16,6 +16,9 @@
 #include <openssl/ssl.h>
 
 int main(int argc, char* argv[]) {
+#ifdef Q_OS_ANDROID
+    qputenv("ANDROID_OPENSSL_SUFFIX", "_3");
+#endif
     QtWebView::initialize();
     QGuiApplication application(argc, argv);
     if (OPENSSL_init_ssl(0, nullptr) != 1 ||

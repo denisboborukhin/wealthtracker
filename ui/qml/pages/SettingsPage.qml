@@ -1,16 +1,25 @@
 pragma ComponentBehavior: Bound
 
 import QtQuick
+import QtQuick.Controls
 import QtQuick.Layouts
 import "../components"
 
-Item {
+Flickable {
     id: page
     required property var app
 
+    contentWidth: width
+    contentHeight: content.implicitHeight + Theme.pageMargin * 2
+    clip: true
+    boundsBehavior: Flickable.StopAtBounds
+    ScrollBar.vertical: ScrollBar {}
+
     ColumnLayout {
-        anchors.fill: parent
-        anchors.margins: Theme.pageMargin
+        id: content
+        x: Theme.pageMargin
+        y: Theme.pageMargin
+        width: page.width - Theme.pageMargin * 2
         spacing: 20
 
         ColumnLayout {
@@ -31,11 +40,14 @@ Item {
 
         SectionCard {
             Layout.fillWidth: true
-            Layout.preferredHeight: 142
+            implicitHeight: Math.max(142, demoContent.implicitHeight + 40)
 
             ColumnLayout {
-                anchors.fill: parent
-                anchors.margins: 22
+                id: demoContent
+                anchors.left: parent.left
+                anchors.right: parent.right
+                anchors.top: parent.top
+                anchors.margins: 20
                 spacing: 20
 
                 Text {
@@ -51,7 +63,7 @@ Item {
                         Layout.fillWidth: true
                         spacing: 3
                         Text { text: qsTr("Демо-режим"); color: Theme.text; font.pixelSize: 12; font.weight: Font.Medium }
-                        Text { text: qsTr("Показывать пример данных вместо пустого состояния"); color: Theme.textMuted; font.pixelSize: 11 }
+                        Text { Layout.fillWidth: true; text: qsTr("Показывать пример данных вместо пустого состояния"); color: Theme.textMuted; font.pixelSize: 11; wrapMode: Text.WordWrap }
                     }
                     MinimalSwitch {
                         accessibleName: qsTr("Демо-режим")
@@ -64,11 +76,16 @@ Item {
 
         SectionCard {
             Layout.fillWidth: true
-            Layout.preferredHeight: 142
-            RowLayout {
-                anchors.fill: parent
+            implicitHeight: Math.max(142, privacyContent.implicitHeight + 40)
+            GridLayout {
+                id: privacyContent
+                columns: page.width < 600 ? 1 : 2
+                anchors.left: parent.left
+                anchors.right: parent.right
+                anchors.top: parent.top
                 anchors.margins: 20
-                spacing: 20
+                columnSpacing: 20
+                rowSpacing: 12
                 ColumnLayout {
                     Layout.fillWidth: true
                     Layout.minimumWidth: 0
@@ -96,12 +113,12 @@ Item {
                     }
                 }
                 ActionButton {
+                    Layout.fillWidth: page.width < 600
                     text: qsTr("Скрыть данные")
                     onClicked: page.app.lock()
                 }
             }
         }
 
-        Item { Layout.fillHeight: true }
     }
 }

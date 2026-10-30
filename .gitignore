@@ -26,6 +26,10 @@ compile_commands.json
 *.qm
 *.qrc.depends
 
+# Local Android signing identity
+/android/.local/
+/android/output/
+
 # Runtime data and secrets
 *.db
 *.db-shm
@@ -42,3 +46,7 @@ compile_commands.json
 *.pkg
 *.msi
 *.app/
+*.apk
+*.aab
+*.keystore
+*.jks

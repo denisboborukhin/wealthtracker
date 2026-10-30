@@ -38,10 +38,12 @@ Flickable {
         width: page.width - Theme.pageMargin * 2
         spacing: 16
 
-        RowLayout {
+        GridLayout {
             Layout.fillWidth: true
+            columns: page.width > 600 ? 3 : 1
             ColumnLayout {
                 Layout.fillWidth: true
+                Layout.columnSpan: 1
                 Text {
                     text: qsTr("Кэшбэк")
                     color: Theme.text
@@ -49,17 +51,21 @@ Flickable {
                     font.weight: Font.DemiBold
                 }
                 Text {
+                    Layout.fillWidth: true
+                    wrapMode: Text.WordWrap
                     text: qsTr("Выбранные категории · этот и следующий месяц")
                     color: Theme.textMuted
                     font.pixelSize: 12
                 }
             }
             ActionButton {
+                Layout.fillWidth: page.width < 600
                 text: page.manualEditorOpen ? qsTr("Скрыть форму") : qsTr("Записать вручную")
                 enabled: page.editable
                 onClicked: page.manualEditorOpen = !page.manualEditorOpen
             }
             ActionButton {
+                Layout.fillWidth: page.width < 600
                 text: qsTr("Обновить банки")
                 enabled: page.editable && page.banks.some(bank => bank.connected && !bank.syncRunning && !bank.cashbackRunning)
                 onClicked: page.app.refreshCashbackBanks()
@@ -92,9 +98,11 @@ Flickable {
                     font.pixelSize: 14
                     font.weight: Font.DemiBold
                 }
-                RowLayout {
+                GridLayout {
                     Layout.fillWidth: true
-                    spacing: 10
+                    columns: page.width > 500 ? 2 : 1
+                    rowSpacing: 10
+                    columnSpacing: 10
                     MinimalComboBox {
                         id: bankField
                         objectName: "cashbackBank"
@@ -119,9 +127,11 @@ Flickable {
                         Accessible.name: qsTr("Месяц кэшбэка")
                     }
                 }
-                RowLayout {
+                GridLayout {
                     Layout.fillWidth: true
-                    spacing: 10
+                    columns: page.width > 500 ? 3 : 1
+                    rowSpacing: 10
+                    columnSpacing: 10
                     TextField {
                         id: categoryField
                         objectName: "cashbackCategory"

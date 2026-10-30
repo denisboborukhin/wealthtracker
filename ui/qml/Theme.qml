@@ -18,5 +18,5 @@ QtObject {
     readonly property color warning: "#946200"
     readonly property color warningMuted: "#FFF5D8"
     readonly property int radius: 9
-    readonly property int pageMargin: 32
+    readonly property int pageMargin: Qt.platform.os === "android" ? 16 : 32
 }

@@ -90,6 +90,8 @@ See [Building](docs/building.md) for Windows instructions, tests, and installabl
 packages. Node.js 18 or newer is needed only for external plugins and the host's
 syntax check.
 
+For a directly installable ARM64 Android APK, see [Android packaging](android/README.md).
+
 ## Documentation
 
 | Document | Contents |

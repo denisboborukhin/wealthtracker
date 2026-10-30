@@ -15,6 +15,8 @@ dependencies retain their own licenses:
 - xlsxio — MIT: <https://github.com/brechtsanders/xlsxio>
 - Catch2 — Boost Software License 1.0:
   <https://github.com/catchorg/Catch2>
+- AndroidX Core and WebKit (Android builds) — Apache License 2.0:
+  <https://www.apache.org/licenses/LICENSE-2.0>
 
 The clean-room retail T-Bank adapter was informed by the endpoint and browser
 session behavior documented in `jfk9w-go/tbank-api`, which is MIT-licensed:

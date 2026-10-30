@@ -1,5 +1,7 @@
 module;
 
+// Keep Qt template declarations in the global module on NDK Clang.
+extern "C++" {
 #include <QDateTime>
 #include <QJsonArray>
 #include <QJsonDocument>
@@ -14,6 +16,8 @@ module;
 #include <limits>
 #include <utility>
 #include <vector>
+
+}
 
 export module wt.balance_history_view;
 

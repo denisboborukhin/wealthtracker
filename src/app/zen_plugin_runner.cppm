@@ -1,5 +1,8 @@
 module;
 
+// Keep Qt template declarations in the global module on NDK Clang.
+extern "C++" {
+
 #include <QByteArray>
 #include <QDir>
 #include <QFile>
@@ -14,6 +17,8 @@ module;
 
 #include <functional>
 #include <utility>
+
+}
 
 export module wt.zen_plugin_runner;
 

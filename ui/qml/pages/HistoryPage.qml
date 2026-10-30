@@ -139,8 +139,9 @@ Flickable {
                                 }
                             }
                             Text { text: qsTr("Период"); color: Theme.textMuted; font.pixelSize: 11 }
-                            RowLayout {
+                            GridLayout {
                                 Layout.fillWidth: true
+                                columns: page.width < 600 ? 1 : 2
                                 DatePickerField {
                                     id: fromPicker
                                     Layout.fillWidth: true
