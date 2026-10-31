@@ -3,6 +3,7 @@ module;
 // Keep Qt template declarations in the global module on NDK Clang.
 extern "C++" {
 
+#include "app/BrowserSession.hpp"
 #include <QDate>
 #include <QDateTime>
 #include <QJsonArray>
@@ -226,7 +227,7 @@ private:
         pending_ = true;
         const QPointer<CashbackSync> guard(this);
         const auto script = bank == QStringLiteral("alfa") ? alfa_cashback_start_script(today_,run_id_) : vtb_cashback_start_script(today_,run_id_);
-        page_->runJavaScript(script, [guard](const QVariant& value) {
+        runBankJavaScript(page_, this, script, [guard](const QVariant& value) {
             if (!guard || !guard->active_) return;
             guard->pending_ = false;
             if (value.toString() == QStringLiteral("wrong-origin")) {
@@ -262,7 +263,7 @@ private:
         if (!page_) { fail(QStringLiteral("Страница банка закрыта. Категории сохранены.")); return; }
         pending_ = true;
         const QPointer<CashbackSync> guard(this);
-        page_->runJavaScript(cashback_projection_script(bank_,run_id_), [guard](const QVariant& value) {
+        runBankJavaScript(page_, this, cashback_projection_script(bank_,run_id_), [guard](const QVariant& value) {
             if (!guard || !guard->active_) return;
             guard->pending_ = false;
             const auto result = value.toString();

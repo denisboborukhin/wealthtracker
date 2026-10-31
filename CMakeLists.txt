@@ -178,6 +178,7 @@ target_sources(
         include/app/FinanceModels.hpp
         src/app/AppController.cpp
         src/app/FinanceModels.cpp
+        src/app/BrowserJavaScript.cpp
 )
 if(ANDROID)
     target_sources(app PRIVATE src/app/BrowserSessionAndroid.cpp)

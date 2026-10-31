@@ -203,7 +203,7 @@ class TBankLoginCoordinator final : public QObject {
         probe_pending_ = true;
         const auto generation = generation_;
         const QPointer<TBankLoginCoordinator> guard(this);
-        web_view_->runJavaScript(tbank_session_probe_script(),
+        runBankJavaScript(web_view_.get(), this, tbank_session_probe_script(),
                                  [guard, generation](const QVariant& result) {
                                      if (!guard) {
                                          return;

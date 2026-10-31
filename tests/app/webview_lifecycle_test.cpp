@@ -1,4 +1,5 @@
 #include "app/AppController.hpp"
+#include "app/BrowserSession.hpp"
 
 #include <catch2/catch_test_macros.hpp>
 
@@ -9,6 +10,7 @@
 #include <QProcess>
 #include <QProcessEnvironment>
 #include <QTimer>
+#include <QThread>
 #include <QSettings>
 #include <QTemporaryDir>
 
@@ -21,6 +23,50 @@
 import wt.connectors;
 import wt.alfa_login;
 import wt.vtb_login;
+
+TEST_CASE("Bank JavaScript callbacks resume on Qt thread and ignore destroyed receivers") {
+    QWebView view;
+    QObject receiver;
+    QEventLoop loaded;
+    QObject::connect(&view, &QWebView::loadingChanged, &loaded,
+                     [&](const QWebViewLoadingInfo& info) {
+        if (info.status() == QWebViewLoadingInfo::LoadStatus::Succeeded) loaded.quit();
+    });
+    view.loadHtml(QStringLiteral("<html><body>Synthetic callback test</body></html>"));
+    QTimer::singleShot(3'000, &loaded, &QEventLoop::quit);
+    loaded.exec();
+    bool completed = false;
+    bool canceledCallback = false;
+    bool ownerThread = false;
+    int ticks = 0;
+    QTimer timer;
+    timer.setInterval(20);
+    QEventLoop finished;
+    QObject::connect(&timer, &QTimer::timeout, &finished, [&] { ++ticks; });
+    auto* canceledReceiver = new QObject;
+    wealthtracker::app::runBankJavaScript(&view, canceledReceiver, QStringLiteral("42"),
+        [&](const QVariant&) { canceledCallback = true; });
+    delete canceledReceiver;
+    wealthtracker::app::runBankJavaScript(&view, &receiver, QStringLiteral("40"),
+        [&](const QVariant& first) {
+            ownerThread = QThread::currentThread() == receiver.thread();
+            CHECK(first.toInt() == 40);
+            timer.start();
+            wealthtracker::app::runBankJavaScript(&view, &receiver, QStringLiteral("40 + 2"),
+                [&](const QVariant& second) {
+                    ownerThread &= QThread::currentThread() == receiver.thread();
+                    CHECK(second.toInt() == 42);
+                    completed = true;
+                    QTimer::singleShot(100, &finished, &QEventLoop::quit);
+                });
+        });
+    QTimer::singleShot(3'000, &finished, &QEventLoop::quit);
+    finished.exec();
+    CHECK(completed);
+    CHECK(ownerThread);
+    CHECK(ticks > 0);
+    CHECK_FALSE(canceledCallback);
+}
 
 TEST_CASE("An unauthenticated bank page never reports successful login") {
     QStringList statuses;

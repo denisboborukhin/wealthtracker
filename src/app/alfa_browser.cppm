@@ -266,11 +266,15 @@ struct AlfaFinancialProjection {
         [layout.products?.credits, 'loan']
       ]
       if (groups.some(([group]) => Array.isArray(group)) ||
-          Array.isArray(layout.allProducts)) result.stage = 'dashboard-loading'
+          Array.isArray(layout.allProducts) || Array.isArray(layout.products))
+        result.stage = 'dashboard-loading'
       for (const [group, kind] of groups)
         if (Array.isArray(group)) for (const item of group) addAccount(item, kind)
       if (Array.isArray(layout.allProducts))
         for (const item of layout.allProducts) addDashboardProduct(item)
+      // The main-screen product read updates this collection independently.
+      if (Array.isArray(layout.products))
+        for (const item of layout.products) addDashboardProduct(item)
     }
     if (result.accounts.length === 0) return JSON.stringify(result)
     result.stage = 'ready'

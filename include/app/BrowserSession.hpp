@@ -4,8 +4,16 @@
 #include <functional>
 
 class QWindow;
+class QWebView;
+class QObject;
+class QVariant;
 
 namespace wealthtracker::app {
+
+// Bank coordinators live on the Qt application thread. Android WebView
+// evaluates JavaScript on a different UI thread; never process results there.
+void runBankJavaScript(QWebView* view, QObject* receiver, const QString& script,
+                       std::function<void(const QVariant&)> completed);
 
 // Persistent sessions require scoped, completed website-data removal.
 #if defined(Q_OS_MACOS) || defined(Q_OS_ANDROID)

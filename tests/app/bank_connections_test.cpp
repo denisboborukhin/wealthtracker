@@ -381,7 +381,7 @@ TEST_CASE("T-Bank login UI embeds a coordinator-owned native WebView") {
     CHECK(coordinator.contains(QByteArrayLiteral("tbank_authorization_request")));
     CHECK(coordinator.contains(QByteArrayLiteral(
         "parse_tbank_session_projection")));
-    CHECK(coordinator.contains(QByteArrayLiteral("runJavaScript(")));
+    CHECK(coordinator.contains(QByteArrayLiteral("runBankJavaScript(")));
     CHECK(coordinator.contains(QByteArrayLiteral("LocalStorageEnabled")));
     CHECK(coordinator.contains(QByteArrayLiteral("clearBankBrowserData")));
     CHECK(coordinator.contains(QByteArrayLiteral("view->deleteLater()")));
@@ -624,6 +624,10 @@ TEST_CASE("Alfa login shells do not imply a financial dashboard") {
         state = QStringLiteral("globalThis.initialState = { layoutData: { allProducts: [] } }");
         expected = AlfaProjectionStage::DashboardLoading;
     }
+    SECTION("recognized mobile main products still loading") {
+        state = QStringLiteral("globalThis.initialState = { layoutData: { products: [] } }");
+        expected = AlfaProjectionStage::DashboardLoading;
+    }
 
     QJSEngine engine;
     const auto setup = engine.evaluate(QStringLiteral(R"JS(
@@ -721,6 +725,22 @@ TEST_CASE("Alfa projection reads hydrated financial state instead of stale boots
     )JS")).isError());
 
     QString replacement;
+    bool readyExpected = false;
+    SECTION("mobile main products load without the all-products collection") {
+        replacement = QStringLiteral(
+            "fixtureLayout = { allProducts: [], products: fixtureLayout.allProducts }");
+        readyExpected = true;
+    }
+    SECTION("all-products records retain priority over duplicate main products") {
+        replacement = QStringLiteral(
+            "fixtureLayout.products = JSON.parse(JSON.stringify(fixtureLayout.allProducts)); "
+            "fixtureLayout.products[0].content.main.thirdLine.items[0].content.value.value = '9999'");
+        readyExpected = true;
+    }
+    SECTION("unknown main products do not bypass the strict dashboard mapper") {
+        replacement = QStringLiteral(
+            "fixtureLayout = { allProducts: [], products: [{ id: 'unknown', balance: '100.00', currency: 'RUB' }] }");
+    }
     SECTION("empty live collections never fall back to stale accounts") {
         replacement = QStringLiteral("fixtureLayout = { allProducts: [] }");
     }
@@ -736,8 +756,15 @@ TEST_CASE("Alfa projection reads hydrated financial state instead of stale boots
     REQUIRE_FALSE(engine.evaluate(replacement).isError());
     const auto unsupported = read();
     REQUIRE(unsupported);
-    CHECK(unsupported->stage != AlfaProjectionStage::Ready);
-    CHECK_FALSE(unsupported->batch);
+    CHECK((unsupported->stage == AlfaProjectionStage::Ready) == readyExpected);
+    if (readyExpected) {
+        REQUIRE(unsupported->batch);
+        REQUIRE(unsupported->batch->accounts.size() == 1);
+        CHECK(unsupported->batch->accounts.front().externalId == QStringLiteral("current"));
+        CHECK(unsupported->batch->balances.front().balance.minorUnits == 3075);
+    } else {
+        CHECK_FALSE(unsupported->batch);
+    }
 }
 
 TEST_CASE("Alfa projection recognizes the bank certificate landing page") {

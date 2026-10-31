@@ -197,7 +197,7 @@ private:
         if (is_vtb_login_url(view->url())) {
             const auto generation = generation_;
             const QPointer<VtbLoginCoordinator> guard(this);
-            view->runJavaScript(QStringLiteral(
+            runBankJavaScript(view, this, QStringLiteral(
                 "delete globalThis.__wealthtrackerVtbSync; true"),
                 [guard, generation](const QVariant& result) {
                     if (guard && guard->active_ && guard->generation_ == generation) {
@@ -240,7 +240,7 @@ private:
         probe_pending_ = true;
         const auto generation = generation_;
         const QPointer<VtbLoginCoordinator> guard(this);
-        web_view_->runJavaScript(vtb_sync_start_script(),
+        runBankJavaScript(web_view_.get(), this, vtb_sync_start_script(),
                                  [guard, generation](const QVariant& value) {
                                      if (!guard) {
                                          return;
@@ -260,7 +260,7 @@ private:
                                                  "Синхронизация остановлена.")});
                                          return;
                                      }
-                                     guard->web_view_->runJavaScript(
+                                     runBankJavaScript(guard->web_view_.get(), guard,
                                          vtb_financial_projection_script(),
                                          [guard, generation](const QVariant& projection) {
                                              if (!guard) {

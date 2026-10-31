@@ -289,7 +289,7 @@ private:
         probe_pending_ = true;
         const auto generation = generation_;
         const QPointer<AlfaLoginCoordinator> guard(this);
-        web_view_->runJavaScript(alfa_financial_projection_script(),
+        runBankJavaScript(web_view_.get(), this, alfa_financial_projection_script(),
                                  [guard, generation](const QVariant& value) {
                                      if (!guard) {
                                          return;
