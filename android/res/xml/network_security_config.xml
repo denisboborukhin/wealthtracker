@@ -14,6 +14,9 @@
         <domain>online.vtb.ru</domain>
         <domain>s1.vtb.ru</domain>
         <domain>s2.vtb.ru</domain>
+        <domain>h2.vtb.ru</domain>
+        <domain>sso-app4.vtb.ru</domain>
+        <domain>cert.vtb.ru</domain>
         <domain>cdn.tbank.ru</domain>
         <trust-anchors>
             <certificates src="system" />

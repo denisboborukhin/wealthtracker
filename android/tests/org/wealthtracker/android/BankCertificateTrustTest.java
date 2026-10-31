@@ -83,6 +83,25 @@ public class BankCertificateTrustTest {
         rejected(chain("tbank_cdn"), "cdn.tbank.ru.example.com");
     }
 
+    @Test public void validatesVerifiedVtbLoginServiceChains() throws Exception {
+        String[] fixtures = {"vtb_h2", "vtb_sso", "vtb_cert"};
+        String[] hosts = {"h2.vtb.ru", "sso-app4.vtb.ru", "cert.vtb.ru"};
+        for (int i = 0; i < hosts.length; i++) {
+            X509Certificate[] certificates = chain(fixtures[i]);
+            for (X509Certificate certificate : certificates) certificate.checkValidity();
+            assertFalse(trust().checkServerTrusted(certificates, "RSA", hosts[i]).isEmpty());
+            assertFalse(NetworkSecurityPolicy.getInstance().isCleartextTrafficPermitted(hosts[i]));
+        }
+    }
+
+    @Test public void loginServiceTrustDoesNotIncludeOtherVtbHosts() throws Exception {
+        rejected(chain("vtb_h2"), "sub.h2.vtb.ru");
+        rejected(chain("vtb_h2"), "h2.vtb.ru.example.com");
+        rejected(chain("vtb_sso"), "sub.sso-app4.vtb.ru");
+        rejected(chain("vtb_sso"), "android-mb.vtb.ru");
+        rejected(chain("vtb_cert"), "sub.cert.vtb.ru");
+    }
+
     @Test public void rejectsInvalidBankCertificateSignature() throws Exception {
         X509Certificate[] chain = chain("vtb");
         byte[] encoded = chain[0].getEncoded();
