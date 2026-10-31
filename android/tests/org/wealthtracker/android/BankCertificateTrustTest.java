@@ -63,6 +63,26 @@ public class BankCertificateTrustTest {
             rejected(chain, host);
     }
 
+    @Test public void validatesPublicBankAssetChains() throws Exception {
+        String[] fixtures = {"vtb_s1", "vtb_s2", "tbank_cdn"};
+        String[] hosts = {"s1.vtb.ru", "s2.vtb.ru", "cdn.tbank.ru"};
+        for (int i = 0; i < fixtures.length; i++) {
+            X509Certificate[] chain = chain(fixtures[i]);
+            for (X509Certificate certificate : chain) certificate.checkValidity();
+            assertFalse(trust().checkServerTrusted(chain, "RSA", hosts[i]).isEmpty());
+            assertFalse(NetworkSecurityPolicy.getInstance().isCleartextTrafficPermitted(hosts[i]));
+        }
+    }
+
+    @Test public void assetTrustDoesNotIncludeUnlistedSubdomains() throws Exception {
+        rejected(chain("vtb_s1"), "unlisted.vtb.ru");
+        rejected(chain("vtb_s1"), "sub.s1.vtb.ru");
+        rejected(chain("vtb_s2"), "sub.s2.vtb.ru");
+        rejected(chain("vtb_s2"), "s2.vtb.ru.example.com");
+        rejected(chain("tbank_cdn"), "sub.cdn.tbank.ru");
+        rejected(chain("tbank_cdn"), "cdn.tbank.ru.example.com");
+    }
+
     @Test public void rejectsInvalidBankCertificateSignature() throws Exception {
         X509Certificate[] chain = chain("vtb");
         byte[] encoded = chain[0].getEncoded();

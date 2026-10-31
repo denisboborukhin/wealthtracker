@@ -12,6 +12,9 @@
         <domain>web.alfabank.ru</domain>
         <domain>private.auth.alfabank.ru</domain>
         <domain>online.vtb.ru</domain>
+        <domain>s1.vtb.ru</domain>
+        <domain>s2.vtb.ru</domain>
+        <domain>cdn.tbank.ru</domain>
         <trust-anchors>
             <certificates src="system" />
             <certificates src="@raw/russian_trusted_root_ca" />
