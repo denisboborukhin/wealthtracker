@@ -27,8 +27,8 @@ not change crypto code or TLS validation. Gradle verifies its distribution hash.
 Output:
 
 ```text
-android/output/wealthtracker-0.1.3-debug.apk
-android/output/wealthtracker-0.1.3-debug.apk.sha256
+android/output/wealthtracker-0.1.5-debug.apk
+android/output/wealthtracker-0.1.5-debug.apk.sha256
 ```
 
 The package ID is `org.wealthtracker.android`. Keep
@@ -42,7 +42,7 @@ Copy the APK to your phone, open it in Files, and permit installation from that
 source. Or authorize USB debugging on your phone and run:
 
 ```sh
-"$ANDROID_SDK_ROOT/platform-tools/adb" install -r android/output/wealthtracker-0.1.3-debug.apk
+"$ANDROID_SDK_ROOT/platform-tools/adb" install -r android/output/wealthtracker-0.1.5-debug.apk
 ```
 
 Install future versions over this app rather than uninstalling; uninstalling
@@ -58,7 +58,7 @@ explicit disconnect using WebView’s site-scoped deletion API. Bank connections
 require an up-to-date Android System WebView with browsing-data deletion support;
 older providers receive an update message before login. Certificate failures remain blocked and receive a visible
 status message. The APK includes the bank-recommended Russian Trusted Root CA
-only for the six exact login hosts in `res/xml/network_security_config.xml`.
+only for the exact bank login and verified asset hosts in `res/xml/network_security_config.xml`.
 Other hosts use system CAs only; arbitrary user-installed CAs are not trusted.
 This uses Android's declarative trust configuration, preserving TLS chain,
 validity, and hostname checks without changing the phone's certificate store.
@@ -88,8 +88,29 @@ The bank's separate Linux root download produced the same DER fingerprint.
 The root is valid from March 2022 through February 2032.
 
 `BankCertificateTrustTest` checks Android's actual trust manager against public
-Alfa, VTB, and T-Bank certificate chains captured on October 30, 2026. It also
+Alfa, VTB, and T-Bank certificate chains captured on October 30, 2026, and
+their verified `s1.vtb.ru`, `s2.vtb.ru`, and `cdn.tbank.ru` asset chains captured
+on October 31. VTB's public page selects `s2.vtb.ru` as its CDN; these hosts
+receive the additional CA only for resource loading, with no change to bank
+navigation allowlists. The test also
+checks the verified VTB CMS (`h2.vtb.ru`), authentication service
+(`sso-app4.vtb.ru`), and certificate-check endpoint (`cert.vtb.ru`). The bank's
+public core uses a credential-free fetch to the certificate-check endpoint;
+trusting the main page alone does not satisfy that check. All three additional
+public chains were captured on October 31 with hostname validation enabled.
+The test
 checks rejection outside the exact host scope and rejection of a damaged bank
 certificate signature. Fixtures contain public certificates only and expire
 with the banks' certificates; replace them from verified live TLS handshakes
 when they expire. Test assets are excluded from the installable app APK.
+
+## Native JavaScript callback check
+
+`tests/view_probe` embeds a real C++ `QWebView` using synthetic HTML.
+`--callback-probe` records the platform callback thread; on Qt 6.11 Android it
+differs from Qt's application thread. `--guarded-callback-probe` verifies the
+shared bank callback dispatcher: three completions including nested evaluation,
+correct thread, continued timer progress, and discarded results after receiver
+destruction. Only fixed synthetic results and thread flags are logged.
+Account, login, and cashback readers dispatch results through this helper before
+using Qt timers, networking, or application models.
