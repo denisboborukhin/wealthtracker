@@ -84,6 +84,24 @@ struct VtbFinancialProjection {
     const container = globalThis.mf_1488_core
     Promise.resolve()
       .then(() => {
+        // The loaded core exports the same boolean auth proxy used by its UI.
+        // Do not initialize factories or inspect the proxy's token properties.
+        let runtime = globalThis.__wealthtrackerVtbAuthRuntime
+        if (typeof runtime !== 'function') {
+          const chunks = globalThis.webpackChunkmf_1488_core
+          if (Array.isArray(chunks)) {
+            const entry = [['wealthtracker-vtb-auth-reader'], {}, require => { runtime = require }]
+            try { chunks.push(entry) } finally {
+              const index = chunks.indexOf(entry)
+              if (index >= 0) chunks.splice(index, 1)
+            }
+            if (typeof runtime === 'function') globalThis.__wealthtrackerVtbAuthRuntime = runtime
+          }
+        }
+        let awaitingAuthentication = false
+        try { awaitingAuthentication = runtime?.c?.[11740]?.exports?.y1?.isAuthorized === false }
+        catch (ignored) { throw { kind: 'not-ready' } }
+        if (awaitingAuthentication) throw { kind: 'awaiting-authentication' }
         if (!container || typeof container.get !== 'function') throw { kind: 'not-ready' }
         return container.get('./HttpClient')
       })
@@ -121,9 +139,10 @@ struct VtbFinancialProjection {
         delete state.portfolio
         delete state.balances
         const status = httpStatus(error)
-        if (status === 401) {
+        if (status === 401 || error?.kind === 'awaiting-authentication') {
           state.status = 'authentication'
-          state.reason = state.requestStage === 'balances' ? 'VTB-AUTH-B' : 'VTB-AUTH-P'
+          state.reason = error?.kind === 'awaiting-authentication' ? '' :
+            state.requestStage === 'balances' ? 'VTB-AUTH-B' : 'VTB-AUTH-P'
           state.retryAt = Date.now() + 1000
         } else if (error?.kind === 'not-ready') {
           state.status = 'waiting'

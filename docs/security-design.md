@@ -143,6 +143,11 @@ On macOS, bank WebViews enable persistent browser storage. Local-file access
 remains disabled on all platforms.
 Bank-controlled cookies and browser storage remain managed by WebKit on macOS.
 Native destruction is deferred out of loading and JavaScript callbacks.
+Result-bearing bank JavaScript callbacks are queued onto Qt's application
+thread through `runBankJavaScript`, with a receiver lifetime guard before any
+timer, network, or model access. Qt 6.11's Android backend invokes its raw
+completion on Android's separate UI thread; the native synthetic probe checks
+both this boundary and canceled-result handling.
 
 T-Bank top-level navigation permits exact HTTPS `www.tbank.ru`, `id.tbank.ru`,
 and `id.tinkoff.ru` origins. A fixed resource-timing expression returns at most
@@ -164,6 +169,8 @@ global store on exact `https://web.alfabank.ru`, with known global or inline
 dashboard bootstrap objects as a fallback when the live store is unavailable.
 Live layout data takes precedence over stale bootstrap accounts. Only bounded,
 validated account projections leave the page; no new HTTP endpoint is invoked.
+The mobile `products` collection is read through the same strict dashboard
+product mapper as `allProducts`, preserving the latter's duplicate precedence.
 The observed host bootstrap uses cached module `51824`'s `globalStore` and
 module `32792`'s financial-layout atom `iZ`; the reader does not initialize module
 factories. This contract was verified in the public
@@ -179,6 +186,11 @@ navigating away from the current document.
 
 VTB validates exact `https://online.vtb.ru` and uses the page's exported
 `./HttpClient` for the two routes in [Bank connections](bank-connections.md#retail-vtb).
+If its already-loaded core auth proxy explicitly reports `isAuthorized=false`,
+the reader waits without constructing the private client or issuing portfolio
+requests. Only that boolean is read; token properties and module factories are
+not inspected or initialized. Unknown proxy availability retains server-side
+access verification, and account responses must still pass strict validation.
 Responses are bounded to 8 MiB page-locally. A new browser client may restore access within the total ten-second
 refresh deadline after its first HTTP 401; persistent rejection then
 stops publication and reports unconfirmed access while retaining the saved

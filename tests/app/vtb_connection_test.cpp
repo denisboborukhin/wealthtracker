@@ -139,6 +139,72 @@ TEST_CASE("VTB synchronization uses only exact page-owned read routes") {
     CHECK(projection.contains(QStringLiteral("balanceMinor")));
 }
 
+TEST_CASE("VTB waits for the bank's explicit unauthenticated state without private reads") {
+    using namespace wealthtracker::app;
+    QJSEngine engine;
+    REQUIRE_FALSE(engine.evaluate(QStringLiteral(R"JS(
+        var globalThis = this
+        globalThis.location = {href:'https://online.vtb.ru/'}
+        globalThis.URL = function() {return {protocol:'https:',hostname:'online.vtb.ru',port:'',username:'',password:''}}
+        globalThis.TextEncoder = function() {this.encode = value => ({byteLength:String(value).length})}
+        globalThis.authorized = false
+        globalThis.initializing = false
+        globalThis.privateReads = 0
+        globalThis.clientLookups = 0
+        globalThis.captures = 0
+        const auth = {}
+        Object.defineProperty(auth, 'isAuthorized', {get: () => {
+            if (initializing) throw new Error('service still initializing')
+            return authorized
+        }})
+        Object.defineProperty(auth, 'accessToken', {get: () => {throw new Error('token access forbidden')}})
+        const runtime = function() {throw new Error('module initialization forbidden')}
+        runtime.c = {11740:{exports:{y1:auth}}}
+        globalThis.webpackChunkmf_1488_core = []
+        webpackChunkmf_1488_core.push = function(entry) {
+            captures++
+            Array.prototype.push.call(this,entry)
+            entry[2](runtime)
+        }
+        globalThis.mf_1488_core = {get: () => {
+            clientLookups++
+            return Promise.resolve(() => ({http:{get:path => {
+                privateReads++
+                return Promise.resolve({data:path.endsWith('/portfolios/active') ?
+                    {portfolio:{accounts:[{publicId:'fixture',balance:{sum:'1.00',currency:'RUB'}}]}} :
+                    {balanceResponse:[]}})
+            }}}))
+        }}
+    )JS")).isError());
+    QString expected = QStringLiteral("authentication");
+    SECTION("bank explicitly reports not authorized") {}
+    SECTION("bank service is initializing") {
+        engine.evaluate(QStringLiteral("initializing = true"));
+        expected = QStringLiteral("waiting");
+    }
+    const auto run = [&] {
+        REQUIRE_FALSE(engine.evaluate(vtb_sync_start_script()).isError());
+        for (int i = 0; i < 32; ++i) {
+            QCoreApplication::processEvents();
+            engine.evaluate(QStringLiteral("0"));
+        }
+    };
+    run();
+    CHECK(engine.evaluate(QStringLiteral("__wealthtrackerVtbSync.status")).toString() == expected);
+    CHECK(engine.evaluate(QStringLiteral("privateReads")).toInt() == 0);
+    CHECK(engine.evaluate(QStringLiteral("clientLookups")).toInt() == 0);
+    engine.evaluate(QStringLiteral("initializing = false; authorized = true; delete __wealthtrackerVtbSync"));
+    run();
+    const auto result = parse_vtb_financial_projection(
+        engine.evaluate(vtb_financial_projection_script()).toString(), QDateTime::currentDateTimeUtc());
+    REQUIRE(result);
+    REQUIRE(result->batch);
+    CHECK(result->batch->accounts.size() == 1);
+    CHECK(engine.evaluate(QStringLiteral("privateReads")).toInt() == 2);
+    CHECK(engine.evaluate(QStringLiteral("captures")).toInt() == 1);
+    CHECK(engine.evaluate(QStringLiteral("webpackChunkmf_1488_core.length")).toInt() == 0);
+}
+
 TEST_CASE("VTB balances use the authenticated client without history or navigation") {
     QJSEngine engine;
     const auto setup = engine.evaluate(QStringLiteral(R"JS(
