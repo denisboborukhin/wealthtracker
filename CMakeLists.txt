@@ -173,6 +173,8 @@ target_sources(
             src/app/alfa_login.cppm
             src/app/vtb_browser.cppm
             src/app/vtb_login.cppm
+            src/app/ozon_browser.cppm
+            src/app/ozon_login.cppm
     PRIVATE
         include/app/AppController.hpp
         include/app/FinanceModels.hpp
@@ -294,6 +296,7 @@ if(BUILD_TESTING)
         tests/app/tbank_reliability_test.cpp
         tests/app/sync_reliability_test.cpp
         tests/app/vtb_connection_test.cpp
+        tests/app/ozon_connection_test.cpp
         tests/app/ui_contract_test.cpp
     )
     target_link_libraries(app_tests PRIVATE app Catch2::Catch2)
@@ -315,6 +318,7 @@ if(BUILD_TESTING)
             tests/app/webview_lifecycle_test.cpp
             tests/app/retail_refresh_test.cpp
             tests/app/cashback_webview_test.cpp
+            tests/app/ozon_webview_test.cpp
             tests/app/alfa_cashback_test.cpp
         )
         target_link_libraries(webview_tests PRIVATE app Catch2::Catch2)

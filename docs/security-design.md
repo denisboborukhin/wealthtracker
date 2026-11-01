@@ -102,6 +102,17 @@ Sources: [credential store](../src/platform/credential_store.cpp),
 
 ## Native requests
 
+Ozon Bank's dashboard reader imports only its exact already-loaded public
+module from `cdn2.ozone.ru` and checks the declared read handler before calling
+it. Top-level navigation permits only `finance.ozon.ru` and the observed
+`sso.ozon.ru` identity host; financial readers run only on the former. No tokens,
+headers, or cookies are extracted. Recognized main-account and savings widgets
+must match the observed schema and contain safe integer RUB minor units; the
+native parser validates the bounded projection again. Login remains unconfirmed
+until this validation succeeds. Cancellation aborts the read and invalidates
+late completions, with every JavaScript result queued onto Qt's application
+thread. No TLS trust exceptions were added for Ozon.
+
 Bank clients require exact HTTPS hosts, reject URL user information and custom
 ports, use manual redirects, and expose fixed read methods. The executable
 initializes Qt's OpenSSL backend; install rules stage its shared runtime.

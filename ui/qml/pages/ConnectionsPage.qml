@@ -28,6 +28,8 @@ Item {
             page.app.prepareAlfaConnection()
         else if (connectorId === "vtb-retail")
             page.app.prepareVtbConnection()
+        else if (connectorId === "ozon-retail")
+            page.app.prepareOzonConnection()
     }
 
     PlatformDialogs.FileDialog {
@@ -71,50 +73,62 @@ Item {
             connectorId === "alfa-retail"
         readonly property bool builtinVtb:
             connectorId === "vtb-retail"
+        readonly property bool builtinOzon:
+            connectorId === "ozon-retail"
         readonly property bool builtinRetail:
-            builtinTBank || builtinAlfa || builtinVtb
+            builtinTBank || builtinAlfa || builtinVtb || builtinOzon
         readonly property bool localPlugin:
             connectorId === "zenplugins-local"
         readonly property bool effectiveConnected:
             builtinTBank ? page.app.tbankConnected
                          : builtinAlfa ? page.app.alfaConnected
-                         : builtinVtb ? page.app.vtbConnected : connected
+                         : builtinVtb ? page.app.vtbConnected
+                         : builtinOzon ? page.app.ozonConnected : connected
         readonly property bool retailLoginActive:
             builtinTBank ? page.app.tbankLoginActive
                          : builtinAlfa ? page.app.alfaLoginActive
-                         : builtinVtb && page.app.vtbLoginActive
+                         : builtinVtb ? page.app.vtbLoginActive
+                         : builtinOzon && page.app.ozonLoginActive
         readonly property bool retailSyncRunning:
             builtinTBank ? page.app.tbankSyncRunning
                          : builtinAlfa ? page.app.alfaSyncRunning
-                         : builtinVtb && page.app.vtbSyncRunning
+                         : builtinVtb ? page.app.vtbSyncRunning
+                         : builtinOzon && page.app.ozonSyncRunning
         readonly property bool retailAutoUpdate:
             builtinTBank ? page.app.tbankAutoUpdate
                          : builtinAlfa ? page.app.alfaAutoUpdate
-                         : builtinVtb && page.app.vtbAutoUpdate
+                         : builtinVtb ? page.app.vtbAutoUpdate
+                         : builtinOzon && page.app.ozonAutoUpdate
         readonly property string retailLastSync:
             builtinTBank ? page.app.tbankLastSync
                          : builtinAlfa ? page.app.alfaLastSync
-                         : builtinVtb ? page.app.vtbLastSync : ""
+                         : builtinVtb ? page.app.vtbLastSync
+                         : builtinOzon ? page.app.ozonLastSync : ""
         readonly property string retailNextSync:
             builtinTBank ? page.app.tbankNextSync
                          : builtinAlfa ? page.app.alfaNextSync
-                         : builtinVtb ? page.app.vtbNextSync : ""
+                         : builtinVtb ? page.app.vtbNextSync
+                         : builtinOzon ? page.app.ozonNextSync : ""
         readonly property string retailLoginStatus:
             builtinTBank ? page.app.tbankLoginStatus
                          : builtinAlfa ? page.app.alfaLoginStatus
-                         : builtinVtb ? page.app.vtbLoginStatus : ""
+                         : builtinVtb ? page.app.vtbLoginStatus
+                         : builtinOzon ? page.app.ozonLoginStatus : ""
         readonly property var retailWebView:
             builtinTBank ? page.app.tbankWebView
                          : builtinAlfa ? page.app.alfaWebView
-                         : builtinVtb ? page.app.vtbWebView : null
+                         : builtinVtb ? page.app.vtbWebView
+                         : builtinOzon ? page.app.ozonWebView : null
 
         function beginRetailLogin() {
             if (builtinTBank)
                 page.app.beginTBankLogin()
             else if (builtinAlfa)
                 page.app.beginAlfaLogin()
-            else
+            else if (builtinVtb)
                 page.app.beginVtbLogin()
+            else
+                page.app.beginOzonLogin()
         }
 
         function reloadRetailLogin() {
@@ -122,8 +136,10 @@ Item {
                 page.app.reloadTBankLoginPage()
             else if (builtinAlfa)
                 page.app.reloadAlfaLoginPage()
-            else
+            else if (builtinVtb)
                 page.app.reloadVtbLoginPage()
+            else
+                page.app.reloadOzonLoginPage()
         }
 
         function cancelRetailLogin() {
@@ -131,8 +147,10 @@ Item {
                 page.app.cancelTBankLogin()
             else if (builtinAlfa)
                 page.app.cancelAlfaLogin()
-            else
+            else if (builtinVtb)
                 page.app.cancelVtbLogin()
+            else
+                page.app.cancelOzonLogin()
         }
 
         function synchronizeRetail() {
@@ -140,8 +158,10 @@ Item {
                 page.app.synchronizeTBank()
             else if (builtinAlfa)
                 page.app.synchronizeAlfa()
-            else
+            else if (builtinVtb)
                 page.app.synchronizeVtb()
+            else
+                page.app.synchronizeOzon()
         }
 
         function setRetailAutoUpdate(enabled) {
@@ -149,8 +169,10 @@ Item {
                 page.app.setTBankAutoUpdate(enabled)
             else if (builtinAlfa)
                 page.app.setAlfaAutoUpdate(enabled)
-            else
+            else if (builtinVtb)
                 page.app.setVtbAutoUpdate(enabled)
+            else
+                page.app.setOzonAutoUpdate(enabled)
         }
 
         function disconnectRetail() {
@@ -158,8 +180,10 @@ Item {
                 page.app.disconnectTBank()
             else if (builtinAlfa)
                 page.app.disconnectAlfa()
-            else
+            else if (builtinVtb)
                 page.app.disconnectVtb()
+            else
+                page.app.disconnectOzon()
         }
 
         function pluginPreferences() {
@@ -675,10 +699,12 @@ Item {
                     ActionButton {
                         visible: connectionDialog.builtinRetail
                                  && (!connectionDialog.effectiveConnected
-                                     || connectionDialog.builtinVtb || connectionDialog.builtinAlfa)
+                                     || connectionDialog.builtinVtb || connectionDialog.builtinAlfa
+                                     || connectionDialog.builtinOzon)
                                  && !connectionDialog.retailLoginActive
                                  && (!connectionDialog.retailSyncRunning
-                                     || connectionDialog.builtinVtb || connectionDialog.builtinAlfa)
+                                     || connectionDialog.builtinVtb || connectionDialog.builtinAlfa
+                                     || connectionDialog.builtinOzon)
                         text: !connectionDialog.effectiveConnected ? qsTr("Войти")
                               : connectionDialog.builtinVtb ? qsTr("Открыть ВТБ") : qsTr("Открыть банк")
                         primary: true
@@ -1005,7 +1031,7 @@ Item {
 
         Text {
             Layout.fillWidth: true
-            text: qsTr("Т-Банк, Альфа-Банк и ВТБ используют встроенные локальные коннекторы. Для Сбера нужен отдельный проверяемый адаптер.")
+            text: qsTr("Т-Банк, Альфа-Банк, ВТБ и Ozon Банк используют встроенные локальные коннекторы. Для Сбера нужен отдельный проверяемый адаптер.")
             color: Theme.textMuted
             font.pixelSize: 11
             wrapMode: Text.WordWrap

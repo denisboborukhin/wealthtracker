@@ -111,6 +111,15 @@ class AppController final : public QObject {
     Q_PROPERTY(QString vtbLoginStatus READ vtbLoginStatus NOTIFY vtbConnectionChanged)
     Q_PROPERTY(QUrl vtbLoginUrl READ vtbLoginUrl CONSTANT)
     Q_PROPERTY(QWindow* vtbWebView READ vtbWebView NOTIFY vtbConnectionChanged)
+    Q_PROPERTY(bool ozonConnected READ ozonConnected NOTIFY ozonConnectionChanged)
+    Q_PROPERTY(bool ozonLoginActive READ ozonLoginActive NOTIFY ozonConnectionChanged)
+    Q_PROPERTY(bool ozonSyncRunning READ ozonSyncRunning NOTIFY ozonConnectionChanged)
+    Q_PROPERTY(bool ozonAutoUpdate READ ozonAutoUpdate NOTIFY ozonConnectionChanged)
+    Q_PROPERTY(QString ozonLastSync READ ozonLastSync NOTIFY ozonConnectionChanged)
+    Q_PROPERTY(QString ozonNextSync READ ozonNextSync NOTIFY ozonConnectionChanged)
+    Q_PROPERTY(QString ozonLoginStatus READ ozonLoginStatus NOTIFY ozonConnectionChanged)
+    Q_PROPERTY(QUrl ozonLoginUrl READ ozonLoginUrl CONSTANT)
+    Q_PROPERTY(QWindow* ozonWebView READ ozonWebView NOTIFY ozonConnectionChanged)
 
 public:
     explicit AppController(QObject* parent = nullptr);
@@ -212,6 +221,15 @@ public:
     [[nodiscard]] QString vtbLoginStatus() const;
     [[nodiscard]] QUrl vtbLoginUrl() const;
     [[nodiscard]] QWindow* vtbWebView();
+    [[nodiscard]] bool ozonConnected() const noexcept;
+    [[nodiscard]] bool ozonLoginActive() const noexcept;
+    [[nodiscard]] bool ozonSyncRunning() const noexcept;
+    [[nodiscard]] bool ozonAutoUpdate() const;
+    [[nodiscard]] QString ozonLastSync() const;
+    [[nodiscard]] QString ozonNextSync() const;
+    [[nodiscard]] QString ozonLoginStatus() const;
+    [[nodiscard]] QUrl ozonLoginUrl() const;
+    [[nodiscard]] QWindow* ozonWebView();
 
     Q_INVOKABLE void loadDemoData();
     Q_INVOKABLE void clearDemoData();
@@ -257,6 +275,13 @@ public:
     Q_INVOKABLE bool synchronizeVtb();
     Q_INVOKABLE void setVtbAutoUpdate(bool enabled);
     Q_INVOKABLE void disconnectVtb();
+    Q_INVOKABLE bool prepareOzonConnection();
+    Q_INVOKABLE void beginOzonLogin();
+    Q_INVOKABLE void reloadOzonLoginPage();
+    Q_INVOKABLE void cancelOzonLogin();
+    Q_INVOKABLE bool synchronizeOzon();
+    Q_INVOKABLE void setOzonAutoUpdate(bool enabled);
+    Q_INVOKABLE void disconnectOzon();
 
 signals:
     void cashbackChanged();
@@ -274,6 +299,7 @@ signals:
     void tbankConnectionChanged();
     void alfaConnectionChanged();
     void vtbConnectionChanged();
+    void ozonConnectionChanged();
 
 private:
     void initializeCashback();
@@ -316,6 +342,9 @@ private:
     bool vtb_connected_ = false;
     bool vtb_login_active_ = false;
     QString vtb_login_status_;
+    bool ozon_connected_ = false;
+    bool ozon_login_active_ = false;
+    QString ozon_login_status_;
     QString live_portfolio_value_ = QStringLiteral("0 ₽");
     QString live_net_worth_ = QStringLiteral("0 ₽");
     QString live_report_income_ = QStringLiteral("0 ₽");
@@ -341,6 +370,8 @@ private:
     void scheduleAlfaAutoUpdateAfter(const QDateTime& from);
     void refreshVtbAutoUpdateSchedule();
     void scheduleVtbAutoUpdateAfter(const QDateTime& from);
+    void refreshOzonAutoUpdateSchedule();
+    void scheduleOzonAutoUpdateAfter(const QDateTime& from);
     void restoreRetailConnections();
     void rebuildBankModels();
 };

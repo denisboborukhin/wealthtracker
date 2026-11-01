@@ -9,6 +9,7 @@ counts and balances against the bank's own application.
 | --- | --- | --- |
 | Retail T-Bank | Accounts and balances | Embedded official login |
 | Retail Alfa-Bank | Accounts and balances | Embedded official login |
+| Ozon Bank | Main RUB account and savings total | Embedded official login |
 | Retail VTB | Accounts and balances | Embedded official login |
 | Alfa-Bank B2C API | Accounts, balances, and operations | Issued integration token |
 | T-Bank Business | Accounts, balances, and statements | T-API token |
@@ -22,7 +23,7 @@ Other live financial data remains in memory until exit. Failed refreshes preserv
 the previous in-memory snapshot. Removing a connection cancels active work and removes its
 in-memory rows and saved credential. On macOS, disconnect deletes browser data for that bank
 without deleting other banks' data. Retail auto-update runs every six hours while the app is running.
-Retail T-Bank, Alfa, and VTB background refreshes run independently and start
+Retail T-Bank, Alfa, VTB, and Ozon background refreshes run independently and start
 together on launch. Each refresh has a ten-second deadline. A timeout retains
 credentials, browser pages, and previous balances; it does not establish expiry.
 Interactive bank verification keeps its separate ten-minute window and only one
@@ -177,6 +178,29 @@ a valid bank session; the bank may still require login after expiry.
 Quitting with Cmd+Q ends live page memory. Persistent browser data does not
 guarantee that a bank will restore authentication without a new code. The app
 does not export or replay browser authentication secrets to bypass that requirement.
+
+## Ozon Bank
+
+Choose **Ozon Банк → Войти** and complete the official `finance.ozon.ru`
+page, allowing its observed redirect to `sso.ozon.ru` for Ozon ID. No financial
+reader runs on the identity origin. Only validated financial data confirms login. The reader reuses the
+dashboard's already-loaded software module and its `GetMainPage` query handler
+(`POST /apps/main/api/mainPage`, empty JSON object). Authentication headers and
+cookies stay inside the bank page.
+
+Coverage is the main RUB account plus the displayed savings total. When both
+a savings aggregate and a single-product widget are present, the aggregate
+replaces the single-product presentation so the amount is counted once.
+No transaction history or Ozon cashback categories are read.
+
+Balances refresh independently with a ten-second background deadline, restore
+from encrypted history on startup, and survive failed refreshes. Explicit
+disconnect removes the bank from the current capital total while retaining
+history. The current software contract is the observed `bozon-fe-main`
+`B6d1cMwe.js` module, export `ki`, with `GetMainPage` / `query` / `mainPage`
+declarations checked before use; changed or ambiguous financial schemas stop
+publication. Public source inspection and synthetic WebView tests do not prove
+live authentication on every device.
 
 ## Token-based connections
 

@@ -451,7 +451,7 @@ TEST_CASE("Alfa login UI projects bounded finance fields without reading cookies
     CHECK(source.contains(QByteArrayLiteral("page.app.beginAlfaLogin()")));
     CHECK(source.contains(QByteArrayLiteral("page.app.alfaWebView")));
     CHECK(source.contains(QByteArrayLiteral(
-        "Т-Банк, Альфа-Банк и ВТБ используют встроенные локальные коннекторы")));
+        "Т-Банк, Альфа-Банк, ВТБ и Ozon Банк используют встроенные локальные коннекторы")));
     CHECK_FALSE(source.contains(QByteArrayLiteral(
         "Для Альфа-Банка, Сбера и ВТБ нужен")));
 
