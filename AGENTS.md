@@ -248,6 +248,8 @@ When the user corrects your approach, append a one-line rule here before ending 
 - Report bank login success only after validated financial data; an API-session identifier, loaded frontend module, or pending dashboard request does not prove authentication.
 - Queue every bank JavaScript completion onto Qt's application thread before touching timers, networking or models; verify the actual C++ Android WebView bridge, not only Java WebView tests.
 - Restore connected banks' last saved balances and automatic cashback after restart; preserve their observation times when refresh fails and test Android header contrast in dark system mode.
+- Resolve investment instrument IDs through the provider's verified reference data; show tickers and names, and never use internal IDs as asset labels.
+- Read debt from verified product inventory rather than dashboard visibility; initialize each bank frontend module with its own verified service context before using its client.
 
 ## 12. How this file was built
 

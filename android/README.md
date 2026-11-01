@@ -27,8 +27,8 @@ not change crypto code or TLS validation. Gradle verifies its distribution hash.
 Output:
 
 ```text
-android/output/wealthtracker-0.1.6-debug.apk
-android/output/wealthtracker-0.1.6-debug.apk.sha256
+android/output/wealthtracker-0.1.7-debug.apk
+android/output/wealthtracker-0.1.7-debug.apk.sha256
 ```
 
 The package ID is `org.wealthtracker.android`. Keep
@@ -42,7 +42,7 @@ Copy the APK to your phone, open it in Files, and permit installation from that
 source. Or authorize USB debugging on your phone and run:
 
 ```sh
-"$ANDROID_SDK_ROOT/platform-tools/adb" install -r android/output/wealthtracker-0.1.6-debug.apk
+"$ANDROID_SDK_ROOT/platform-tools/adb" install -r android/output/wealthtracker-0.1.7-debug.apk
 ```
 
 Install future versions over this app rather than uninstalling; uninstalling
@@ -60,6 +60,11 @@ older providers receive an update message before login. Certificate failures rem
 status message. The APK includes the bank-recommended Russian Trusted Root CA
 only for the exact bank login and verified asset hosts in `res/xml/network_security_config.xml`.
 Other hosts use system CAs only; arbitrary user-installed CAs are not trusted.
+Ozon's connector supports main balances, savings, MKK installment debt and
+selected monthly cashback. These reads were confirmed on macOS. In the Android
+emulator, choosing **Продолжить в браузере** reached Ozon ID, whose own anti-bot
+page reported a connection error; authenticated Android retrieval is still
+unverified. No Ozon TLS exception or anti-bot bypass is included.
 This uses Android's declarative trust configuration, preserving TLS chain,
 validity, and hostname checks without changing the phone's certificate store.
 Qt/OpenSSL requests to the exact `www.tbank.ru` API host receive the same
