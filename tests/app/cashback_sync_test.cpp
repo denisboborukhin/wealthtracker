@@ -165,3 +165,95 @@ TEST_CASE("Cashback partial refresh preserves uncovered month choices and their 
     CHECK(stored.selectionRequired.contains(next));
     CHECK(stored.upperBounds.isEmpty());
 }
+
+TEST_CASE("Saved automatic cashback restores historical months rates and observation timestamps") {
+    const QDate current(2026,12,1), next(2027,1,1);
+    const auto projection = parse_cashback_projection("vtb", R"({"version":1,"stage":"ready","months":[
+      {"month":"2026-12-01","selectionRequired":false,"categories":[
+        {"name":"Кафе","percent":"5.25","upperBound":true}]},
+      {"month":"2027-01-01","selectionRequired":true,"categories":[]}]})", current);
+    REQUIRE(projection);
+    auto snapshot = *projection;
+    const auto firstObserved = QDateTime::fromString("2026-12-25T12:00:00.123Z", Qt::ISODateWithMs);
+    const auto nextObserved = firstObserved.addSecs(3600);
+    snapshot.observedAt.insert(current, firstObserved);
+    snapshot.observedAt.insert(next, nextObserved);
+    const auto saved = serialize_cashback_snapshot("vtb", snapshot);
+    REQUIRE(saved);
+    // Restoration deliberately has no dependency on today's month.
+    const auto restored = parse_cashback_snapshot("vtb", *saved);
+    REQUIRE(restored);
+    CHECK(restored->months == snapshot.months);
+    CHECK(restored->selectionRequired == snapshot.selectionRequired);
+    CHECK(restored->upperBounds == snapshot.upperBounds);
+    CHECK(restored->observedAt == snapshot.observedAt);
+    CHECK(restored->rows("vtb", current).front().toMap()["percent"] == "до 5,25 %");
+    CHECK(restored->rows("vtb", next).isEmpty());
+    CHECK(serialize_cashback_snapshot("vtb", *restored) == saved);
+    CHECK_FALSE(parse_cashback_snapshot("alfa", *saved));
+}
+
+TEST_CASE("Saved automatic cashback preserves covered empty months without implying coverage elsewhere") {
+    const QDate month(2026,10,1);
+    CashbackSnapshot snapshot;
+    snapshot.months.insert(month);
+    snapshot.observedAt.insert(month, QDateTime::fromString("2026-10-29T12:00:00.000Z", Qt::ISODateWithMs));
+    const auto body = serialize_cashback_snapshot("alfa", snapshot);
+    REQUIRE(body);
+    const auto restored = parse_cashback_snapshot("alfa", *body);
+    REQUIRE(restored);
+    CHECK(restored->months == QSet<QDate>{month});
+    CHECK(restored->selectionRequired.isEmpty());
+    CHECK(restored->categories.rows("alfa", month).isEmpty());
+    CHECK_FALSE(restored->months.contains(month.addMonths(1)));
+}
+
+TEST_CASE("Saved automatic cashback rejects incomplete or inconsistent snapshots before serialization") {
+    CashbackSnapshot snapshot;
+    const QDate month(2026,10,1);
+    snapshot.months.insert(month);
+    snapshot.observedAt.insert(month, QDateTime::fromString("2026-10-29T12:00:00.000Z", Qt::ISODateWithMs));
+    REQUIRE(snapshot.categories.set("tbank", "2026-10-01", "Кафе", "5", month));
+    SECTION("missing timestamp") { snapshot.observedAt.clear(); }
+    SECTION("invalid timestamp") { snapshot.observedAt[month] = QDateTime{}; }
+    SECTION("uncovered timestamp") { snapshot.observedAt.insert(month.addMonths(1), snapshot.observedAt[month]); }
+    SECTION("uncovered selection flag") { snapshot.selectionRequired.insert(month.addMonths(1)); }
+    SECTION("selection required with chosen categories") { snapshot.selectionRequired.insert(month); }
+    SECTION("unknown rate qualifier") { snapshot.upperBounds.insert("2026-10-01/Missing"); }
+    SECTION("categories from another bank") { REQUIRE(snapshot.categories.set("alfa", "2026-10-01", "Кафе", "3", month)); }
+    SECTION("uncovered categories") { REQUIRE(snapshot.categories.set("tbank", "2026-11-01", "Транспорт", "3", month)); }
+    CHECK_FALSE(serialize_cashback_snapshot("tbank", snapshot));
+}
+
+TEST_CASE("Saved automatic cashback rejects corrupt metadata schemas and category data") {
+    QJsonObject month{{"month", "2026-10-01"}, {"selectionRequired", false},
+        {"observedAt", "2026-10-29T12:00:00.000Z"},
+        {"categories", QJsonArray{QJsonObject{{"name", "Кафе"}, {"percent", "5.25"}, {"upperBound", false}}}}};
+    QJsonObject root{{"version", 1}, {"bank", "vtb"}, {"months", QJsonArray{month}}};
+    SECTION("unknown schema") { root["version"] = 2; }
+    SECTION("unknown root field") { root["extra"] = true; }
+    SECTION("wrong bank") { root["bank"] = "alfa"; }
+    SECTION("empty coverage") { root["months"] = QJsonArray{}; }
+    SECTION("duplicate month") { root["months"] = QJsonArray{month, month}; }
+    SECTION("non-adjacent months") {
+        auto other = month;
+        other["month"] = "2026-12-01";
+        root["months"] = QJsonArray{month, other};
+    }
+    SECTION("invalid month day") { month["month"] = "2026-10-02"; root["months"] = QJsonArray{month}; }
+    SECTION("missing observation") { month.remove("observedAt"); root["months"] = QJsonArray{month}; }
+    SECTION("malformed observation") { month["observedAt"] = "not a timestamp"; root["months"] = QJsonArray{month}; }
+    SECTION("timestamp without timezone") { month["observedAt"] = "2026-10-29T12:00:00.000"; root["months"] = QJsonArray{month}; }
+    SECTION("invalid rate") {
+        month["categories"] = QJsonArray{QJsonObject{{"name", "Кафе"}, {"percent", "100.01"}, {"upperBound", false}}};
+        root["months"] = QJsonArray{month};
+    }
+    SECTION("unknown category field") {
+        month["categories"] = QJsonArray{QJsonObject{{"name", "Кафе"}, {"percent", "5"}, {"upperBound", false}, {"extra", true}}};
+        root["months"] = QJsonArray{month};
+    }
+    CHECK_FALSE(parse_cashback_snapshot("vtb", QJsonDocument(root).toJson()));
+    CHECK_FALSE(parse_cashback_snapshot("vtb", {}));
+    CHECK_FALSE(parse_cashback_snapshot("vtb", "not json"));
+    CHECK_FALSE(parse_cashback_snapshot("vtb", QByteArray(128 * 1024 + 1, ' ')));
+}

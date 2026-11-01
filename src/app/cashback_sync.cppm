@@ -120,6 +120,93 @@ struct CashbackSnapshot {
     return snapshot;
 }
 
+// Saved months are validated relative to their own first month so a restart
+// after month rollover can still restore the original observation unchanged.
+[[nodiscard]] std::expected<CashbackSnapshot, QString> parse_cashback_snapshot(
+    const QString& bank, const QByteArray& body) {
+    const auto invalid = [] { return std::unexpected(QStringLiteral(
+        "Не удалось прочитать сохранённый кэшбэк банка. Данные не изменены.")); };
+    if (!CashbackBook::validBank(bank) || body.isEmpty() || body.size() > 128 * 1024)
+        return invalid();
+    const auto document = QJsonDocument::fromJson(body);
+    const auto root = document.object();
+    if (!document.isObject() || root.size() != 3 || root.value(QStringLiteral("version")) != 1 ||
+        root.value(QStringLiteral("bank")) != bank || !root.value(QStringLiteral("months")).isArray())
+        return invalid();
+    const auto months = root.value(QStringLiteral("months")).toArray();
+    if (months.isEmpty() || months.size() > 2) return invalid();
+    QDate first;
+    QMap<QDate,QDateTime> observed;
+    QJsonArray projected;
+    for (const auto& value : months) {
+        if (!value.isObject()) return invalid();
+        auto object = value.toObject();
+        if (object.size() != 4 || !object.value(QStringLiteral("observedAt")).isString()) return invalid();
+        const auto month = QDate::fromString(object.value(QStringLiteral("month")).toString(), Qt::ISODate);
+        const auto timestamp = object.take(QStringLiteral("observedAt")).toString();
+        const auto at = QDateTime::fromString(timestamp, Qt::ISODateWithMs);
+        if (!month.isValid() || !at.isValid() ||
+            at.toUTC().toString(Qt::ISODateWithMs) != timestamp || observed.contains(month)) return invalid();
+        if (!first.isValid() || month < first) first = month;
+        observed.insert(month, at);
+        const auto categories = object.value(QStringLiteral("categories"));
+        if (!categories.isArray()) return invalid();
+        for (const auto& category : categories.toArray()) {
+            if (!category.isObject() || category.toObject().size() != 3) return invalid();
+        }
+        projected.append(object);
+    }
+    const auto projection = QJsonDocument(QJsonObject{{QStringLiteral("version"), 1},
+        {QStringLiteral("stage"), QStringLiteral("ready")}, {QStringLiteral("months"), projected}})
+        .toJson(QJsonDocument::Compact);
+    auto snapshot = parse_cashback_projection(bank, projection, first);
+    if (!snapshot) return invalid();
+    snapshot->observedAt = std::move(observed);
+    return snapshot;
+}
+
+[[nodiscard]] std::expected<QByteArray, QString> serialize_cashback_snapshot(
+    const QString& bank, const CashbackSnapshot& snapshot) {
+    const auto invalid = [] { return std::unexpected(QStringLiteral(
+        "Не удалось сохранить кэшбэк банка: неполные данные.")); };
+    if (!CashbackBook::validBank(bank) || snapshot.months.isEmpty() || snapshot.months.size() > 2 ||
+        snapshot.observedAt.size() != snapshot.months.size()) return invalid();
+    for (const auto& month : snapshot.selectionRequired)
+        if (!snapshot.months.contains(month)) return invalid();
+    QJsonArray months;
+    QSet<QString> upperBounds;
+    qsizetype categoryCount = 0;
+    // QMap iteration gives deterministic month order without depending on QSet.
+    for (auto it = snapshot.observedAt.cbegin(); it != snapshot.observedAt.cend(); ++it) {
+        if (!snapshot.months.contains(it.key()) || !it.value().isValid()) return invalid();
+        const auto month = it.key().toString(Qt::ISODate);
+        QJsonArray categories;
+        for (const auto& value : snapshot.categories.rows(bank, it.key())) {
+            const auto row = value.toMap();
+            const auto name = row.value(QStringLiteral("name")).toString();
+            auto percent = row.value(QStringLiteral("percent")).toString();
+            percent.chop(2); // CashbackBook rows end in " %".
+            const auto key = month + QLatin1Char('/') + name;
+            const bool upper = snapshot.upperBounds.contains(key);
+            if (upper) upperBounds.insert(key);
+            categories.append(QJsonObject{{QStringLiteral("name"), name},
+                {QStringLiteral("percent"), percent}, {QStringLiteral("upperBound"), upper}});
+            ++categoryCount;
+        }
+        months.append(QJsonObject{{QStringLiteral("month"), month},
+            {QStringLiteral("selectionRequired"), snapshot.selectionRequired.contains(it.key())},
+            {QStringLiteral("categories"), categories},
+            {QStringLiteral("observedAt"), it.value().toUTC().toString(Qt::ISODateWithMs)}});
+    }
+    const auto allCategories = QJsonDocument::fromJson(snapshot.categories.serialize()).object()
+        .value(QStringLiteral("categories")).toArray();
+    if (allCategories.size() != categoryCount || upperBounds != snapshot.upperBounds) return invalid();
+    auto body = QJsonDocument(QJsonObject{{QStringLiteral("version"), 1},
+        {QStringLiteral("bank"), bank}, {QStringLiteral("months"), months}}).toJson(QJsonDocument::Compact);
+    if (!parse_cashback_snapshot(bank, body)) return invalid();
+    return body;
+}
+
 // VTB's own category module (mf_1757_categories 4.12.18) uses this exact GET.
 // The separately offered /bonus/categories list is deliberately not read.
 [[nodiscard]] QString vtb_cashback_start_script(const QDate& today, const QString& runId) {
