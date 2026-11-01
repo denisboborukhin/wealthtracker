@@ -40,6 +40,16 @@ ApplicationWindow {
             anchors.top: parent.top
             visible: window.compact
             height: visible ? 56 : 0
+            background: Rectangle {
+                color: Theme.surface
+                Rectangle {
+                    anchors.left: parent.left
+                    anchors.right: parent.right
+                    anchors.bottom: parent.bottom
+                    height: 1
+                    color: Theme.border
+                }
+            }
             RowLayout {
                 anchors.fill: parent
                 anchors.leftMargin: 16

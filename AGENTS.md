@@ -247,6 +247,7 @@ When the user corrects your approach, append a one-line rule here before ending 
 - Verify Android bank certificate chains and required asset hosts against the app's actual trust configuration; host-machine roots do not prove Android trust.
 - Report bank login success only after validated financial data; an API-session identifier, loaded frontend module, or pending dashboard request does not prove authentication.
 - Queue every bank JavaScript completion onto Qt's application thread before touching timers, networking or models; verify the actual C++ Android WebView bridge, not only Java WebView tests.
+- Restore connected banks' last saved balances and automatic cashback after restart; preserve their observation times when refresh fails and test Android header contrast in dark system mode.
 
 ## 12. How this file was built
 
