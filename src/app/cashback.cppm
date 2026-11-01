@@ -35,7 +35,7 @@ public:
 
     [[nodiscard]] static bool validBank(const QString& bank) {
         return bank == QStringLiteral("tbank") || bank == QStringLiteral("alfa") ||
-               bank == QStringLiteral("vtb");
+               bank == QStringLiteral("vtb") || bank == QStringLiteral("ozon");
     }
 
     [[nodiscard]] static QDate monthStart(const QDate& date) {
@@ -53,7 +53,7 @@ public:
         if (!document.isObject() || root.value(QStringLiteral("version")) != 1 ||
             !root.value(QStringLiteral("categories")).isArray()) return invalid();
         const auto rows = root.value(QStringLiteral("categories")).toArray();
-        if (rows.size() > 3 * 2 * maximumCategories) return invalid();
+        if (rows.size() > 4 * 2 * maximumCategories) return invalid();
         QSet<QString> keys;
         for (const auto& row : rows) {
             if (!row.isObject()) return invalid();

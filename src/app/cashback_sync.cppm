@@ -29,6 +29,7 @@ export module wt.cashback_sync;
 
 import wt.cashback;
 import wt.alfa_cashback;
+import wt.ozon_cashback;
 
 export namespace wealthtracker::app {
 
@@ -272,9 +273,18 @@ struct CashbackSnapshot {
   if (url.origin !== '%1' || url.username || url.password) return ''
   const state = globalThis.__wealthtrackerCashback
   if (!state || !state.active || state.id !== '%2') return ''
+  if (state.status === 'failed' && state.reasonCode === 'OZON-STARS') return 'ozon-stars'
+  if ('%1' === 'https://finance.ozon.ru' && state.status === 'failed') {
+    const reasons = ['OZON-MODULE','OZON-READ','OZON-SCHEMA','OZON-LIMIT','OZON-PROGRAM','OZON-CONTEXT']
+    const phases = ['IMPORT','CONTEXT','MODE-CONTRACT','MODE-CALL','MODE-VALUE','CASHBACK-CREATE',
+      'CASHBACK-CALL','CASHBACK-VALUE','MONTHS','READY']
+    if (reasons.includes(state.reasonCode) && phases.includes(state.phase))
+      return 'ozon-failed:' + state.reasonCode + ':' + state.phase
+  }
   return state.status === 'ready' ? JSON.stringify(state.result) : state.status
 })())JS");
-    const auto origin = bank == QStringLiteral("alfa") ? QStringLiteral("https://web.alfabank.ru") : QStringLiteral("https://online.vtb.ru");
+    const auto origin = bank == QStringLiteral("alfa") ? QStringLiteral("https://web.alfabank.ru")
+        : bank == QStringLiteral("ozon") ? QStringLiteral("https://finance.ozon.ru") : QStringLiteral("https://online.vtb.ru");
     return script.arg(origin,runId);
 }
 
@@ -299,6 +309,7 @@ public:
 
     void startVtb(QWebView* page) { begin(page,QStringLiteral("vtb")); }
     void startAlfa(QWebView* page) { begin(page,QStringLiteral("alfa")); }
+    void startOzon(QWebView* page) { begin(page,QStringLiteral("ozon")); }
 
 private:
     void begin(QWebView* page,const QString& bank) {
@@ -306,14 +317,16 @@ private:
         started_ = true;
         page_ = page;
         bank_ = bank;
-        origin_ = bank == QStringLiteral("alfa") ? QStringLiteral("https://web.alfabank.ru") : QStringLiteral("https://online.vtb.ru");
+        origin_ = bank == QStringLiteral("alfa") ? QStringLiteral("https://web.alfabank.ru")
+            : bank == QStringLiteral("ozon") ? QStringLiteral("https://finance.ozon.ru") : QStringLiteral("https://online.vtb.ru");
         today_ = QDate::currentDate();
         run_id_ = QUuid::createUuid().toString(QUuid::WithoutBraces);
         active_ = true;
         deadline_.start(10'000);
         pending_ = true;
         const QPointer<CashbackSync> guard(this);
-        const auto script = bank == QStringLiteral("alfa") ? alfa_cashback_start_script(today_,run_id_) : vtb_cashback_start_script(today_,run_id_);
+        const auto script = bank == QStringLiteral("alfa") ? alfa_cashback_start_script(today_,run_id_)
+            : bank == QStringLiteral("ozon") ? ozon_cashback_start_script(today_,run_id_) : vtb_cashback_start_script(today_,run_id_);
         runBankJavaScript(page_, this, script, [guard](const QVariant& value) {
             if (!guard || !guard->active_) return;
             guard->pending_ = false;
@@ -355,6 +368,24 @@ private:
             guard->pending_ = false;
             const auto result = value.toString();
             if (result == QStringLiteral("loading")) return;
+            if (guard->bank_ == QStringLiteral("ozon") && result == QStringLiteral("ozon-stars")) {
+                guard->fail(QStringLiteral("В Ozon Банке выбран режим «Звёзды». Предыдущие категории кэшбэка сохранены."));
+                return;
+            }
+            if (guard->bank_ == QStringLiteral("ozon") && result.startsWith(QStringLiteral("ozon-failed:"))) {
+                const auto fields = result.split(QLatin1Char(':'));
+                const QSet<QString> reasons{QStringLiteral("OZON-MODULE"), QStringLiteral("OZON-READ"),
+                    QStringLiteral("OZON-SCHEMA"), QStringLiteral("OZON-LIMIT"), QStringLiteral("OZON-PROGRAM"),
+                    QStringLiteral("OZON-CONTEXT")};
+                const QSet<QString> phases{QStringLiteral("IMPORT"), QStringLiteral("CONTEXT"), QStringLiteral("MODE-CONTRACT"),
+                    QStringLiteral("MODE-CALL"), QStringLiteral("MODE-VALUE"), QStringLiteral("CASHBACK-CREATE"),
+                    QStringLiteral("CASHBACK-CALL"), QStringLiteral("CASHBACK-VALUE"), QStringLiteral("MONTHS"), QStringLiteral("READY")};
+                if (fields.size() == 3 && reasons.contains(fields[1]) && phases.contains(fields[2])) {
+                    guard->fail(QStringLiteral("Кэшбэк Ozon Банка не обновлён (%1, %2). Предыдущие категории сохранены.")
+                        .arg(fields[1], fields[2]));
+                    return;
+                }
+            }
             if (result == QStringLiteral("failed")) {
                 guard->fail(QStringLiteral("Не удалось получить кэшбэк банка. Предыдущие категории сохранены."));
                 return;

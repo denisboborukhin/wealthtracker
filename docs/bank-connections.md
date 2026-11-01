@@ -9,7 +9,7 @@ counts and balances against the bank's own application.
 | --- | --- | --- |
 | Retail T-Bank | Accounts and balances | Embedded official login |
 | Retail Alfa-Bank | Accounts and balances | Embedded official login |
-| Ozon Bank | Main RUB account and savings total | Embedded official login |
+| Ozon Bank | Main RUB account, savings total, MKK debt and cashback | Embedded official login |
 | Retail VTB | Accounts and balances | Embedded official login |
 | Alfa-Bank B2C API | Accounts, balances, and operations | Issued integration token |
 | T-Bank Business | Accounts, balances, and statements | T-API token |
@@ -188,10 +188,38 @@ dashboard's already-loaded software module and its `GetMainPage` query handler
 (`POST /apps/main/api/mainPage`, empty JSON object). Authentication headers and
 cookies stay inside the bank page.
 
-Coverage is the main RUB account plus the displayed savings total. When both
+Coverage is the main RUB account, displayed savings total and MKK installment
+debt. Each refresh reads `InstallmentInfoV4` through the bank's credit
+client (`POST /apps/credit/api/installment/info`, body `{}`). Only
+`me.client.installment.userInfo.debt.cents` becomes a negative RUB balance,
+including when the dashboard hides the installment widget. Only an explicit
+null installment establishes that the product is absent;
+approved and available limits never become assets. Failure to read a required
+liability preserves the previous entire balance snapshot. Bank-issued annuity
+installments use a different schema and are not substituted with the MKK read.
+When both
 a savings aggregate and a single-product widget are present, the aggregate
 replaces the single-product presentation so the amount is counted once.
-No transaction history or Ozon cashback categories are read.
+No transaction history is read.
+
+Ozon cashback follows balance synchronization through the verified loyalty
+client: `GetLoyaltyProgramV2` / `loyalty/bonusState/loyaltyProgramV2`, then
+`GetCashbackProgram` / `loyalty/bonusState/cashbackProgram`. Both are read-only
+POSTs with empty JSON bodies under `/apps/loyalty/api/`. The public
+`MFBonuses.DVjct8rH.js` module owns bank authentication; no headers or tokens leave
+the page. Only `ACCEPTED` categories with explicit current/next `yyyy-MM` periods
+are published. Decimal percentage values are already percent units. Unavailable
+future choices remain unknown, and the separate Stars program does not become
+cashback. Snapshots and their original month timestamps persist in encrypted
+storage; failures preserve them. Manual category fallback is also available.
+The credit and loyalty clients are initialized using the bank's own service
+contexts (`GET /apps/credit/_mf/context` and `GET /apps/loyalty/_mf/context`)
+before native reads. Context JSON stays inside the bank page and is passed
+directly to the native setter; it is never projected to the application model.
+
+On Android, select **Продолжить в браузере** if the bank first offers its native
+apps. The emulator reached Ozon ID but its anti-bot page reported a connection
+error; authenticated Android retrieval remains unverified.
 
 Balances refresh independently with a ten-second background deadline, restore
 from encrypted history on startup, and survive failed refreshes. Explicit
@@ -200,7 +228,9 @@ history. The current software contract is the observed `bozon-fe-main`
 `B6d1cMwe.js` module, export `ki`, with `GetMainPage` / `query` / `mainPage`
 declarations checked before use; changed or ambiguous financial schemas stop
 publication. Public source inspection and synthetic WebView tests do not prove
-live authentication on every device.
+live authentication on every device. A user-run macOS check on November 1, 2026
+confirmed balances, MKK installment debt and selected cashback categories after
+the service-context initialization fix. Android authentication remains unverified.
 
 ## Token-based connections
 

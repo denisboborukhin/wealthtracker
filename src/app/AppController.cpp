@@ -524,6 +524,7 @@ public:
     QHash<QString,QDateTime> balance_updated_at;
     QPointer<CashbackSync> vtb_cashback_sync;
     QPointer<CashbackSync> alfa_cashback_sync;
+    QPointer<CashbackSync> ozon_cashback_sync;
     QHash<QString,QString> cashback_status;
     QHash<QString,QDateTime> cashback_updated_at;
     QPointer<TBankCashbackSync> tbank_cashback_sync;
@@ -582,7 +583,8 @@ void AppController::initializeCashback() {
         private_->cashback_error = loaded.error();
     }
     for (auto signal : {&AppController::tbankConnectionChanged, &AppController::alfaConnectionChanged,
-                        &AppController::vtbConnectionChanged, &AppController::demoModeChanged,
+                        &AppController::vtbConnectionChanged, &AppController::ozonConnectionChanged,
+                        &AppController::demoModeChanged,
                         &AppController::lockedChanged}) {
         connect(this, signal, this, &AppController::cashbackChanged);
     }
@@ -636,6 +638,49 @@ void AppController::stopAlfaCashback(const bool clearData) {
         persistBankCashback(QStringLiteral("alfa"), true);
         private_->cashback_updated_at.remove(QStringLiteral("alfa"));
         private_->cashback_status.remove(QStringLiteral("alfa"));
+    }
+    emit cashbackChanged();
+}
+
+void AppController::startOzonCashback() {
+    if (locked_ || demo_mode_ || !ozon_connected_ || ozon_login_active_ || private_->ozon_sync_running || private_->ozon_cashback_sync) return;
+    auto* page = static_cast<QWebView*>(private_->ozon_login->existingWebView());
+    if (!page) return;
+    private_->cashback_status[QStringLiteral("ozon")] = QStringLiteral("Получаем выбранные категории кэшбэка…");
+    auto* coordinator = new CashbackSync(
+        [this](CashbackSnapshot snapshot) {
+            auto* finished = private_->ozon_cashback_sync.data();
+            private_->ozon_cashback_sync.clear();
+            if (finished) finished->deleteLater();
+            private_->bank_cashback[QStringLiteral("ozon")].merge(QStringLiteral("ozon"),snapshot,QDateTime::currentDateTime());
+            persistBankCashback(QStringLiteral("ozon"));
+            private_->cashback_updated_at[QStringLiteral("ozon")] = QDateTime::currentDateTimeUtc();
+            private_->cashback_status[QStringLiteral("ozon")] = QStringLiteral("Категории получены из Ozon Банка");
+            emit cashbackChanged();
+        }, [this](QString error) {
+            auto* finished = private_->ozon_cashback_sync.data();
+            private_->ozon_cashback_sync.clear();
+            if (finished) finished->deleteLater();
+            private_->cashback_status[QStringLiteral("ozon")] = std::move(error);
+            emit cashbackChanged();
+        },this);
+    private_->ozon_cashback_sync = coordinator;
+    coordinator->startOzon(page);
+    emit cashbackChanged();
+}
+
+void AppController::stopOzonCashback(const bool clearData) {
+    if (private_->ozon_cashback_sync) {
+        private_->ozon_cashback_sync->cancel();
+        private_->ozon_cashback_sync->deleteLater();
+        private_->ozon_cashback_sync.clear();
+        private_->cashback_status[QStringLiteral("ozon")] = QStringLiteral("Обновление кэшбэка остановлено. Предыдущие данные сохранены.");
+    }
+    if (clearData) {
+        private_->bank_cashback.remove(QStringLiteral("ozon"));
+        persistBankCashback(QStringLiteral("ozon"), true);
+        private_->cashback_updated_at.remove(QStringLiteral("ozon"));
+        private_->cashback_status.remove(QStringLiteral("ozon"));
     }
     emit cashbackChanged();
 }
@@ -717,6 +762,7 @@ QVariantList AppController::cashbackBanks() const {
             {QStringLiteral("lastSync"), lastSync}, {QStringLiteral("syncStatus"), status},
             {QStringLiteral("cashbackRunning"), (id == QStringLiteral("vtb") && !private_->vtb_cashback_sync.isNull()) ||
                 (id == QStringLiteral("alfa") && !private_->alfa_cashback_sync.isNull()) ||
+                (id == QStringLiteral("ozon") && !private_->ozon_cashback_sync.isNull()) ||
                 (id == QStringLiteral("tbank") && !private_->tbank_cashback_sync.isNull())},
             {QStringLiteral("cashbackStatus"), cashbackStatus},
             {QStringLiteral("cashbackLastSync"), private_->cashback_updated_at.value(id).isValid()
@@ -732,6 +778,7 @@ QVariantList AppController::cashbackBanks() const {
     append(QStringLiteral("tbank"), QStringLiteral("Т-Банк"), tbankConnected(), tbankSyncRunning(), tbankLastSync(), tbankLoginStatus());
     append(QStringLiteral("alfa"), QStringLiteral("Альфа-Банк"), alfaConnected(), alfaSyncRunning(), alfaLastSync(), alfaLoginStatus());
     append(QStringLiteral("vtb"), QStringLiteral("ВТБ"), vtbConnected(), vtbSyncRunning(), vtbLastSync(), vtbLoginStatus());
+    append(QStringLiteral("ozon"), QStringLiteral("Ozon Банк"), ozonConnected(), ozonSyncRunning(), ozonLastSync(), ozonLoginStatus());
     return result;
 }
 
@@ -785,6 +832,7 @@ void AppController::refreshCashbackBanks() {
     if (tbankConnected() && !tbankSyncRunning() && !private_->tbank_cashback_sync) (void)synchronizeTBank();
     if (alfaConnected() && !alfaSyncRunning() && !private_->alfa_cashback_sync) (void)synchronizeAlfa();
     if (vtbConnected() && !vtbSyncRunning() && !private_->vtb_cashback_sync) (void)synchronizeVtb();
+    if (ozonConnected() && !ozonSyncRunning() && !private_->ozon_cashback_sync) (void)synchronizeOzon();
 }
 
 void AppController::initializeBalanceHistory(const QString& path) {
@@ -1325,6 +1373,7 @@ AppController::AppController(std::unique_ptr<CredentialBackend> credentials,
             emit dashboardChanged();
             emit syncStatusChanged();
             emit ozonConnectionChanged();
+            QTimer::singleShot(0, this, &AppController::startOzonCashback);
         },
         [this](OzonLoginFailure failure) {
             private_->ozon_sync_running = false;
@@ -2080,6 +2129,7 @@ void AppController::scheduleOzonAutoUpdateAfter(const QDateTime& from) {
 
 void AppController::loadDemoData() {
     stopAlfaCashback();
+    stopOzonCashback();
     stopTBankCashback();
     stopVtbCashback();
     stopCryptoRefresh();
@@ -2218,6 +2268,7 @@ void AppController::clearDemoData() {
 
 void AppController::lock() {
     stopAlfaCashback();
+    stopOzonCashback();
     stopTBankCashback();
     stopVtbCashback();
     stopCryptoRefresh();
@@ -3879,6 +3930,7 @@ bool AppController::prepareOzonConnection() {
 }
 
 void AppController::beginOzonLogin() {
+    stopOzonCashback();
 #ifdef Q_OS_ANDROID
     if (!androidBankBrowserStorageSupported()) {
         ozon_login_status_ = QStringLiteral("Обновите Android System WebView: текущая версия не поддерживает безопасное хранение и удаление данных банка.");
@@ -3914,6 +3966,7 @@ void AppController::cancelOzonLogin() {
 }
 
 bool AppController::synchronizeOzon() {
+    stopOzonCashback();
     if (private_->ozon_sync_running || ozon_login_active_) {
         sync_status_ = QStringLiteral("Ozon Банк уже выполняет вход или синхронизацию");
         ozon_login_status_ = sync_status_;
@@ -3955,6 +4008,7 @@ void AppController::setOzonAutoUpdate(const bool enabled) {
 }
 
 void AppController::disconnectOzon() {
+    stopOzonCashback(true);
     private_->ozon_login->disconnectBank();
     private_->ozon_sync_running = false;
     ozon_connected_ = false;

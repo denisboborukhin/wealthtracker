@@ -88,6 +88,8 @@ fallbacks and balance history remain. On restart, the latest complete balances
 of still-connected banks populate the overview before synchronization. Capital's
 update note uses the oldest contributing bank snapshot so a partial refresh
 does not imply every bank was refreshed together.
+Schema version 4 extends the cashback bank constraint to Ozon with a transactional
+table copy and swap, preserving all earlier snapshots, captures and wallets.
 
 Other synchronized financial data remains in process memory. QSettings stores
 connection flags, refresh times, and non-sensitive plugin preferences. The privacy screen
@@ -112,6 +114,14 @@ native parser validates the bounded projection again. Login remains unconfirmed
 until this validation succeeds. Cancellation aborts the read and invalidates
 late completions, with every JavaScript result queued onto Qt's application
 thread. No TLS trust exceptions were added for Ozon.
+Supplementary credit and loyalty reads use their verified public client modules
+and the bank's normal, same-origin service-context initialization. These context
+GETs reject redirects, support cancellation, and cap JSON at 2 MiB. Context is
+passed directly to the bank's own setter inside the WebView; no context values,
+headers, tokens, or exception text cross into C++ or QML. Failure diagnostics
+contain fixed, allowlisted stage/reason codes only. Installment inventory is read
+independently of dashboard widgets; failed required debt reads preserve the
+previous full balance batch.
 
 Bank clients require exact HTTPS hosts, reject URL user information and custom
 ports, use manual redirects, and expose fixed read methods. The executable

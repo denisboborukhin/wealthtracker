@@ -10,7 +10,7 @@ Flickable {
     required property var app
     readonly property var banks: app.cashbackBanks
     readonly property var months: app.cashbackMonths
-    readonly property var bankIds: ["tbank", "alfa", "vtb"]
+    readonly property var bankIds: ["tbank", "alfa", "vtb", "ozon"]
     readonly property bool editable: !app.locked && !app.demoMode
     property bool manualEditorOpen: false
 
@@ -74,7 +74,7 @@ Flickable {
 
         Text {
             Layout.fillWidth: true
-            text: qsTr("Выбранные категории запрашиваются вместе с обновлением Т-Банка, Альфа-Банка и ВТБ. Источник и время обновления указаны отдельно для каждого месяца. Если банк не передал категории, доступны ручные записи.")
+            text: qsTr("Выбранные категории запрашиваются вместе с обновлением Т-Банка, Альфа-Банка, ВТБ и Ozon Банка. Источник и время обновления указаны отдельно для каждого месяца. Если банк не передал категории, доступны ручные записи.")
             color: Theme.textMuted
             font.pixelSize: 12
             wrapMode: Text.WordWrap
@@ -107,7 +107,7 @@ Flickable {
                         id: bankField
                         objectName: "cashbackBank"
                         Layout.fillWidth: true
-                        model: [qsTr("Т-Банк"), qsTr("Альфа-Банк"), qsTr("ВТБ")]
+                        model: [qsTr("Т-Банк"), qsTr("Альфа-Банк"), qsTr("ВТБ"), qsTr("Ozon Банк")]
                         enabled: page.editable
                         Accessible.name: qsTr("Банк для кэшбэка")
                     }

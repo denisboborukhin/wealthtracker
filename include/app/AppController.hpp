@@ -311,6 +311,8 @@ private:
     void stopTBankCashback(bool clearData = false);
     void startAlfaCashback();
     void stopAlfaCashback(bool clearData = false);
+    void startOzonCashback();
+    void stopOzonCashback(bool clearData = false);
     bool persistCashback(const QByteArray& data);
     void startNextCryptoWallet();
     void stopCryptoRefresh();

@@ -14,7 +14,7 @@ session expires.
 ## Current functionality
 
 - Retail T-Bank, Alfa-Bank, and VTB: embedded bank login, accounts, and balances.
-- Ozon Bank: embedded login, main RUB balance and savings total from its dashboard.
+- Ozon Bank: embedded login, main RUB balance, savings, MKK installment debt and selected cashback categories.
 - Alfa-Bank B2C API, T-Bank Business, and Modulbank: token-based account and
   transaction synchronization.
 - T-Invest: token-based account, portfolio balance, and position synchronization.

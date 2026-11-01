@@ -173,7 +173,7 @@ TEST_CASE("Controller cashback persists manual choices and protects them during 
     const auto month = CashbackBook::monthStart(QDate::currentDate()).toString("yyyy-MM-dd");
     {
         AppController controller(nullptr, nullptr);
-        REQUIRE(controller.cashbackBanks().size() == 3);
+        REQUIRE(controller.cashbackBanks().size() == 4);
         REQUIRE(controller.cashbackMonths().size() == 2);
         const QStringList monthNames{"январь", "февраль", "март", "апрель", "май", "июнь",
             "июль", "август", "сентябрь", "октябрь", "ноябрь", "декабрь"};

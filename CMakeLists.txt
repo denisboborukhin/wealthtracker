@@ -174,6 +174,7 @@ target_sources(
             src/app/vtb_browser.cppm
             src/app/vtb_login.cppm
             src/app/ozon_browser.cppm
+            src/app/ozon_cashback.cppm
             src/app/ozon_login.cppm
     PRIVATE
         include/app/AppController.hpp
@@ -297,6 +298,7 @@ if(BUILD_TESTING)
         tests/app/sync_reliability_test.cpp
         tests/app/vtb_connection_test.cpp
         tests/app/ozon_connection_test.cpp
+        tests/app/ozon_cashback_test.cpp
         tests/app/ui_contract_test.cpp
     )
     target_link_libraries(app_tests PRIVATE app Catch2::Catch2)
