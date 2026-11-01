@@ -54,6 +54,7 @@ class AppController final : public QObject {
     Q_PROPERTY(QString balanceHistoryError READ balanceHistoryError NOTIFY balanceHistoryChanged)
     Q_PROPERTY(QVariantList netWorthSeries READ netWorthSeries NOTIFY dashboardChanged)
     Q_PROPERTY(QString netWorth READ netWorth NOTIFY dashboardChanged)
+    Q_PROPERTY(QString netWorthUpdatedAt READ netWorthUpdatedAt NOTIFY dashboardChanged)
     Q_PROPERTY(QString reportIncome READ reportIncome NOTIFY dashboardChanged)
     Q_PROPERTY(QString reportSpending READ reportSpending NOTIFY dashboardChanged)
     Q_PROPERTY(QString savings READ savings NOTIFY dashboardChanged)
@@ -157,6 +158,7 @@ public:
     [[nodiscard]] QAbstractItemModel* bankConnections() noexcept;
     [[nodiscard]] QVariantList netWorthSeries() const;
     [[nodiscard]] QString netWorth() const;
+    [[nodiscard]] QString netWorthUpdatedAt() const;
     [[nodiscard]] QString reportIncome() const;
     [[nodiscard]] QString reportSpending() const;
     [[nodiscard]] QString savings() const;
@@ -275,6 +277,8 @@ signals:
 
 private:
     void initializeCashback();
+    void persistBankCashback(const QString& bank, bool remove = false);
+    void restoreSavedBalances();
     void startVtbCashback();
     void stopVtbCashback(bool clearData = false);
     void startTBankCashback();

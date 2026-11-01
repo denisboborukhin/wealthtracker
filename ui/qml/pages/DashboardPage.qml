@@ -173,7 +173,9 @@ Flickable {
                 title: qsTr("Капитал")
                 value: page.app.netWorth
                 hint: page.app.demoMode ? qsTr("+4,2% за месяц")
-                                   : qsTr("Текущий остаток")
+                                   : page.app.netWorthUpdatedAt
+                                     ? qsTr("Последние данные · %1").arg(page.app.netWorthUpdatedAt)
+                                     : qsTr("Текущий остаток")
                 accent: Theme.positive
             }
             MetricCard {

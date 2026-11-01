@@ -9,6 +9,8 @@
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QLocale>
+#include <QHash>
+#include <QNetworkAccessManager>
 #include <QSettings>
 #include <QTemporaryDir>
 #include <QTimer>
@@ -18,6 +20,27 @@
 
 namespace {
 using wealthtracker::app::AppController;
+
+using Secrets = QHash<QString, QByteArray>;
+class Credentials final : public wealthtracker::app::CredentialBackend {
+public:
+    explicit Credentials(std::shared_ptr<Secrets> secrets) : secrets_(std::move(secrets)) {}
+    bool supported() const noexcept override { return true; }
+    std::expected<void, QString> put(const QString& key, const QByteArray& value) override {
+        secrets_->insert(key, value);
+        return {};
+    }
+    std::expected<std::optional<QByteArray>, QString> get(const QString& key) override {
+        if (secrets_->contains(key)) return std::optional<QByteArray>{secrets_->value(key)};
+        return std::optional<QByteArray>{};
+    }
+    std::expected<void, QString> remove(const QString& key) override {
+        secrets_->remove(key);
+        return {};
+    }
+private:
+    std::shared_ptr<Secrets> secrets_;
+};
 
 struct SettingsScope {
     QTemporaryDir directory;
@@ -128,4 +151,53 @@ TEST_CASE("VTB balance refresh automatically reads cashback and preserves choice
     CHECK(vtb(controller)["cashbackLastSync"] == initial["cashbackLastSync"]);
     controller.loadDemoData();
     CHECK(controller.cashbackBanks().isEmpty());
+}
+
+TEST_CASE("Saved cashback and capital survive restart and failed refresh until explicit disconnect") {
+    SettingsScope settings;
+    QSettings{}.setValue(QStringLiteral("vtb/connected"), true);
+    const auto secrets = std::make_shared<Secrets>();
+    const auto path = settings.directory.filePath("history.db");
+    QVariantMap saved;
+    QString capital;
+    QString updated;
+    {
+        AppController controller(std::make_unique<Credentials>(secrets),
+            std::make_unique<QNetworkAccessManager>(), nullptr, path);
+        REQUIRE(waitFor([&] { return controller.vtbSyncRunning(); }));
+        auto* view = static_cast<QWebView*>(controller.vtbWebView());
+        REQUIRE(view);
+        view->loadHtml(fixture(), controller.vtbLoginUrl());
+        REQUIRE(waitFor([&] { return vtb(controller)["currentFromBank"].toBool(); }));
+        saved = vtb(controller);
+        capital = controller.netWorth();
+        updated = controller.netWorthUpdatedAt();
+        REQUIRE(capital != QStringLiteral("0,00 ₽"));
+        REQUIRE_FALSE(updated.isEmpty());
+    }
+    {
+        AppController restored(std::make_unique<Credentials>(secrets),
+            std::make_unique<QNetworkAccessManager>(), nullptr, path);
+        CHECK(restored.netWorth() == capital);
+        CHECK(restored.netWorthUpdatedAt() == updated);
+        CHECK(restored.hasFinancialData());
+        CHECK(vtb(restored)["current"] == saved["current"]);
+        CHECK(vtb(restored)["nextSelectionRequired"] == saved["nextSelectionRequired"]);
+        CHECK(vtb(restored)["currentLastSync"] == saved["currentLastSync"]);
+        REQUIRE(waitFor([&] { return restored.vtbSyncRunning(); }));
+        auto* view = static_cast<QWebView*>(restored.vtbWebView());
+        REQUIRE(view);
+        view->loadHtml(QStringLiteral("<html><script>globalThis.mf_1488_core={get:()=>Promise.resolve(()=>({http:{get:()=>Promise.reject({status:403})}}))}</script></html>"), restored.vtbLoginUrl());
+        REQUIRE(waitFor([&] { return !restored.vtbSyncRunning(); }));
+        CHECK(restored.netWorth() == capital);
+        CHECK(restored.netWorthUpdatedAt() == updated);
+        CHECK(vtb(restored)["current"] == saved["current"]);
+        CHECK(vtb(restored)["currentLastSync"] == saved["currentLastSync"]);
+        restored.disconnectVtb();
+    }
+    AppController disconnected(std::make_unique<Credentials>(secrets),
+        std::make_unique<QNetworkAccessManager>(), nullptr, path);
+    CHECK_FALSE(disconnected.hasFinancialData());
+    CHECK(disconnected.netWorthUpdatedAt().isEmpty());
+    CHECK_FALSE(vtb(disconnected)["currentFromBank"].toBool());
 }

@@ -513,6 +513,7 @@ public:
     QTimer cashback_month_timer;
     QDate cashback_month;
     QHash<QString,CashbackSnapshot> bank_cashback;
+    QHash<QString,QDateTime> balance_updated_at;
     QPointer<CashbackSync> vtb_cashback_sync;
     QPointer<CashbackSync> alfa_cashback_sync;
     QHash<QString,QString> cashback_status;
@@ -532,6 +533,7 @@ void AppController::startVtbCashback() {
             private_->vtb_cashback_sync.clear();
             if (finished) finished->deleteLater();
             private_->bank_cashback[QStringLiteral("vtb")].merge(QStringLiteral("vtb"),snapshot,QDateTime::currentDateTime());
+            persistBankCashback(QStringLiteral("vtb"));
             private_->cashback_updated_at[QStringLiteral("vtb")] = QDateTime::currentDateTimeUtc();
             private_->cashback_status[QStringLiteral("vtb")] = QStringLiteral("Категории получены из ВТБ");
             emit cashbackChanged();
@@ -556,6 +558,7 @@ void AppController::stopVtbCashback(const bool clearData) {
     }
     if (clearData) {
         private_->bank_cashback.remove(QStringLiteral("vtb"));
+        persistBankCashback(QStringLiteral("vtb"), true);
         private_->cashback_updated_at[QStringLiteral("vtb")] = {};
         private_->cashback_status[QStringLiteral("vtb")].clear();
     }
@@ -597,6 +600,7 @@ void AppController::startAlfaCashback() {
             private_->alfa_cashback_sync.clear();
             if (finished) finished->deleteLater();
             private_->bank_cashback[QStringLiteral("alfa")].merge(QStringLiteral("alfa"),snapshot,QDateTime::currentDateTime());
+            persistBankCashback(QStringLiteral("alfa"));
             private_->cashback_updated_at[QStringLiteral("alfa")] = QDateTime::currentDateTimeUtc();
             private_->cashback_status[QStringLiteral("alfa")] = QStringLiteral("Категории получены из Альфа-Банка");
             emit cashbackChanged();
@@ -621,6 +625,7 @@ void AppController::stopAlfaCashback(const bool clearData) {
     }
     if (clearData) {
         private_->bank_cashback.remove(QStringLiteral("alfa"));
+        persistBankCashback(QStringLiteral("alfa"), true);
         private_->cashback_updated_at.remove(QStringLiteral("alfa"));
         private_->cashback_status.remove(QStringLiteral("alfa"));
     }
@@ -642,6 +647,7 @@ void AppController::startTBankCashback() {
             private_->tbank_cashback_sync.clear();
             if (finished) finished->deleteLater();
             private_->bank_cashback[QStringLiteral("tbank")].merge(QStringLiteral("tbank"),snapshot,QDateTime::currentDateTime());
+            persistBankCashback(QStringLiteral("tbank"));
             private_->cashback_updated_at[QStringLiteral("tbank")] = QDateTime::currentDateTimeUtc();
             private_->cashback_status[QStringLiteral("tbank")] = QStringLiteral("Категории получены из Т-Банка");
             emit cashbackChanged();
@@ -667,6 +673,7 @@ void AppController::stopTBankCashback(const bool clearData) {
     }
     if (clearData) {
         private_->bank_cashback.remove(QStringLiteral("tbank"));
+        persistBankCashback(QStringLiteral("tbank"), true);
         private_->cashback_updated_at.remove(QStringLiteral("tbank"));
         private_->cashback_status.remove(QStringLiteral("tbank"));
         private_->tbank_cashback_context.reset();
@@ -810,6 +817,22 @@ void AppController::initializeBalanceHistory(const QString& path) {
     if (!repository.initialize()) return;
     auto captures = repository.captures();
     if (!captures) return;
+    auto snapshots = repository.cashback_snapshots();
+    if (!snapshots) return;
+    for (const auto& saved : *snapshots) {
+        const auto bank = QString::fromStdString(saved.bank);
+        const auto snapshot = parse_cashback_snapshot(bank, QByteArray::fromStdString(saved.payload));
+        if (!snapshot) {
+            private_->cashback_error = QStringLiteral("Не удалось прочитать сохранённый кэшбэк. Предыдущая запись сохранена.");
+            continue;
+        }
+        private_->bank_cashback.insert(bank, *snapshot);
+        for (const auto& observed : snapshot->observedAt) {
+            if (observed > private_->cashback_updated_at.value(bank))
+                private_->cashback_updated_at.insert(bank, observed);
+        }
+        private_->cashback_status.insert(bank, QStringLiteral("Сохранённые категории · последнее успешное обновление"));
+    }
     auto wallets = repository.wallets();
     if (!wallets) return;
     private_->crypto_wallets = std::move(*wallets);
@@ -818,7 +841,48 @@ void AppController::initializeBalanceHistory(const QString& path) {
     private_->history_error.clear();
 }
 
+void AppController::persistBankCashback(const QString& bank, const bool remove) {
+    if (!private_->history_database) return;
+    wealthtracker::storage::BalanceHistoryRepository repository(*private_->history_database);
+    if (remove) {
+        if (repository.remove_cashback_snapshot(bank.toStdString())) return;
+    } else {
+        const auto encoded = serialize_cashback_snapshot(bank, private_->bank_cashback.value(bank));
+        if (encoded && repository.save_cashback_snapshot(bank.toStdString(), encoded->toStdString())) return;
+    }
+    private_->cashback_error = QStringLiteral("Не удалось сохранить кэшбэк. Последняя сохранённая запись не изменена.");
+}
+
+void AppController::restoreSavedBalances() {
+    QMap<QString, const wealthtracker::storage::BalanceCapture*> latest;
+    for (const auto& capture : private_->balance_history) {
+        const auto id = QString::fromStdString(capture.connection_id);
+        const bool connected = id == QStringLiteral("tbank-retail") ? tbank_connected_
+            : id == QStringLiteral("alfa-retail") ? alfa_connected_
+            : id == QStringLiteral("vtb-retail") ? vtb_connected_
+            : connected_bank_ids_.contains(id);
+        if (connected) latest.insert(id, &capture);
+    }
+    for (auto it = latest.cbegin(); it != latest.cend(); ++it) {
+        const auto& capture = **it;
+        const auto observed = QDateTime::fromString(QString::fromStdString(capture.captured_at), Qt::ISODateWithMs);
+        if (!observed.isValid()) continue;
+        NormalizedBatch batch;
+        for (const auto& balance : capture.balances) {
+            const auto id = QString::fromStdString(balance.account_id);
+            const auto currency = QString::fromStdString(balance.currency);
+            batch.accounts.push_back({id, QString::fromStdString(balance.name),
+                QStringLiteral("Сохранённый остаток"), currency});
+            batch.balances.push_back({id, observed, {balance.amount_minor, currency}});
+        }
+        private_->bank_batches.insert(it.key(), std::move(batch));
+        private_->balance_updated_at.insert(it.key(), observed);
+    }
+    if (!latest.isEmpty()) rebuildBankModels();
+}
+
 void AppController::recordBalanceHistory(const QString& connectorId) {
+    private_->balance_updated_at.insert(connectorId, QDateTime::currentDateTimeUtc());
     if (!private_->history_database) return;
     const auto batch = private_->bank_batches.constFind(connectorId);
     if (batch == private_->bank_batches.cend()) return;
@@ -1369,6 +1433,7 @@ AppController::AppController(std::unique_ptr<CredentialBackend> credentials,
     refreshTBankAutoUpdateSchedule();
     refreshAlfaAutoUpdateSchedule();
     refreshVtbAutoUpdateSchedule();
+    restoreSavedBalances();
     refreshBankConnections();
     import_status_ = QStringLiteral("Нет импортированных выписок");
     sync_status_ = QStringLiteral("Нет синхронизированных подключений");
@@ -1423,6 +1488,16 @@ QVariantList AppController::netWorthSeries() const { return net_worth_series_; }
 
 QString AppController::netWorth() const {
     return demo_mode_ ? QStringLiteral("4 826 450 ₽") : live_net_worth_;
+}
+
+QString AppController::netWorthUpdatedAt() const {
+    if (demo_mode_ || locked_) return {};
+    QDateTime oldest;
+    for (auto it = private_->balance_updated_at.cbegin(); it != private_->balance_updated_at.cend(); ++it) {
+        if (private_->bank_batches.contains(it.key()) && it->isValid() && (!oldest.isValid() || *it < oldest))
+            oldest = *it;
+    }
+    return oldest.toLocalTime().toString(QStringLiteral("dd.MM.yyyy HH:mm"));
 }
 
 QString AppController::reportIncome() const {

@@ -6,8 +6,9 @@ or bank responses. The privacy screen and demo mode hide these entries and block
 changes; they do not encrypt the settings. Automatic VTB cashback uses one exact,
 read-only, same-origin route through the page-owned client, with a separate
 deadline and bounded name/rate/month projection. The raw response and browser
-session never cross into C++ or QML. Automatic results stay in process memory;
-failed reads preserve the previous snapshot. No category choices are submitted
+session never cross into C++ or QML. Validated automatic category projections
+are saved in the encrypted balance-history database with each month's observation
+time; failed reads preserve the previous snapshot. No category choices are submitted
 to a bank.
 
 T-Bank cashback uses only the exact bonuses read POST from its frontend, with
@@ -80,6 +81,13 @@ key does not cause an existing database to be replaced.
 Schema version 2 also stores public EVM addresses and their local names in
 this encrypted database and permits USDT-valued captures. Migration from version 1
 preserves existing captures. Removing a wallet configuration retains its history.
+Schema version 3 adds bounded automatic cashback snapshots for the three retail
+banks. Its additive, transactional migration preserves captures and wallets.
+Disconnect removes the selected bank's automatic cashback snapshot; manual
+fallbacks and balance history remain. On restart, the latest complete balances
+of still-connected banks populate the overview before synchronization. Capital's
+update note uses the oldest contributing bank snapshot so a partial refresh
+does not imply every bank was refreshed together.
 
 Other synchronized financial data remains in process memory. QSettings stores
 connection flags, refresh times, and non-sensitive plugin preferences. The privacy screen

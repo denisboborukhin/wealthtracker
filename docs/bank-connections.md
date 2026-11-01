@@ -114,7 +114,9 @@ and demo mode hide them and block edits. Disconnecting a bank preserves manual
 entries; delete them on the cashback page when they are no longer wanted.
 Use **Записать вручную** to open the fallback form. Retrieved categories are
 read-only here; change bank selections through the bank's own application.
-Automatic bank snapshots are held in memory only and cleared on disconnect.
+Automatic bank snapshots and their per-month update times are saved in the
+encrypted balance-history database and restored on restart. Failed or canceled
+refreshes preserve them. Disconnect clears the selected bank's automatic snapshot.
 The privacy screen and demo mode also cancel pending cashback reads.
 
 ## Retail T-Bank
