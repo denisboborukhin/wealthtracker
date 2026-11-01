@@ -17,7 +17,7 @@ QString project(const QString& page, const QString& stateProperties = {}) {
     QJSEngine engine;
     const auto initialized = engine.evaluate(QStringLiteral(
         "var globalThis=this; var location={origin:'https://finance.ozon.ru',pathname:'/lk'};"
-        "globalThis.__wealthtrackerOzonSync={status:'ready',cancelled:false,page:") + page + stateProperties + QStringLiteral("};"));
+        "globalThis.__wealthtrackerOzonSync={status:'ready',cancelled:false,installmentDebt:null,page:") + page + stateProperties + QStringLiteral("};"));
     if (initialized.isError()) return {};
     return engine.evaluate(wealthtracker::app::ozon_financial_projection_script()).toString();
 }
@@ -132,7 +132,11 @@ TEST_CASE("Ozon script reuses only the observed dashboard software and bank read
     CHECK_FALSE(script.contains(QStringLiteral("document.cookie")));
     CHECK_FALSE(script.contains(QStringLiteral("localStorage")));
     CHECK_FALSE(script.contains(QStringLiteral("sessionStorage")));
-    CHECK_FALSE(script.contains(QStringLiteral("fetch(")));
+    CHECK(script.count(QStringLiteral("fetch(")) == 1);
+    CHECK(script.contains(QStringLiteral("/apps/credit/_mf/context")));
+    CHECK(script.contains(QStringLiteral("credit.qu._internal_setSsrStuff(context)")));
+    CHECK(script.contains(QStringLiteral("mode:'same-origin',redirect:'error'")));
+    CHECK(script.contains(QStringLiteral("length > 2 * 1024 * 1024")));
     CHECK(script.contains(QStringLiteral("DHsJdLKo.js")));
     CHECK(script.contains(QStringLiteral("getClientHandler('installment/info')")));
     CHECK(script.contains(QStringLiteral("operationName !== 'InstallmentInfoV4'")));
@@ -164,7 +168,8 @@ TEST_CASE("Ozon never publishes dashboard balances without required MKK debt") {
     page.chop(2);
     page += QStringLiteral(",{type:'MKK_INSTALLMENT',version:1,status:'READY',data:{__typename:'MkkInstallmentData',mkkInstallmentStatus:'INSTALLMENT_LIMIT_PROGRESS'}}]}");
     QString extra;
-    SECTION("debt read missing") {}
+    SECTION("debt read missing") { extra = QStringLiteral(",installmentDebt:undefined"); }
+    SECTION("explicit absence contradicts active widget") { extra = QStringLiteral(",installmentDebt:null"); }
     SECTION("negative debt") { extra = QStringLiteral(",installmentDebt:-1"); }
     SECTION("fractional minor units") { extra = QStringLiteral(",installmentDebt:1.5"); }
     SECTION("unsafe debt") { extra = QStringLiteral(",installmentDebt:9007199254740992"); }
@@ -206,4 +211,30 @@ TEST_CASE("Ozon native parser rejects a forged positive installment balance") {
         {QStringLiteral("currency"), QStringLiteral("RUB")}, {QStringLiteral("balanceMinor"), QStringLiteral("100")}});
     object.insert(QStringLiteral("accounts"), accounts);
     CHECK_FALSE(parse_ozon_financial_projection(QString::fromUtf8(QJsonDocument(object).toJson()), observedAt));
+}
+
+TEST_CASE("Ozon reads installment inventory independently of dashboard widgets") {
+    using namespace wealthtracker::app;
+    const auto parsed = parse_ozon_financial_projection(
+        project(mainPage(), QStringLiteral(",installmentDebt:500")), observedAt);
+    REQUIRE(parsed);
+    REQUIRE(parsed->batch);
+    REQUIRE(parsed->batch->accounts.size() == 2);
+    CHECK(parsed->batch->accounts.back().externalId == QStringLiteral("ozon-installment"));
+    CHECK(parsed->batch->balances.back().balance.minorUnits == -500);
+}
+
+TEST_CASE("Ozon requires explicit installment coverage even without a widget") {
+    using namespace wealthtracker::app;
+    QString extra;
+    bool absent = false;
+    SECTION("verified explicit absence") { extra = QStringLiteral(",installmentDebt:null"); absent = true; }
+    SECTION("query not completed") { extra = QStringLiteral(",installmentDebt:undefined"); }
+    const auto parsed = parse_ozon_financial_projection(project(mainPage(), extra), observedAt);
+    REQUIRE(parsed);
+    CHECK(parsed->stage == (absent ? OzonProjectionStage::Ready : OzonProjectionStage::Invalid));
+    if (absent) {
+        REQUIRE(parsed->batch);
+        CHECK(parsed->batch->accounts.size() == 1);
+    } else CHECK_FALSE(parsed->batch);
 }

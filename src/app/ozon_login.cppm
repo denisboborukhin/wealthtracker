@@ -294,7 +294,8 @@ private:
         if (projection->stage != OzonProjectionStage::Ready || !projection->batch) {
             fail({OzonLoginFailureKind::Protocol,
                   QStringLiteral("Ozon Банк не передал проверенные данные счетов. "
-                                 "Возможно, интерфейс банка изменился.")});
+                                 "Возможно, интерфейс банка изменился (%1).")
+                      .arg(projection->reasonCode.isEmpty() ? QStringLiteral("OZON-SCHEMA") : projection->reasonCode)});
             return;
         }
         auto batch = std::move(*projection->batch);

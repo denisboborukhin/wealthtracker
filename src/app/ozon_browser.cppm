@@ -96,23 +96,68 @@ struct OzonFinancialProjection {
         }
       }
       inspect(value.mainPage.widgets, 0)
-      if (installmentRequired) {
+      {
         try {
-          // This public module and read contract were verified on the bank's MKK page.
+          // Dashboard widgets are presentation, not a complete product inventory.
+          // Always read the verified MKK product, including when its widget is hidden.
           const credit = await import('https://cdn2.ozone.ru/s3/bozon-fe-credit/release/apps/credit/_app/immutable/chunks/DHsJdLKo.js')
           if (!active()) return
+          if (!credit.qu || typeof credit.qu._internal_setSsrStuff !== 'function') fail('OZON-INSTALLMENT')
+          // The bank's normal credit mount initializes this service context first.
+          const contextUrl = new URL('/apps/credit/_mf/context', location.origin).href
+          const contextResponse = await fetch(contextUrl, {method:'GET',credentials:'include',
+            mode:'same-origin',redirect:'error',signal:state.controller.signal})
+          if (!active()) return
+          if (!contextResponse.ok || contextResponse.redirected || contextResponse.url !== contextUrl ||
+              !contextResponse.body || typeof contextResponse.body.getReader !== 'function') fail('OZON-INSTALLMENT')
+          const readerStream = contextResponse.body.getReader()
+          const chunks = []
+          let length = 0
+          try {
+            while (true) {
+              const part = await readerStream.read()
+              if (!active()) { await readerStream.cancel(); return }
+              if (part.done) break
+              length += part.value.byteLength
+              if (length > 2 * 1024 * 1024) {
+                await readerStream.cancel()
+                fail('OZON-INSTALLMENT')
+              }
+              chunks.push(part.value)
+            }
+          } finally { readerStream.releaseLock() }
+          const bytes = new Uint8Array(length)
+          let offset = 0
+          for (const chunk of chunks) { bytes.set(chunk, offset); offset += chunk.byteLength }
+          const context = JSON.parse(new TextDecoder('utf-8', {fatal:true}).decode(bytes))
+          if (!context || typeof context !== 'object' || Array.isArray(context)) fail('OZON-INSTALLMENT')
+          if (!active()) return
+          credit.qu._internal_setSsrStuff(context)
           if (!credit.Cs || typeof credit.Cs.create !== 'function') fail('OZON-INSTALLMENT')
           const reader = credit.Cs.create({name:'InstallmentInfoV4',operationType:'query',gqlNode:false,
-            mapper: payload => payload?.me?.client?.installment?.userInfo?.debt?.cents})
+            mapper: payload => payload})
             .getClientHandler('installment/info')
           if (reader.url !== 'installment/info' || reader.declaration?.operationName !== 'InstallmentInfoV4' ||
               reader.declaration?.operationType !== 'query') fail('OZON-INSTALLMENT')
           const debtResponse = await reader.call({}, {signal:state.controller.signal})
           if (!active()) return
-          if (!debtResponse || typeof debtResponse.isOk !== 'function' || !debtResponse.isOk() ||
-              typeof debtResponse.value !== 'number' || !Number.isSafeInteger(debtResponse.value) ||
-              debtResponse.value < 0) fail('OZON-INSTALLMENT')
-          state.installmentDebt = debtResponse.value
+          if (!debtResponse || typeof debtResponse.isOk !== 'function' || !debtResponse.isOk()) fail('OZON-INSTALLMENT')
+          const payload = debtResponse.value
+          if (!payload || typeof payload !== 'object' || Array.isArray(payload) ||
+              new TextEncoder().encode(JSON.stringify(payload)).byteLength > 8 * 1024 * 1024) fail('OZON-INSTALLMENT')
+          const client = payload.me?.client
+          if (!client || typeof client !== 'object' || Array.isArray(client) ||
+              !Object.prototype.hasOwnProperty.call(client, 'installment')) fail('OZON-INSTALLMENT')
+          const installment = client.installment
+          if (installment === null) {
+            if (installmentRequired) fail('OZON-INSTALLMENT')
+            state.installmentDebt = null
+          } else {
+            if (!installment || typeof installment !== 'object' || Array.isArray(installment)) fail('OZON-INSTALLMENT')
+            const debt = installment.userInfo?.debt?.cents
+            if (typeof debt !== 'number' || !Number.isSafeInteger(debt) || debt < 0) fail('OZON-INSTALLMENT')
+            state.installmentDebt = debt
+          }
         } catch (ignored) { fail('OZON-INSTALLMENT') }
       }
       if (!active()) return
@@ -203,14 +248,19 @@ struct OzonFinancialProjection {
     const savings = summaries[0] || singles[0]
     if (savings) result.accounts.push({id:'ozon-savings',name:name(savings.title),kind:'savings',
       currency:'RUB',balanceMinor:money(summaries.length ? savings.activeProductsTotalAmount.cents : savings.balance.cents)})
+    let installmentRequired = false
     if (installments.length) {
       const status = installments[0].mkkInstallmentStatus
-      if (installmentStatuses.includes(status)) {
-        const debt = state.installmentDebt
-        if (typeof debt !== 'number' || !Number.isSafeInteger(debt) || debt < 0) invalid('OZON-INSTALLMENT')
-        result.accounts.push({id:'ozon-installment',name:'Рассрочка',kind:'credit',currency:'RUB',balanceMinor:money(-debt)})
-      } else if (!precontractStatuses.includes(status)) invalid('OZON-UNSUPPORTED')
-    } else if (state.installmentDebt !== undefined) invalid('OZON-SCHEMA')
+      if (installmentStatuses.includes(status)) installmentRequired = true
+      else if (!precontractStatuses.includes(status)) invalid('OZON-UNSUPPORTED')
+    }
+    const debt = state.installmentDebt
+    if (debt === null) {
+      if (installmentRequired) invalid('OZON-INSTALLMENT')
+    } else {
+      if (typeof debt !== 'number' || !Number.isSafeInteger(debt) || debt < 0) invalid('OZON-INSTALLMENT')
+      result.accounts.push({id:'ozon-installment',name:'Рассрочка',kind:'credit',currency:'RUB',balanceMinor:money(-debt)})
+    }
     if (!result.accounts.length) invalid('OZON-SCHEMA')
     result.stage = 'ready'
     result.authenticated = true
