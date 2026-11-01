@@ -27,8 +27,8 @@ not change crypto code or TLS validation. Gradle verifies its distribution hash.
 Output:
 
 ```text
-android/output/wealthtracker-0.1.7-debug.apk
-android/output/wealthtracker-0.1.7-debug.apk.sha256
+android/output/wealthtracker-0.1.8-debug.apk
+android/output/wealthtracker-0.1.8-debug.apk.sha256
 ```
 
 The package ID is `org.wealthtracker.android`. Keep
@@ -42,7 +42,7 @@ Copy the APK to your phone, open it in Files, and permit installation from that
 source. Or authorize USB debugging on your phone and run:
 
 ```sh
-"$ANDROID_SDK_ROOT/platform-tools/adb" install -r android/output/wealthtracker-0.1.7-debug.apk
+"$ANDROID_SDK_ROOT/platform-tools/adb" install -r android/output/wealthtracker-0.1.8-debug.apk
 ```
 
 Install future versions over this app rather than uninstalling; uninstalling
@@ -103,6 +103,12 @@ checks the verified VTB CMS (`h2.vtb.ru`), authentication service
 public core uses a credential-free fetch to the certificate-check endpoint;
 trusting the main page alone does not satisfy that check. All three additional
 public chains were captured on October 31 with hostname validation enabled.
+The phone-identification flow additionally uses `sso-ib.vtb.ru`, whose public
+Russian Trusted Sub CA chain was captured and hostname-verified on November 1.
+The bank's current public page enables this flow and selects that exact host
+for its post-phone identification request. A regression against APK 0.1.7
+reproduced Android's missing trust-anchor failure; the updated exact-host
+configuration accepts the chain and still rejects sibling and suffix hosts.
 The test
 checks rejection outside the exact host scope and rejection of a damaged bank
 certificate signature. Fixtures contain public certificates only and expire

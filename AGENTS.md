@@ -250,6 +250,7 @@ When the user corrects your approach, append a one-line rule here before ending 
 - Restore connected banks' last saved balances and automatic cashback after restart; preserve their observation times when refresh fails and test Android header contrast in dark system mode.
 - Resolve investment instrument IDs through the provider's verified reference data; show tickers and names, and never use internal IDs as asset labels.
 - Read debt from verified product inventory rather than dashboard visibility; initialize each bank frontend module with its own verified service context before using its client.
+- Check post-phone identification hosts with Android's actual trust manager; a rendered login form does not verify every authentication dependency.
 
 ## 12. How this file was built
 

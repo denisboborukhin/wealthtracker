@@ -152,6 +152,13 @@ the app before retrying.
 
 ## Retail VTB
 
+On Android, the phone-identification flow uses `sso-ib.vtb.ru` with the bank's
+Russian CA. The additional trust anchor is scoped to that exact resource host;
+it does not extend top-level navigation. A missing trust anchor can surface as
+the bank's generic temporary-login/VPN message after phone submission. The
+Android regression checks this chain against the app's actual trust manager;
+successful phone login still requires a separate live-device check.
+
 Choose **ВТБ → Войти** and complete the official page. The session stays inside
 the system WebView. The authenticated page client reads only these routes:
 

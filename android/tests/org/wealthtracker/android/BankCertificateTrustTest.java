@@ -102,6 +102,16 @@ public class BankCertificateTrustTest {
         rejected(chain("vtb_cert"), "sub.cert.vtb.ru");
     }
 
+    @Test public void validatesVtbPhoneIdentificationChainWithoutSiblingTrust() throws Exception {
+        X509Certificate[] certificates = chain("vtb_sso_ib");
+        for (X509Certificate certificate : certificates) certificate.checkValidity();
+        assertFalse(trust().checkServerTrusted(certificates, "RSA", "sso-ib.vtb.ru").isEmpty());
+        assertFalse(NetworkSecurityPolicy.getInstance().isCleartextTrafficPermitted("sso-ib.vtb.ru"));
+        rejected(certificates, "sub.sso-ib.vtb.ru");
+        rejected(certificates, "sso-ib.vtb.ru.example.com");
+        rejected(certificates, "other-sso.vtb.ru");
+    }
+
     @Test public void rejectsInvalidBankCertificateSignature() throws Exception {
         X509Certificate[] chain = chain("vtb");
         byte[] encoded = chain[0].getEncoded();
