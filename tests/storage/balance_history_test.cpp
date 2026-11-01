@@ -73,6 +73,19 @@ void create_v1_history(Database& database) {
     )sql"));
 }
 
+void restore_v3_cashback_schema(Database& database) {
+    REQUIRE(database.execute(R"sql(
+        CREATE TABLE cashback_snapshots_v3 (
+            bank TEXT PRIMARY KEY NOT NULL CHECK(bank IN ('tbank', 'alfa', 'vtb')),
+            payload TEXT NOT NULL CHECK(length(CAST(payload AS BLOB)) BETWEEN 1 AND 131072)
+        );
+        INSERT INTO cashback_snapshots_v3 SELECT bank, payload FROM cashback_snapshots;
+        DROP TABLE cashback_snapshots;
+        ALTER TABLE cashback_snapshots_v3 RENAME TO cashback_snapshots;
+        PRAGMA user_version = 3;
+    )sql"));
+}
+
 }  // namespace
 
 TEST_CASE("encrypted balance history survives reopening with exact amounts", "[storage][history]") {
@@ -208,11 +221,11 @@ TEST_CASE("balance history rejects a newer schema without rewriting it", "[stora
     REQUIRE(database);
     BalanceHistoryRepository repository(*database);
     REQUIRE(repository.initialize());
-    REQUIRE(database->execute("PRAGMA user_version = 4;"));
+    REQUIRE(database->execute("PRAGMA user_version = 5;"));
     const auto result = repository.initialize();
     REQUIRE_FALSE(result);
     CHECK(result.error().code == wealthtracker::storage::ErrorCode::migration_error);
-    CHECK(database->scalar_int64("PRAGMA user_version;") == 4);
+    CHECK(database->scalar_int64("PRAGMA user_version;") == 5);
 }
 
 TEST_CASE("v1 encrypted history migrates without changing captures", "[storage][history]") {
@@ -227,7 +240,7 @@ TEST_CASE("v1 encrypted history migrates without changing captures", "[storage][
         REQUIRE(database);
         BalanceHistoryRepository repository(*database);
         REQUIRE(repository.initialize());
-        CHECK(database->scalar_int64("PRAGMA user_version;") == 3);
+        CHECK(database->scalar_int64("PRAGMA user_version;") == 4);
         const auto captures = repository.captures();
         REQUIRE(captures);
         REQUIRE(captures->size() == 2);
@@ -421,7 +434,7 @@ TEST_CASE("v2 history adds cashback storage without changing captures or wallets
     BalanceHistoryRepository repository(*database);
     REQUIRE(repository.initialize());
     REQUIRE(repository.initialize());
-    CHECK(database->scalar_int64("PRAGMA user_version;") == 3);
+    CHECK(database->scalar_int64("PRAGMA user_version;") == 4);
     const auto snapshots = repository.cashback_snapshots();
     REQUIRE(snapshots);
     CHECK(snapshots->empty());
@@ -456,4 +469,87 @@ TEST_CASE("failed cashback migration preserves v2 history and wallets", "[storag
     CHECK(database->scalar_int64("PRAGMA user_version;") == 2);
     CHECK(database->scalar_int64("SELECT COUNT(*) FROM captures;") == 1);
     CHECK(database->scalar_text("SELECT name FROM crypto_wallets;") == "Wallet");
+}
+
+TEST_CASE("v3 cashback migration preserves saved banks and adds Ozon", "[storage][history][cashback]") {
+    TemporaryHistory temporary;
+    const std::vector<wealthtracker::storage::CashbackSnapshot> saved{
+        {"alfa", R"({"version":1,"category":"Alfa category"})"},
+        {"tbank", R"({"version":1,"category":"T-Bank category"})"},
+        {"vtb", R"({"version":1,"category":"VTB category"})"},
+    };
+    constexpr std::string_view ozon = R"({"version":1,"category":"Ozon category"})";
+    {
+        auto database = Database::open(temporary.path, temporary.key);
+        REQUIRE(database);
+        BalanceHistoryRepository repository(*database);
+        REQUIRE(repository.initialize());
+        for (const auto& snapshot : saved)
+            REQUIRE(repository.save_cashback_snapshot(snapshot.bank, snapshot.payload));
+        const std::vector<HistoryBalance> balances{{"account", "Original", "RUB", 12345}};
+        REQUIRE(repository.append("bank", "Bank", captured_at, balances));
+        REQUIRE(repository.save_wallet(wallet_address, "Original wallet"));
+        restore_v3_cashback_schema(*database);
+        REQUIRE_FALSE(repository.save_cashback_snapshot("ozon", ozon));
+    }
+    {
+        auto database = Database::open(temporary.path, temporary.key, {.create_if_missing = false});
+        REQUIRE(database);
+        BalanceHistoryRepository repository(*database);
+        REQUIRE(repository.initialize());
+        REQUIRE(repository.initialize());
+        CHECK(database->scalar_int64("PRAGMA user_version;") == 4);
+        const auto snapshots = repository.cashback_snapshots();
+        REQUIRE(snapshots);
+        REQUIRE(snapshots->size() == saved.size());
+        for (std::size_t index = 0; index < saved.size(); ++index) {
+            CHECK((*snapshots)[index].bank == saved[index].bank);
+            CHECK((*snapshots)[index].payload == saved[index].payload);
+        }
+        REQUIRE(repository.save_cashback_snapshot("ozon", ozon));
+        CHECK_FALSE(repository.save_cashback_snapshot("ozon", ""));
+        CHECK_FALSE(repository.save_cashback_snapshot("ozon", std::string(128 * 1024 + 1, 'a')));
+        CHECK_FALSE(repository.save_cashback_snapshot("ozon", std::string_view{"{}\0{}", 5}));
+    }
+    auto database = Database::open(temporary.path, temporary.key, {.create_if_missing = false});
+    REQUIRE(database);
+    BalanceHistoryRepository repository(*database);
+    REQUIRE(repository.initialize());
+    const auto snapshots = repository.cashback_snapshots();
+    REQUIRE(snapshots);
+    REQUIRE(snapshots->size() == 4);
+    CHECK((*snapshots)[1].bank == "ozon");
+    CHECK((*snapshots)[1].payload == ozon);
+    REQUIRE(repository.remove_cashback_snapshot("ozon"));
+    const auto remaining = repository.cashback_snapshots();
+    REQUIRE(remaining);
+    REQUIRE(remaining->size() == saved.size());
+    for (std::size_t index = 0; index < saved.size(); ++index) {
+        CHECK((*remaining)[index].bank == saved[index].bank);
+        CHECK((*remaining)[index].payload == saved[index].payload);
+    }
+    CHECK(database->scalar_int64("SELECT COUNT(*) FROM captures;") == 1);
+    CHECK(database->scalar_int64("SELECT amount_minor FROM balances;") == 12345);
+    CHECK(database->scalar_text("SELECT name FROM crypto_wallets;") == "Original wallet");
+}
+
+TEST_CASE("failed v4 cashback migration preserves v3 snapshots and history", "[storage][history][cashback]") {
+    TemporaryHistory temporary;
+    auto database = Database::open(temporary.path, temporary.key);
+    REQUIRE(database);
+    BalanceHistoryRepository repository(*database);
+    REQUIRE(repository.initialize());
+    REQUIRE(repository.save_cashback_snapshot("tbank", R"({"version":1})"));
+    REQUIRE(repository.append("bank", "Bank", captured_at, {}));
+    REQUIRE(repository.save_wallet(wallet_address, "Wallet"));
+    restore_v3_cashback_schema(*database);
+    REQUIRE(database->execute("CREATE TABLE cashback_snapshots_v4(unrelated TEXT);"));
+    REQUIRE_FALSE(repository.initialize());
+    CHECK(database->scalar_int64("PRAGMA user_version;") == 3);
+    CHECK(database->scalar_text("SELECT payload FROM cashback_snapshots WHERE bank='tbank';") == R"({"version":1})");
+    CHECK(database->scalar_int64("SELECT COUNT(*) FROM captures;") == 1);
+    CHECK(database->scalar_text("SELECT name FROM crypto_wallets;") == "Wallet");
+    REQUIRE(database->execute("DROP TABLE cashback_snapshots_v4;"));
+    REQUIRE(repository.initialize());
+    REQUIRE(repository.save_cashback_snapshot("ozon", R"({"version":1})"));
 }

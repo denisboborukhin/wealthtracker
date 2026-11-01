@@ -15,7 +15,7 @@ namespace wealthtracker::storage {
 
 namespace {
 bool valid_cashback_bank(const std::string_view bank) {
-    return bank == "tbank" || bank == "alfa" || bank == "vtb";
+    return bank == "tbank" || bank == "alfa" || bank == "vtb" || bank == "ozon";
 }
 
 bool valid_wallet_address(const std::string_view address) {
@@ -38,7 +38,7 @@ std::expected<void, Error> BalanceHistoryRepository::initialize() {
     if (!version) {
         return std::unexpected(version.error());
     }
-    if (*version < 0 || *version > 3) {
+    if (*version < 0 || *version > 4) {
         return std::unexpected(Error{
             ErrorCode::migration_error, 0, "unsupported balance history schema version"});
     }
@@ -97,6 +97,21 @@ std::expected<void, Error> BalanceHistoryRepository::initialize() {
                 payload TEXT NOT NULL CHECK(length(CAST(payload AS BLOB)) BETWEEN 1 AND 131072)
             );
             PRAGMA user_version = 3;
+        )sql");
+        if (!result) {
+            return std::unexpected(result.error());
+        }
+    }
+    if (*version <= 3) {
+        const auto result = database_.execute(R"sql(
+            CREATE TABLE cashback_snapshots_v4 (
+                bank TEXT PRIMARY KEY NOT NULL CHECK(bank IN ('tbank', 'alfa', 'vtb', 'ozon')),
+                payload TEXT NOT NULL CHECK(length(CAST(payload AS BLOB)) BETWEEN 1 AND 131072)
+            );
+            INSERT INTO cashback_snapshots_v4 SELECT bank, payload FROM cashback_snapshots;
+            DROP TABLE cashback_snapshots;
+            ALTER TABLE cashback_snapshots_v4 RENAME TO cashback_snapshots;
+            PRAGMA user_version = 4;
         )sql");
         if (!result) {
             return std::unexpected(result.error());
