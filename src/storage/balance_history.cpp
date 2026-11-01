@@ -14,6 +14,10 @@ import wt.storage.transaction;
 namespace wealthtracker::storage {
 
 namespace {
+bool valid_cashback_bank(const std::string_view bank) {
+    return bank == "tbank" || bank == "alfa" || bank == "vtb";
+}
+
 bool valid_wallet_address(const std::string_view address) {
     return address.size() == 42 && address.starts_with("0x") &&
         std::all_of(address.begin() + 2, address.end(), [](const char value) {
@@ -34,7 +38,7 @@ std::expected<void, Error> BalanceHistoryRepository::initialize() {
     if (!version) {
         return std::unexpected(version.error());
     }
-    if (*version < 0 || *version > 2) {
+    if (*version < 0 || *version > 3) {
         return std::unexpected(Error{
             ErrorCode::migration_error, 0, "unsupported balance history schema version"});
     }
@@ -81,6 +85,18 @@ std::expected<void, Error> BalanceHistoryRepository::initialize() {
                 name TEXT NOT NULL CHECK(length(name) BETWEEN 1 AND 80)
             );
             PRAGMA user_version = 2;
+        )sql");
+        if (!result) {
+            return std::unexpected(result.error());
+        }
+    }
+    if (*version <= 2) {
+        const auto result = database_.execute(R"sql(
+            CREATE TABLE cashback_snapshots (
+                bank TEXT PRIMARY KEY NOT NULL CHECK(bank IN ('tbank', 'alfa', 'vtb')),
+                payload TEXT NOT NULL CHECK(length(CAST(payload AS BLOB)) BETWEEN 1 AND 131072)
+            );
+            PRAGMA user_version = 3;
         )sql");
         if (!result) {
             return std::unexpected(result.error());
@@ -234,6 +250,47 @@ std::expected<void, Error> BalanceHistoryRepository::remove_wallet(const std::st
     auto statement = database_.prepare("DELETE FROM crypto_wallets WHERE address = ?1;");
     if (!statement) return std::unexpected(statement.error());
     if (auto result = statement->bind(1, address); !result) return std::unexpected(result.error());
+    if (auto result = statement->step(); !result) return std::unexpected(result.error());
+    return {};
+}
+
+std::expected<std::vector<CashbackSnapshot>, Error> BalanceHistoryRepository::cashback_snapshots() {
+    auto statement = database_.prepare("SELECT bank, payload FROM cashback_snapshots ORDER BY bank;");
+    if (!statement) return std::unexpected(statement.error());
+    std::vector<CashbackSnapshot> result;
+    while (true) {
+        const auto step = statement->step();
+        if (!step) return std::unexpected(step.error());
+        if (*step == StepResult::done) break;
+        result.push_back({statement->column_text(0), statement->column_text(1)});
+    }
+    return result;
+}
+
+std::expected<void, Error> BalanceHistoryRepository::save_cashback_snapshot(
+    const std::string_view bank, const std::string_view payload) {
+    if (!valid_cashback_bank(bank) || payload.empty() || payload.size() > 128 * 1024 ||
+        payload.find('\0') != std::string_view::npos) {
+        return std::unexpected(Error{ErrorCode::invalid_argument, 0, "invalid cashback snapshot"});
+    }
+    auto statement = database_.prepare(
+        "INSERT INTO cashback_snapshots(bank, payload) VALUES(?1, ?2) "
+        "ON CONFLICT(bank) DO UPDATE SET payload = excluded.payload;");
+    if (!statement) return std::unexpected(statement.error());
+    if (auto result = statement->bind(1, bank); !result) return std::unexpected(result.error());
+    if (auto result = statement->bind(2, payload); !result) return std::unexpected(result.error());
+    if (auto result = statement->step(); !result) return std::unexpected(result.error());
+    return {};
+}
+
+std::expected<void, Error> BalanceHistoryRepository::remove_cashback_snapshot(
+    const std::string_view bank) {
+    if (!valid_cashback_bank(bank)) {
+        return std::unexpected(Error{ErrorCode::invalid_argument, 0, "invalid cashback bank"});
+    }
+    auto statement = database_.prepare("DELETE FROM cashback_snapshots WHERE bank = ?1;");
+    if (!statement) return std::unexpected(statement.error());
+    if (auto result = statement->bind(1, bank); !result) return std::unexpected(result.error());
     if (auto result = statement->step(); !result) return std::unexpected(result.error());
     return {};
 }

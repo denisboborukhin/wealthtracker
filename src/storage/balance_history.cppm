@@ -33,6 +33,11 @@ struct CryptoWallet {
     std::string name;
 };
 
+struct CashbackSnapshot {
+    std::string bank;
+    std::string payload;
+};
+
 class BalanceHistoryRepository final {
 public:
     explicit BalanceHistoryRepository(Database& database) noexcept;
@@ -48,6 +53,10 @@ public:
     [[nodiscard]] std::expected<void, Error> save_wallet(
         std::string_view address, std::string_view name);
     [[nodiscard]] std::expected<void, Error> remove_wallet(std::string_view address);
+    [[nodiscard]] std::expected<std::vector<CashbackSnapshot>, Error> cashback_snapshots();
+    [[nodiscard]] std::expected<void, Error> save_cashback_snapshot(
+        std::string_view bank, std::string_view payload);
+    [[nodiscard]] std::expected<void, Error> remove_cashback_snapshot(std::string_view bank);
 
 private:
     Database& database_;
