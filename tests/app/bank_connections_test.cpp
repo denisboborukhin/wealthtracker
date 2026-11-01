@@ -38,6 +38,7 @@ import wt.alfa_login;
 import wt.vtb_login;
 import wt.vtb_browser;
 import wt.bank_sync;
+import wt.investment_sync;
 import wt.connectors;
 
 using wealthtracker::app::is_alfa_login_url;
@@ -178,9 +179,14 @@ class InvestmentNetworkFixture final : public QNetworkAccessManager {
 public:
     int requests = 0;
     int portfolioRequests = 0;
+    int instrumentRequests = 0;
     int unexpectedRequests = 0;
     int delay = 0;
     bool failPortfolio = false;
+    bool failInstrument = false;
+    bool mismatchedInstrument = false;
+    bool multipleAccounts = false;
+    int instrumentDelay = 0;
 
 protected:
     QNetworkReply* createRequest(const Operation operation, const QNetworkRequest& request,
@@ -191,18 +197,31 @@ protected:
         QByteArray response;
         auto error = QNetworkReply::NoError;
         if (request.url().path().endsWith(QStringLiteral("/GetAccounts"))) {
-            response = R"({"accounts":[{"id":"invest-a","name":"Brokerage","type":"ACCOUNT_TYPE_TINKOFF","status":"ACCOUNT_STATUS_OPEN"}]})";
+            response = multipleAccounts
+                ? R"({"accounts":[{"id":"invest-a","name":"Brokerage","status":"ACCOUNT_STATUS_OPEN"},{"id":"invest-b","name":"IIS","status":"ACCOUNT_STATUS_OPEN"}]})"
+                : R"({"accounts":[{"id":"invest-a","name":"Brokerage","type":"ACCOUNT_TYPE_TINKOFF","status":"ACCOUNT_STATUS_OPEN"}]})";
         } else if (request.url().path().endsWith(QStringLiteral("/GetPortfolio"))) {
             ++portfolioRequests;
-            REQUIRE(body.value(QStringLiteral("accountId")).toString() == QStringLiteral("invest-a"));
+            REQUIRE((body.value(QStringLiteral("accountId")).toString() == QStringLiteral("invest-a")
+                || (multipleAccounts && body.value(QStringLiteral("accountId")).toString() == QStringLiteral("invest-b"))));
             response = R"({"totalAmountPortfolio":{"currency":"rub","units":"120","nano":500000000},"positions":[{"instrumentUid":"instrument-a","quantity":{"units":"2"},"currentPrice":{"currency":"rub","units":"60","nano":250000000}}]})";
             if (failPortfolio) error = QNetworkReply::RemoteHostClosedError;
+        } else if (request.url().path().endsWith(QStringLiteral("/GetInstrumentBy"))) {
+            ++instrumentRequests;
+            REQUIRE(body.value(QStringLiteral("id")).toString() == QStringLiteral("instrument-a"));
+            REQUIRE(body.value(QStringLiteral("idType")).toString() == QStringLiteral("INSTRUMENT_ID_TYPE_ID"));
+            response = mismatchedInstrument
+                ? R"({"instrument":{"uid":"other-instrument","ticker":"WRONG","name":"Other instrument"}})"
+                : R"({"instrument":{"uid":"instrument-a","ticker":"SBER","name":"Сбер Банк"}})";
+            if (failInstrument) error = QNetworkReply::RemoteHostClosedError;
         } else {
             ++unexpectedRequests;
             FAIL_CHECK("T-Invest requested an unexpected route");
             error = QNetworkReply::ContentOperationNotPermittedError;
         }
-        return new BufferedNetworkReply(request, response, delay, error, nullptr, this);
+        return new BufferedNetworkReply(request, response,
+            request.url().path().endsWith(QStringLiteral("/GetInstrumentBy")) ? instrumentDelay : delay,
+            error, nullptr, this);
     }
 };
 
@@ -1210,7 +1229,12 @@ TEST_CASE("T-Invest synchronizes portfolio without requesting operation history"
     REQUIRE(controller.holdings()->rowCount() == 1);
     CHECK(controller.holdings()->data(controller.holdings()->index(0, 0),
         wealthtracker::app::HoldingModel::ValueRole).toString() == QStringLiteral("120,50 ₽"));
+    CHECK(controller.holdings()->data(controller.holdings()->index(0, 0),
+        wealthtracker::app::HoldingModel::TickerRole).toString() == QStringLiteral("SBER"));
+    CHECK(controller.holdings()->data(controller.holdings()->index(0, 0),
+        wealthtracker::app::HoldingModel::NameRole).toString() == QStringLiteral("Сбер Банк"));
     CHECK(observed->portfolioRequests == 1);
+    CHECK(observed->instrumentRequests == 1);
     CHECK(observed->unexpectedRequests == 0);
     CHECK(controller.reportSpending() == QStringLiteral("0 ₽"));
 
@@ -1227,6 +1251,59 @@ TEST_CASE("T-Invest synchronizes portfolio without requesting operation history"
         CHECK(controller.holdings()->rowCount() == 0);
         CHECK(controller.portfolioValue() == QStringLiteral("0 ₽"));
     }
+}
+
+TEST_CASE("T-Invest metadata deduplicates instruments and cannot reject valid balances") {
+    InvestmentNetworkFixture network;
+    network.multipleAccounts = true;
+    SECTION("Metadata succeeds") {}
+    SECTION("Metadata network failure") { network.failInstrument = true; }
+    SECTION("Metadata belongs to another instrument") { network.mismatchedInstrument = true; }
+    SECTION("Metadata exceeds its five second deadline") { network.instrumentDelay = 6'000; }
+    wealthtracker::connectors::TInvestClient client(network);
+    std::optional<wealthtracker::connectors::NormalizedBatch> result;
+    QString failure;
+    QObject owner;
+    auto* coordinator = new wealthtracker::app::InvestmentSyncCoordinator(client,
+        []() -> std::expected<QByteArray, QString> { return QByteArrayLiteral("readonly-token-with-safe-length"); },
+        [&](wealthtracker::connectors::NormalizedBatch batch) { result = std::move(batch); },
+        [&](QString message) { failure = std::move(message); }, &owner);
+    coordinator->start();
+    REQUIRE(waitUntil([&] { return result.has_value() || !failure.isEmpty(); }, 6'000));
+    REQUIRE(failure.isEmpty());
+    REQUIRE(result);
+    REQUIRE(result->positions.size() == 2);
+    REQUIRE(result->balances.size() == 2);
+    CHECK(network.instrumentRequests == 1);
+    CHECK(network.portfolioRequests == 2);
+    const bool named = !network.failInstrument && !network.mismatchedInstrument && network.instrumentDelay == 0;
+    for (const auto& position : result->positions) {
+        CHECK(position.instrumentId == QStringLiteral("instrument-a"));
+        CHECK(position.currentValue.minorUnits == 12050);
+        CHECK(position.ticker == (named ? QStringLiteral("SBER") : QString{}));
+        CHECK(position.instrumentName == (named ? QStringLiteral("Сбер Банк") : QString{}));
+    }
+}
+
+TEST_CASE("T-Invest cancellation during metadata prevents late portfolio publication") {
+    InvestmentNetworkFixture network;
+    network.instrumentDelay = 100;
+    wealthtracker::connectors::TInvestClient client(network);
+    bool completed = false;
+    bool failed = false;
+    QObject owner;
+    auto* coordinator = new wealthtracker::app::InvestmentSyncCoordinator(client,
+        []() -> std::expected<QByteArray, QString> { return QByteArrayLiteral("readonly-token-with-safe-length"); },
+        [&](wealthtracker::connectors::NormalizedBatch) { completed = true; },
+        [&](QString) { failed = true; }, &owner);
+    coordinator->start();
+    REQUIRE(waitUntil([&] { return network.instrumentRequests == 1; }));
+    coordinator->cancel();
+    QEventLoop loop;
+    QTimer::singleShot(150, &loop, &QEventLoop::quit);
+    loop.exec();
+    CHECK_FALSE(completed);
+    CHECK_FALSE(failed);
 }
 
 TEST_CASE("T-Invest cancellation prevents late publication and permits a fresh sync") {

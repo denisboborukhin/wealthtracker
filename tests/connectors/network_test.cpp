@@ -80,10 +80,11 @@ TEST_CASE("T-Invest exposes only explicitly read-only REST methods")
     CHECK(TInvestClient::isReadOnlyPath(TInvestClient::restPath(TInvestReadMethod::Accounts)));
     CHECK(TInvestClient::isReadOnlyPath(
         TInvestClient::restPath(TInvestReadMethod::Portfolio)));
+    CHECK(TInvestClient::isReadOnlyPath(
+        TInvestClient::restPath(TInvestReadMethod::Instrument)));
     for (const auto& path : {
              QStringLiteral("/rest/tinkoff.public.invest.api.contract.v1.OperationsService/GetOperationsByCursor"),
-             QStringLiteral("/rest/tinkoff.public.invest.api.contract.v1.OperationsService/GetPositions"),
-             QStringLiteral("/rest/tinkoff.public.invest.api.contract.v1.InstrumentsService/GetInstrumentBy")}) {
+             QStringLiteral("/rest/tinkoff.public.invest.api.contract.v1.OperationsService/GetPositions")}) {
         CHECK_FALSE(TInvestClient::isReadOnlyPath(path));
     }
     CHECK_FALSE(TInvestClient::isReadOnlyPath(
@@ -158,6 +159,56 @@ TEST_CASE("T-Invest bounds credentials before issuing requests")
     CHECK_FALSE(client.post(TInvestReadMethod::Accounts, {}, QByteArray(16 * 1024 + 1, 'a')));
     CHECK_FALSE(client.post(TInvestReadMethod::Accounts, {}, QByteArrayLiteral("readonly-token with-space")));
     CHECK_FALSE(client.post(TInvestReadMethod::Accounts, {}, QByteArrayLiteral("readonly-token\twith-tab")));
+    CHECK(network.bodies.isEmpty());
+}
+
+TEST_CASE("T-Invest instrument metadata validates identity and bounded display fields")
+{
+    const auto parsed = TInvestClient::parseInstrumentResponse(QByteArrayLiteral(
+        R"({"instrument":{"uid":"uid-1","figi":"BBG000B9XRY4","ticker":"SBER","name":"Сбер Банк"}})"),
+        QStringLiteral("uid-1"));
+    REQUIRE(parsed);
+    CHECK(parsed->instrumentId == QStringLiteral("uid-1"));
+    CHECK(parsed->ticker == QStringLiteral("SBER"));
+    CHECK(parsed->name == QStringLiteral("Сбер Банк"));
+    CHECK(TInvestClient::parseInstrumentResponse(QByteArrayLiteral(
+        R"({"instrument":{"uid":"uid-1","figi":"BBG000B9XRY4","ticker":"SBER","name":"Сбер Банк"}})"),
+        QStringLiteral("BBG000B9XRY4")));
+    CHECK(TInvestClient::parseInstrumentResponse(QByteArrayLiteral(
+        R"({"instrument":{"uid":"uid-1","figi":"","name":"Инструмент без тикера"}})"),
+        QStringLiteral("uid-1")));
+    for (const auto& body : {
+            QByteArrayLiteral(R"({"instrument":{"uid":"other","ticker":"SBER","name":"Other"}})"),
+            QByteArrayLiteral(R"({"instrument":{"uid":"uid-1","ticker":123,"name":"Other"}})"),
+            QByteArrayLiteral(R"({"instrument":{"uid":"uid-1","name":"bad\nname"}})"),
+            QByteArrayLiteral(R"({"instrument":{"uid":"uid-1"}})"),
+            QByteArrayLiteral(R"({"code":5,"message":"Not found"})"),
+            QByteArrayLiteral(R"({"instrument":[]})"),
+            QByteArray(64 * 1024 + 1, ' ')}) {
+        CHECK_FALSE(TInvestClient::parseInstrumentResponse(body, QStringLiteral("uid-1")));
+    }
+    QJsonObject instrument{{QStringLiteral("uid"), QStringLiteral("uid-1")},
+        {QStringLiteral("ticker"), QString(65, QLatin1Char('A'))},
+        {QStringLiteral("name"), QStringLiteral("Name")}};
+    CHECK_FALSE(TInvestClient::parseInstrumentResponse(QJsonDocument(
+        QJsonObject{{QStringLiteral("instrument"), instrument}}).toJson(), QStringLiteral("uid-1")));
+    instrument[QStringLiteral("ticker")] = QStringLiteral("TICKER");
+    instrument[QStringLiteral("name")] = QString(257, QLatin1Char('A'));
+    CHECK_FALSE(TInvestClient::parseInstrumentResponse(QJsonDocument(
+        QJsonObject{{QStringLiteral("instrument"), instrument}}).toJson(), QStringLiteral("uid-1")));
+}
+
+TEST_CASE("T-Invest metadata requests reject invalid identifiers before networking")
+{
+    CapturingNetworkAccessManager network;
+    TInvestClient client(network);
+    const auto token = QByteArrayLiteral("read-only-token-1234567890");
+    for (const auto& id : {QString{}, QStringLiteral("bad identifier"),
+            QStringLiteral("../bad/id"), QString(129, QLatin1Char('a'))}) {
+        CHECK_FALSE(client.post(TInvestReadMethod::Instrument,
+            {{QStringLiteral("idType"), QStringLiteral("INSTRUMENT_ID_TYPE_ID")},
+             {QStringLiteral("id"), id}}, token));
+    }
     CHECK(network.bodies.isEmpty());
 }
 

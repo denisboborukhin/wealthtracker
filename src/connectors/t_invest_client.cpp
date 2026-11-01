@@ -23,6 +23,7 @@ namespace {
 
 constexpr auto apiHost = "invest-public-api.tbank.ru";
 constexpr qsizetype maximumResponseBytes = 20 * 1024 * 1024;
+constexpr qsizetype maximumInstrumentResponseBytes = 64 * 1024;
 using BigInt = boost::multiprecision::cpp_int;
 
 bool validToken(const QByteArray &token)
@@ -30,6 +31,30 @@ bool validToken(const QByteArray &token)
     return token.size() >= 20 && token.size() <= 16 * 1024
         && std::ranges::all_of(token, [](const unsigned char value) {
                return value > 0x20 && value < 0x7f;
+           });
+}
+
+bool validInstrumentId(const QString &id)
+{
+    return !id.isEmpty() && id.size() <= 128
+        && std::ranges::all_of(id, [](const QChar value) {
+               const auto character = value.unicode();
+               return (character >= 'A' && character <= 'Z')
+                   || (character >= 'a' && character <= 'z')
+                   || (character >= '0' && character <= '9')
+                   || character == '-' || character == '_' || character == '.';
+           });
+}
+
+bool validInstrumentText(const QJsonValue &value, const qsizetype maximum)
+{
+    if (value.isUndefined()) return true;
+    if (!value.isString()) return false;
+    const auto text = value.toString();
+    return text.size() <= maximum && text == text.trimmed()
+        && std::ranges::none_of(text, [](const QChar character) {
+               return character.category() == QChar::Other_Control
+                   || character.category() == QChar::Other_Format;
            });
 }
 
@@ -193,6 +218,9 @@ QString TInvestClient::restPath(const TInvestReadMethod method)
     case TInvestReadMethod::Portfolio:
         return QStringLiteral(
             "/rest/tinkoff.public.invest.api.contract.v1.OperationsService/GetPortfolio");
+    case TInvestReadMethod::Instrument:
+        return QStringLiteral(
+            "/rest/tinkoff.public.invest.api.contract.v1.InstrumentsService/GetInstrumentBy");
     }
     return {};
 }
@@ -200,7 +228,8 @@ QString TInvestClient::restPath(const TInvestReadMethod method)
 bool TInvestClient::isReadOnlyPath(const QStringView path)
 {
     return path == restPath(TInvestReadMethod::Accounts)
-        || path == restPath(TInvestReadMethod::Portfolio);
+        || path == restPath(TInvestReadMethod::Portfolio)
+        || path == restPath(TInvestReadMethod::Instrument);
 }
 
 ConnectorResult<NormalizedBatch> TInvestClient::parseAccountsResponse(const QByteArray &json)
@@ -269,7 +298,7 @@ TInvestClient::parsePortfolioResponse(const QByteArray &json, const QString &acc
         }
         const auto quantity = nanoValue(item.value(QStringLiteral("quantity")).toObject(), false);
         const auto price = nanoValue(item.value(QStringLiteral("currentPrice")).toObject(), true);
-        if (instrumentId.isEmpty() || !item.value(QStringLiteral("quantity")).isObject()
+        if (!validInstrumentId(instrumentId) || !item.value(QStringLiteral("quantity")).isObject()
             || !quantity || !price) {
             batch.warnings.push_back(
                 {WarningSeverity::RejectedRow, QStringLiteral("invalid-portfolio-position"),
@@ -291,12 +320,37 @@ TInvestClient::parsePortfolioResponse(const QByteArray &json, const QString &acc
              9,
              *currentValue,
              observedAt,
-             {QStringLiteral("t-invest-readonly-v1"), {}, instrumentId, index}});
+             {QStringLiteral("t-invest-readonly-v1"), {}, instrumentId, index}, {}, {}});
     }
     batch.balances.push_back(
         {accountExternalId, observedAt, *total,
          {QStringLiteral("t-invest-readonly-v1"), {}, QStringLiteral("portfolio-total"), -1}});
     return batch;
+}
+
+ConnectorResult<InstrumentMetadata>
+TInvestClient::parseInstrumentResponse(const QByteArray &json, const QString &instrumentId)
+{
+    const auto invalid = [] {
+        return std::unexpected(ConnectorError{ErrorCode::ParseFailed,
+            QStringLiteral("T-Invest returned invalid instrument metadata"), {}, false});
+    };
+    if (!validInstrumentId(instrumentId) || json.size() > maximumInstrumentResponseBytes)
+        return invalid();
+    const auto root = parseObject(json);
+    if (!root || !root->value(QStringLiteral("instrument")).isObject()) return invalid();
+    const auto instrument = root->value(QStringLiteral("instrument")).toObject();
+    const auto uid = instrument.value(QStringLiteral("uid"));
+    const auto figi = instrument.value(QStringLiteral("figi"));
+    if ((!uid.isUndefined() && (!uid.isString() || (!uid.toString().isEmpty() && !validInstrumentId(uid.toString()))))
+        || (!figi.isUndefined() && (!figi.isString() || (!figi.toString().isEmpty() && !validInstrumentId(figi.toString()))))
+        || (uid.toString() != instrumentId && figi.toString() != instrumentId)
+        || !validInstrumentText(instrument.value(QStringLiteral("ticker")), 64)
+        || !validInstrumentText(instrument.value(QStringLiteral("name")), 256)) return invalid();
+    const auto ticker = instrument.value(QStringLiteral("ticker")).toString();
+    const auto name = instrument.value(QStringLiteral("name")).toString();
+    if (ticker.isEmpty() && name.isEmpty()) return invalid();
+    return InstrumentMetadata{instrumentId, ticker, name};
 }
 
 ConnectorResult<QNetworkReply *> TInvestClient::post(const TInvestReadMethod method,
@@ -314,6 +368,14 @@ ConnectorResult<QNetworkReply *> TInvestClient::post(const TInvestReadMethod met
             ErrorCode::SecurityViolation,
             QStringLiteral("The requested T-Invest method is not in the read-only allowlist"), {},
             false});
+    }
+    if (method == TInvestReadMethod::Instrument
+        && (body.value(QStringLiteral("idType")) != QStringLiteral("INSTRUMENT_ID_TYPE_ID")
+            || !body.value(QStringLiteral("id")).isString()
+            || !validInstrumentId(body.value(QStringLiteral("id")).toString())
+            || body.size() != 2)) {
+        return std::unexpected(ConnectorError{ErrorCode::InvalidInput,
+            QStringLiteral("A valid instrument identifier is required"), {}, false});
     }
     const QUrl url(QStringLiteral("https://%1%2").arg(QString::fromLatin1(apiHost), path));
     auto request = allowlist_.makeRequest(url);

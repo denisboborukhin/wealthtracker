@@ -126,8 +126,8 @@ Flickable {
                             anchors.fill: parent
                             anchors.leftMargin: 18
                             anchors.rightMargin: 18
-                            Text { Layout.fillWidth: page.width < 600; Layout.preferredWidth: 92; elide: Text.ElideRight; text: holdingRow.ticker; color: Theme.text; font.pixelSize: 12; font.weight: Font.DemiBold }
-                            Text { Layout.fillWidth: true; Layout.minimumWidth: 0; text: holdingRow.name; color: Theme.text; font.pixelSize: 12; elide: Text.ElideRight }
+                            Text { Layout.fillWidth: page.width < 600; Layout.preferredWidth: 92; elide: Text.ElideRight; text: holdingRow.ticker; textFormat: Text.PlainText; color: Theme.text; font.pixelSize: 12; font.weight: Font.DemiBold }
+                            Text { Layout.fillWidth: true; Layout.minimumWidth: 0; text: holdingRow.name; textFormat: Text.PlainText; color: Theme.text; font.pixelSize: 12; elide: Text.ElideRight }
                             Text { Layout.preferredWidth: 90; visible: page.width >= 680; horizontalAlignment: Text.AlignRight; text: holdingRow.allocation; color: Theme.textMuted; font.pixelSize: 12 }
                             Text { Layout.preferredWidth: 100; visible: page.width >= 680; horizontalAlignment: Text.AlignRight; text: holdingRow.performance; color: holdingRow.positive ? Theme.positive : Theme.negative; font.pixelSize: 12 }
                             Text { Layout.fillWidth: page.width < 600; Layout.preferredWidth: 125; elide: Text.ElideRight; horizontalAlignment: page.width < 600 ? Text.AlignLeft : Text.AlignRight; text: holdingRow.value; color: Theme.text; font.pixelSize: 12; font.weight: Font.Medium }

@@ -2535,7 +2535,8 @@ void AppController::rebuildBankModels() {
             });
         }
         for (const auto& position : bank->positions) {
-            holdingRows.push_back({QStringLiteral("—"), position.instrumentId,
+            holdingRows.push_back({position.ticker.isEmpty() ? QStringLiteral("—") : position.ticker,
+                position.instrumentName.isEmpty() ? QStringLiteral("Инструмент") : position.instrumentName,
                 QStringLiteral("%1 %2").arg(formatMinorUnits(position.currentValue.minorUnits),
                                             currencySymbol(position.currentValue.currency)),
                 QStringLiteral("—"), QStringLiteral("—"), true});

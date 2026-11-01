@@ -189,11 +189,17 @@ the token's bank-side scopes.
 | Alfa-Bank B2C | `GET /api/pp/v1/accounts` and `GET /api/pp/v1/operations` at `https://baas.alfabank.ru` |
 | T-Bank Business | `GET /openapi/api/v4/bank-accounts` and `GET /openapi/api/v1/statement` at `https://business.tbank.ru` |
 | Modulbank | Account information and operation history at `https://api.modulbank.ru`; the exact token `sandboxtoken` selects the public synthetic sandbox |
-| T-Invest | `GetAccounts` and `GetPortfolio` at `https://invest-public-api.tbank.ru` |
+| T-Invest | `GetAccounts`, `GetPortfolio`, and `GetInstrumentBy` at `https://invest-public-api.tbank.ru` |
 
 T-Invest requests a RUB-valued portfolio for each accessible open account.
-Portfolio value comes from `totalAmountPortfolio`; holding rows show instrument
-identifiers and quantity times current price in the instrument's currency.
+Portfolio value comes from `totalAmountPortfolio`; holding rows use ticker and
+name from the official [GetInstrumentBy](https://developer.tbank.ru/invest/api/instruments-service-get-instrument-by)
+read method, with quantity times current price in the instrument's currency.
+Instrument metadata is optional: each unique identifier is resolved once per
+refresh, with at most 256 lookups and a five-second metadata deadline within the
+existing overall synchronization deadline. Failed, malformed, or unavailable
+metadata does not reject valid balances; unresolved holdings use a generic label
+instead of an internal identifier.
 
 Retail connections and T-Invest do not retrieve transaction history. Calendar
 filters affect operations already supplied by other integrations and never

@@ -132,6 +132,8 @@ struct Position {
     Money currentValue;
     QDateTime observedAt;
     Provenance provenance;
+    QString ticker{};
+    QString instrumentName{};
 };
 
 struct Quote {
@@ -374,7 +376,13 @@ private:
     QSet<QString> hosts_;
 };
 
-enum class TInvestReadMethod { Accounts, Portfolio };
+enum class TInvestReadMethod { Accounts, Portfolio, Instrument };
+
+struct InstrumentMetadata {
+    QString instrumentId;
+    QString ticker;
+    QString name;
+};
 
 class TInvestClient final : public IConnector {
 public:
@@ -389,6 +397,8 @@ public:
     [[nodiscard]] static ConnectorResult<NormalizedBatch>
     parsePortfolioResponse(const QByteArray &json, const QString &accountExternalId,
                            const QDateTime &observedAt);
+    [[nodiscard]] static ConnectorResult<InstrumentMetadata>
+    parseInstrumentResponse(const QByteArray &json, const QString &instrumentId);
 
 private:
     QNetworkAccessManager &network_;
