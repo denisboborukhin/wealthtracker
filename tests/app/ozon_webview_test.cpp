@@ -82,15 +82,16 @@ TEST_CASE("Ozon validated balances reach capital and survive restart and failed 
         auto* view = static_cast<QWebView*>(controller.ozonWebView());
         REQUIRE(view);
         view->loadHtml(QStringLiteral(R"HTML(<html><script>
-          globalThis.__wealthtrackerOzonSync = {status:'ready',cancelled:false,page:{widgets:[
+          globalThis.__wealthtrackerOzonSync = {status:'ready',cancelled:false,installmentDebt:5000,page:{widgets:[
             {type:'MAIN_ACCOUNT',version:1,status:'READY',data:{__typename:'MainAccountData',balanceCents:12345}},
-            {type:'SAVINGS_B2C_SUMMARY',version:1,status:'READY',data:{__typename:'SavingsB2cSummaryData',title:'Накопления',activeProductsTotalAmount:{cents:20000}}}
+            {type:'SAVINGS_B2C_SUMMARY',version:1,status:'READY',data:{__typename:'SavingsB2cSummaryData',title:'Накопления',activeProductsTotalAmount:{cents:20000}}},
+            {type:'MKK_INSTALLMENT',version:1,status:'READY',data:{__typename:'MkkInstallmentData',mkkInstallmentStatus:'INSTALLMENT_LIMIT_PROGRESS'}}
           ]}};
         </script>Synthetic Ozon dashboard</html>)HTML"), controller.ozonLoginUrl());
         REQUIRE(waitFor([&] { return controller.ozonConnected(); }));
         CHECK_FALSE(controller.ozonLoginActive());
-        CHECK(controller.accounts()->rowCount() == 2);
-        CHECK(controller.netWorth() == QStringLiteral("323,45 ₽"));
+        CHECK(controller.accounts()->rowCount() == 3);
+        CHECK(controller.netWorth() == QStringLiteral("273,45 ₽"));
         capital = controller.netWorth();
         updated = controller.netWorthUpdatedAt();
         REQUIRE_FALSE(updated.isEmpty());

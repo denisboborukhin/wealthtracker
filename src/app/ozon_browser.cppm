@@ -60,7 +60,7 @@ struct OzonFinancialProjection {
           handler.declaration?.operationName !== 'GetMainPage' ||
           handler.declaration?.operationType !== 'query') fail('OZON-MODULE')
       return handler.call({}, {signal:state.controller.signal})
-    }).then(response => {
+    }).then(async response => {
       if (!active()) return
       if (!response || typeof response.isOk !== 'function' || !response.isOk()) fail('OZON-ACCESS')
       const value = response.value
@@ -68,13 +68,62 @@ struct OzonFinancialProjection {
           typeof value.mainPage !== 'object' || value.mainPage.error ||
           !Array.isArray(value.mainPage.widgets)) fail('OZON-SCHEMA')
       if (new TextEncoder().encode(JSON.stringify(value)).byteLength > 8 * 1024 * 1024) fail('OZON-LIMIT')
+      const installmentStatuses = ['INSTALLMENT_LIMIT_COMPLETED','INSTALLMENT_COOLING_PERIOD',
+      'INSTALLMENT_LIMIT_PROGRESS','INSTALLMENT_NEXT_PAYMENT_IS_TODAY','INSTALLMENT_PAYMENT_EXPIRED',
+      'INSTALLMENT_LIMIT_BLOCK','INSTALLMENT_LIMIT_BLOCK_CESSION_FULL','CESSION_FULL',
+      'CESSION_PARTIALLY_SEVEN_DAYS_BEFORE','CESSION_PARTIALLY_SEVEN_DAYS_AFTER']
+      const precontractStatuses = ['LEFT_INSTALLMENT_FORM','WAITING_SCORING','FAIL_SCORING',
+      'INSTALLMENT_PRE_APPROVE','WAITING_CONFIRM_INSTALLMENT']
+      let installmentRequired = false
+      let installmentCount = 0
+      let widgetCount = 0
+      const inspect = (widgets, depth) => {
+        if (!Array.isArray(widgets) || depth > 4) fail('OZON-LIMIT')
+        for (const widget of widgets) {
+          if (++widgetCount > 1024) fail('OZON-LIMIT')
+          if (!widget || typeof widget !== 'object') fail('OZON-SCHEMA')
+          // Bank annuity installments have a different, unsupported debt schema.
+          if (widget.type === 'BANK_INSTALLMENT') fail('OZON-UNSUPPORTED')
+          if (widget.type === 'MKK_INSTALLMENT') {
+            if (++installmentCount > 1 || widget.status !== 'READY' ||
+                (widget.version !== 1 && widget.version !== '1') ||
+                widget.data?.__typename !== 'MkkInstallmentData') fail('OZON-SCHEMA')
+            const status = widget.data.mkkInstallmentStatus
+            if (installmentStatuses.includes(status)) installmentRequired = true
+            else if (!precontractStatuses.includes(status)) fail('OZON-UNSUPPORTED')
+          }
+          if (widget.widgets !== undefined && widget.widgets !== null) inspect(widget.widgets, depth + 1)
+        }
+      }
+      inspect(value.mainPage.widgets, 0)
+      if (installmentRequired) {
+        try {
+          // This public module and read contract were verified on the bank's MKK page.
+          const credit = await import('https://cdn2.ozone.ru/s3/bozon-fe-credit/release/apps/credit/_app/immutable/chunks/DHsJdLKo.js')
+          if (!active()) return
+          if (!credit.Cs || typeof credit.Cs.create !== 'function') fail('OZON-INSTALLMENT')
+          const reader = credit.Cs.create({name:'InstallmentInfoV4',operationType:'query',gqlNode:false,
+            mapper: payload => payload?.me?.client?.installment?.userInfo?.debt?.cents})
+            .getClientHandler('installment/info')
+          if (reader.url !== 'installment/info' || reader.declaration?.operationName !== 'InstallmentInfoV4' ||
+              reader.declaration?.operationType !== 'query') fail('OZON-INSTALLMENT')
+          const debtResponse = await reader.call({}, {signal:state.controller.signal})
+          if (!active()) return
+          if (!debtResponse || typeof debtResponse.isOk !== 'function' || !debtResponse.isOk() ||
+              typeof debtResponse.value !== 'number' || !Number.isSafeInteger(debtResponse.value) ||
+              debtResponse.value < 0) fail('OZON-INSTALLMENT')
+          state.installmentDebt = debtResponse.value
+        } catch (ignored) { fail('OZON-INSTALLMENT') }
+      }
+      if (!active()) return
       state.page = value.mainPage
       state.status = 'ready'
       state.reasonCode = ''
     }).catch(error => {
       if (!active()) return
       delete state.page
-      const code = ['OZON-MODULE','OZON-ACCESS','OZON-SCHEMA','OZON-LIMIT'].includes(error?.code)
+      delete state.installmentDebt
+      const code = ['OZON-MODULE','OZON-ACCESS','OZON-SCHEMA','OZON-LIMIT','OZON-INSTALLMENT','OZON-UNSUPPORTED'].includes(error?.code)
         ? error.code : 'OZON-READ'
       state.reasonCode = code
       state.status = code === 'OZON-ACCESS' ? 'authentication-required'
@@ -99,7 +148,7 @@ struct OzonFinancialProjection {
     }
     const state = globalThis.__wealthtrackerOzonSync
     if (!state || state.cancelled) return JSON.stringify(result)
-    const codes = ['OZON-ORIGIN','OZON-MODULE','OZON-READ','OZON-SCHEMA','OZON-LIMIT','OZON-ACCESS']
+    const codes = ['OZON-ORIGIN','OZON-MODULE','OZON-READ','OZON-SCHEMA','OZON-LIMIT','OZON-ACCESS','OZON-INSTALLMENT','OZON-UNSUPPORTED']
     result.reasonCode = codes.includes(state.reasonCode) ? state.reasonCode : ''
     if (state.status === 'invalid') { result.stage = 'invalid'; return JSON.stringify(result) }
     if (state.status === 'authentication-required') {
@@ -108,7 +157,13 @@ struct OzonFinancialProjection {
     }
     if (state.status !== 'ready') return JSON.stringify(result)
     if (!state.page || state.page.error || !Array.isArray(state.page.widgets)) invalid('OZON-SCHEMA')
-    const main = [], singles = [], summaries = []
+    const main = [], singles = [], summaries = [], installments = []
+    const installmentStatuses = ['INSTALLMENT_LIMIT_COMPLETED','INSTALLMENT_COOLING_PERIOD',
+      'INSTALLMENT_LIMIT_PROGRESS','INSTALLMENT_NEXT_PAYMENT_IS_TODAY','INSTALLMENT_PAYMENT_EXPIRED',
+      'INSTALLMENT_LIMIT_BLOCK','INSTALLMENT_LIMIT_BLOCK_CESSION_FULL','CESSION_FULL',
+      'CESSION_PARTIALLY_SEVEN_DAYS_BEFORE','CESSION_PARTIALLY_SEVEN_DAYS_AFTER']
+    const precontractStatuses = ['LEFT_INSTALLMENT_FORM','WAITING_SCORING','FAIL_SCORING',
+      'INSTALLMENT_PRE_APPROVE','WAITING_CONFIRM_INSTALLMENT']
     let count = 0
     const walk = (widgets, depth) => {
       if (!Array.isArray(widgets) || depth > 4) invalid('OZON-LIMIT')
@@ -117,7 +172,9 @@ struct OzonFinancialProjection {
         if (!widget || typeof widget !== 'object' || Array.isArray(widget)) invalid('OZON-SCHEMA')
         const mapping = {MAIN_ACCOUNT:['MainAccountData',main],
           SAVINGS_B2C_SINGLE_PRODUCT:['SavingsB2cSingleProductData',singles],
-          SAVINGS_B2C_SUMMARY:['SavingsB2cSummaryData',summaries]}
+          SAVINGS_B2C_SUMMARY:['SavingsB2cSummaryData',summaries],
+          MKK_INSTALLMENT:['MkkInstallmentData',installments]}
+        if (widget.type === 'BANK_INSTALLMENT') invalid('OZON-UNSUPPORTED')
         const selected = mapping[widget.type]
         if (selected) {
           if (widget.status !== 'READY' || (widget.version !== 1 && widget.version !== '1') ||
@@ -128,6 +185,7 @@ struct OzonFinancialProjection {
       }
     }
     walk(state.page.widgets, 0)
+    if (installments.length > 1) invalid('OZON-SCHEMA')
     if (main.length > 1 || summaries.length > 1 || (!summaries.length && singles.length > 1)) invalid('OZON-SCHEMA')
     const money = value => {
       if (typeof value !== 'number' || !Number.isSafeInteger(value)) invalid('OZON-SCHEMA')
@@ -145,6 +203,14 @@ struct OzonFinancialProjection {
     const savings = summaries[0] || singles[0]
     if (savings) result.accounts.push({id:'ozon-savings',name:name(savings.title),kind:'savings',
       currency:'RUB',balanceMinor:money(summaries.length ? savings.activeProductsTotalAmount.cents : savings.balance.cents)})
+    if (installments.length) {
+      const status = installments[0].mkkInstallmentStatus
+      if (installmentStatuses.includes(status)) {
+        const debt = state.installmentDebt
+        if (typeof debt !== 'number' || !Number.isSafeInteger(debt) || debt < 0) invalid('OZON-INSTALLMENT')
+        result.accounts.push({id:'ozon-installment',name:'Рассрочка',kind:'credit',currency:'RUB',balanceMinor:money(-debt)})
+      } else if (!precontractStatuses.includes(status)) invalid('OZON-UNSUPPORTED')
+    } else if (state.installmentDebt !== undefined) invalid('OZON-SCHEMA')
     if (!result.accounts.length) invalid('OZON-SCHEMA')
     result.stage = 'ready'
     result.authenticated = true
@@ -154,7 +220,7 @@ struct OzonFinancialProjection {
     result.stage = 'invalid'
     result.authenticated = false
     result.accounts = []
-    result.reasonCode = ['OZON-SCHEMA','OZON-LIMIT'].includes(error?.code) ? error.code : 'OZON-SCHEMA'
+    result.reasonCode = ['OZON-SCHEMA','OZON-LIMIT','OZON-INSTALLMENT','OZON-UNSUPPORTED'].includes(error?.code) ? error.code : 'OZON-SCHEMA'
     return JSON.stringify(result)
   }
 })())OZON");
@@ -185,7 +251,8 @@ parse_ozon_financial_projection(const QString& projection, const QDateTime& obse
     else return invalid();
     const auto reason = object.value(QStringLiteral("reasonCode")).toString();
     static const QSet<QString> reasons{QStringLiteral("OZON-ORIGIN"), QStringLiteral("OZON-MODULE"),
-        QStringLiteral("OZON-READ"), QStringLiteral("OZON-SCHEMA"), QStringLiteral("OZON-LIMIT"), QStringLiteral("OZON-ACCESS")};
+        QStringLiteral("OZON-READ"), QStringLiteral("OZON-SCHEMA"), QStringLiteral("OZON-LIMIT"), QStringLiteral("OZON-ACCESS"),
+        QStringLiteral("OZON-INSTALLMENT"), QStringLiteral("OZON-UNSUPPORTED")};
     const auto accounts = object.value(QStringLiteral("accounts")).toArray();
     if ((!reason.isEmpty() && !reasons.contains(reason)) || accounts.size() > 128 ||
         object.value(QStringLiteral("authenticated")).toBool() != (stage == OzonProjectionStage::Ready)) return invalid();
@@ -204,15 +271,17 @@ parse_ozon_financial_projection(const QString& projection, const QDateTime& obse
         const auto name = account.value(QStringLiteral("name")).toString();
         const auto kind = account.value(QStringLiteral("kind")).toString();
         const auto amount = account.value(QStringLiteral("balanceMinor"));
-        if ((id != QStringLiteral("ozon-main") && id != QStringLiteral("ozon-savings")) ||
+        if ((id != QStringLiteral("ozon-main") && id != QStringLiteral("ozon-savings") && id != QStringLiteral("ozon-installment")) ||
             ids.contains(id) || name.isEmpty() || name.size() > 256 || name.trimmed() != name ||
             name.contains(QRegularExpression(QStringLiteral("[\\x00-\\x1f]"))) ||
-            kind != (id == QStringLiteral("ozon-main") ? QStringLiteral("current") : QStringLiteral("savings")) ||
+            kind != (id == QStringLiteral("ozon-main") ? QStringLiteral("current") :
+                     id == QStringLiteral("ozon-installment") ? QStringLiteral("credit") : QStringLiteral("savings")) ||
             account.value(QStringLiteral("currency")) != QJsonValue(QStringLiteral("RUB")) ||
             !amount.isString() || !integer.match(amount.toString()).hasMatch()) return invalid();
         bool converted = false;
         const auto minor = amount.toString().toLongLong(&converted);
-        if (!converted || minor < -9007199254740991LL || minor > 9007199254740991LL) return invalid();
+        if (!converted || minor < -9007199254740991LL || minor > 9007199254740991LL ||
+            (id == QStringLiteral("ozon-installment") && minor > 0)) return invalid();
         ids.insert(id);
         const wealthtracker::connectors::Provenance provenance{QStringLiteral("ozon-retail"), {}, id, batch.accounts.size()};
         batch.accounts.push_back({id, name, kind, QStringLiteral("RUB"), {}, false, provenance});

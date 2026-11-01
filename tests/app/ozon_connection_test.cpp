@@ -13,11 +13,11 @@ import wt.ozon_login;
 
 namespace {
 
-QString project(const QString& page) {
+QString project(const QString& page, const QString& stateProperties = {}) {
     QJSEngine engine;
     const auto initialized = engine.evaluate(QStringLiteral(
         "var globalThis=this; var location={origin:'https://finance.ozon.ru',pathname:'/lk'};"
-        "globalThis.__wealthtrackerOzonSync={status:'ready',cancelled:false,page:") + page + QStringLiteral("};"));
+        "globalThis.__wealthtrackerOzonSync={status:'ready',cancelled:false,page:") + page + stateProperties + QStringLiteral("};"));
     if (initialized.isError()) return {};
     return engine.evaluate(wealthtracker::app::ozon_financial_projection_script()).toString();
 }
@@ -133,4 +133,77 @@ TEST_CASE("Ozon script reuses only the observed dashboard software and bank read
     CHECK_FALSE(script.contains(QStringLiteral("localStorage")));
     CHECK_FALSE(script.contains(QStringLiteral("sessionStorage")));
     CHECK_FALSE(script.contains(QStringLiteral("fetch(")));
+    CHECK(script.contains(QStringLiteral("DHsJdLKo.js")));
+    CHECK(script.contains(QStringLiteral("getClientHandler('installment/info')")));
+    CHECK(script.contains(QStringLiteral("operationName !== 'InstallmentInfoV4'")));
+    CHECK_FALSE(script.contains(QStringLiteral("approvedLimit.cents")));
+}
+
+TEST_CASE("Ozon includes verified MKK debt as a negative credit balance") {
+    using namespace wealthtracker::app;
+    const auto page = QStringLiteral(R"JS({widgets:[
+      {type:'MAIN_ACCOUNT',version:1,status:'READY',data:{__typename:'MainAccountData',balanceCents:100}},
+      {type:'SAVINGS_B2C_SUMMARY',version:1,status:'READY',data:{__typename:'SavingsB2cSummaryData',title:'Накопления',activeProductsTotalAmount:{cents:200}}},
+      {type:'MKK_INSTALLMENT',version:1,status:'READY',data:{__typename:'MkkInstallmentData',mkkInstallmentStatus:'INSTALLMENT_LIMIT_PROGRESS',mkkLimitCents:999999,mkkApprovedLimitCents:9999999}}
+    ]})JS");
+    const auto parsed = parse_ozon_financial_projection(project(page, QStringLiteral(",installmentDebt:500")), observedAt);
+    REQUIRE(parsed);
+    REQUIRE(parsed->batch);
+    REQUIRE(parsed->batch->accounts.size() == 3);
+    CHECK(parsed->batch->accounts.back().externalId == QStringLiteral("ozon-installment"));
+    CHECK(parsed->batch->accounts.back().kind == QStringLiteral("credit"));
+    CHECK(parsed->batch->balances.back().balance.minorUnits == -500);
+    qint64 total = 0;
+    for (const auto& balance : parsed->batch->balances) total += balance.balance.minorUnits;
+    CHECK(total == -200);
+}
+
+TEST_CASE("Ozon never publishes dashboard balances without required MKK debt") {
+    using namespace wealthtracker::app;
+    auto page = mainPage();
+    page.chop(2);
+    page += QStringLiteral(",{type:'MKK_INSTALLMENT',version:1,status:'READY',data:{__typename:'MkkInstallmentData',mkkInstallmentStatus:'INSTALLMENT_LIMIT_PROGRESS'}}]}");
+    QString extra;
+    SECTION("debt read missing") {}
+    SECTION("negative debt") { extra = QStringLiteral(",installmentDebt:-1"); }
+    SECTION("fractional minor units") { extra = QStringLiteral(",installmentDebt:1.5"); }
+    SECTION("unsafe debt") { extra = QStringLiteral(",installmentDebt:9007199254740992"); }
+    SECTION("numeric string") { extra = QStringLiteral(",installmentDebt:'500'"); }
+    SECTION("unknown MKK state") { page.replace("INSTALLMENT_LIMIT_PROGRESS", "UNKNOWN_FUTURE_STATUS"); }
+    SECTION("different bank installment product") { page.replace("MKK_INSTALLMENT", "BANK_INSTALLMENT"); }
+    const auto parsed = parse_ozon_financial_projection(project(page, extra), observedAt);
+    REQUIRE(parsed);
+    CHECK(parsed->stage == OzonProjectionStage::Invalid);
+    CHECK_FALSE(parsed->batch);
+}
+
+TEST_CASE("Ozon allows zero MKK debt and skips only verified precontract states") {
+    using namespace wealthtracker::app;
+    auto page = mainPage();
+    page.chop(2);
+    page += QStringLiteral(",{type:'MKK_INSTALLMENT',version:'1',status:'READY',data:{__typename:'MkkInstallmentData',mkkInstallmentStatus:'INSTALLMENT_LIMIT_COMPLETED'}}]}");
+    QString extra = QStringLiteral(",installmentDebt:0");
+    bool precontract = false;
+    SECTION("contract with no debt") {}
+    SECTION("precontract does not invent a balance") {
+        page.replace("INSTALLMENT_LIMIT_COMPLETED", "WAITING_CONFIRM_INSTALLMENT");
+        extra.clear();
+        precontract = true;
+    }
+    const auto parsed = parse_ozon_financial_projection(project(page, extra), observedAt);
+    REQUIRE(parsed);
+    REQUIRE(parsed->batch);
+    CHECK(parsed->batch->accounts.size() == (precontract ? 1 : 2));
+    if (!precontract) CHECK(parsed->batch->balances.back().balance.minorUnits == 0);
+}
+
+TEST_CASE("Ozon native parser rejects a forged positive installment balance") {
+    using namespace wealthtracker::app;
+    auto object = QJsonDocument::fromJson(project(mainPage()).toUtf8()).object();
+    auto accounts = object.value(QStringLiteral("accounts")).toArray();
+    accounts.append(QJsonObject{{QStringLiteral("id"), QStringLiteral("ozon-installment")},
+        {QStringLiteral("name"), QStringLiteral("Рассрочка")}, {QStringLiteral("kind"), QStringLiteral("credit")},
+        {QStringLiteral("currency"), QStringLiteral("RUB")}, {QStringLiteral("balanceMinor"), QStringLiteral("100")}});
+    object.insert(QStringLiteral("accounts"), accounts);
+    CHECK_FALSE(parse_ozon_financial_projection(QString::fromUtf8(QJsonDocument(object).toJson()), observedAt));
 }
