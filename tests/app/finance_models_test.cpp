@@ -10,6 +10,37 @@ using wealthtracker::app::ConnectionModel;
 using wealthtracker::app::TransactionModel;
 using wealthtracker::app::TransactionRow;
 
+TEST_CASE("holdings sort exact numeric values and keep sorting after refresh") {
+    wealthtracker::app::HoldingModel model;
+    const QVector<wealthtracker::app::HoldingRow> rows{
+        {"ZZ", "Alpha", "9 000 ₽", "—", "—", true, 900000, "RUB"},
+        {"AA", "Zulu", "100 ₽", "—", "—", true, 10000, "RUB"},
+        {"BB", "Beta", "−1 ₽", "—", "—", false, -100, "RUB"},
+        {"CC", "Gamma", "10 $", "—", "—", true, 1000, "USD"},
+    };
+    const auto ticker = [&](int index) {
+        return model.data(model.index(index), wealthtracker::app::HoldingModel::TickerRole).toString();
+    };
+    model.replace(rows);
+    CHECK(ticker(0) == "AA");
+    model.setSort("name", false);
+    CHECK(ticker(0) == "ZZ");
+    model.setSort("value", false);
+    CHECK(ticker(0) == "BB");
+    CHECK(ticker(1) == "AA");
+    CHECK(ticker(2) == "ZZ");
+    CHECK(ticker(3) == "CC");
+    model.setSort("value", true);
+    CHECK(ticker(0) == "ZZ");
+    CHECK(ticker(2) == "BB");
+    model.replace(rows);
+    CHECK(ticker(0) == "ZZ");
+    model.setSort("unrecognized", false);
+    CHECK(ticker(0) == "ZZ");
+    model.replace({});
+    CHECK(model.rowCount() == 0);
+}
+
 TEST_CASE("account model exposes stable QML roles") {
     AccountModel model;
     model.replace({

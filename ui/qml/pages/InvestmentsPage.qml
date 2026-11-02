@@ -8,6 +8,12 @@ import "../components"
 Flickable {
     id: page
     required property var app
+    property bool sortDescending: false
+
+    function applySort() {
+        app.holdings.setSort(["ticker", "name", "value"][sortField.currentIndex], sortDescending)
+    }
+    Component.onCompleted: applySort()
 
     contentWidth: width
     contentHeight: Math.max(height, content.implicitHeight + Theme.pageMargin * 2)
@@ -76,6 +82,24 @@ Flickable {
                       ? qsTr("Не является налоговым расчётом")
                       : qsTr("Недостаточно операций")
                 accent: Theme.textMuted
+            }
+        }
+
+        GridLayout {
+            Layout.fillWidth: true
+            columns: page.width < 600 ? 1 : 3
+            Text { text: qsTr("Сортировка"); color: Theme.textMuted; font.pixelSize: 12 }
+            MinimalComboBox {
+                id: sortField
+                Layout.fillWidth: true
+                model: [qsTr("Тикер"), qsTr("Название"), qsTr("Стоимость · по валютам")]
+                Accessible.name: qsTr("Сортировка инвестиций")
+                onActivated: page.applySort()
+            }
+            ActionButton {
+                Layout.fillWidth: page.width < 600
+                text: page.sortDescending ? qsTr("По убыванию ↓") : qsTr("По возрастанию ↑")
+                onClicked: { page.sortDescending = !page.sortDescending; page.applySort() }
             }
         }
 

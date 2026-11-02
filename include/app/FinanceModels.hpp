@@ -114,6 +114,8 @@ struct HoldingRow {
     QString allocation;
     QString performance;
     bool positive = true;
+    qint64 valueMinorUnits = 0;
+    QString currency;
 };
 
 class HoldingModel final : public QAbstractListModel {
@@ -136,9 +138,13 @@ public:
     [[nodiscard]] QHash<int, QByteArray> roleNames() const override;
 
     void replace(QVector<HoldingRow> rows);
+    Q_INVOKABLE void setSort(const QString& field, bool descending);
 
 private:
     QVector<HoldingRow> rows_;
+    QString sort_field_ = QStringLiteral("ticker");
+    bool descending_ = false;
+    void sortRows();
 };
 
 struct ConnectionRow {

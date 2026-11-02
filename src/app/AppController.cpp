@@ -2182,15 +2182,15 @@ void AppController::loadDemoData() {
 
     holdings_.replace({
         {QStringLiteral("TMOS"), QStringLiteral("Тинькофф Индекс МосБиржи"),
-         QStringLiteral("684 300 ₽"), QStringLiteral("29,5%"), QStringLiteral("+18,7%"), true},
+         QStringLiteral("684 300 ₽"), QStringLiteral("29,5%"), QStringLiteral("+18,7%"), true, 68430000, QStringLiteral("RUB")},
         {QStringLiteral("SU26238"), QStringLiteral("ОФЗ 26238"),
-         QStringLiteral("532 600 ₽"), QStringLiteral("23,0%"), QStringLiteral("+7,2%"), true},
+         QStringLiteral("532 600 ₽"), QStringLiteral("23,0%"), QStringLiteral("+7,2%"), true, 53260000, QStringLiteral("RUB")},
         {QStringLiteral("SBER"), QStringLiteral("Сбербанк"),
-         QStringLiteral("408 200 ₽"), QStringLiteral("17,6%"), QStringLiteral("+24,1%"), true},
+         QStringLiteral("408 200 ₽"), QStringLiteral("17,6%"), QStringLiteral("+24,1%"), true, 40820000, QStringLiteral("RUB")},
         {QStringLiteral("CNY"), QStringLiteral("Китайский юань"),
-         QStringLiteral("321 500 ₽"), QStringLiteral("13,9%"), QStringLiteral("−2,4%"), false},
+         QStringLiteral("321 500 ₽"), QStringLiteral("13,9%"), QStringLiteral("−2,4%"), false, 32150000, QStringLiteral("RUB")},
         {QStringLiteral("LQDT"), QStringLiteral("Ликвидность"),
-         QStringLiteral("372 300 ₽"), QStringLiteral("16,0%"), QStringLiteral("+13,8%"), true},
+         QStringLiteral("372 300 ₽"), QStringLiteral("16,0%"), QStringLiteral("+13,8%"), true, 37230000, QStringLiteral("RUB")},
     });
 
     net_worth_series_ = {3260000, 3380000, 3510000, 3470000, 3720000, 3890000,
@@ -2750,7 +2750,8 @@ void AppController::rebuildBankModels() {
                 position.instrumentName.isEmpty() ? QStringLiteral("Инструмент") : position.instrumentName,
                 QStringLiteral("%1 %2").arg(formatMinorUnits(position.currentValue.minorUnits),
                                             currencySymbol(position.currentValue.currency)),
-                QStringLiteral("—"), QStringLiteral("—"), true});
+                QStringLiteral("—"), QStringLiteral("—"), true,
+                position.currentValue.minorUnits, position.currentValue.currency});
         }
         for (const auto& transaction : bank->transactions) {
             sourceTransactions.push_back({bank.key(), institution, &transaction});

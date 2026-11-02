@@ -148,7 +148,38 @@ QHash<int, QByteArray> HoldingModel::roleNames() const {
 void HoldingModel::replace(QVector<HoldingRow> rows) {
     beginResetModel();
     rows_ = std::move(rows);
+    sortRows();
     endResetModel();
+}
+
+void HoldingModel::setSort(const QString& field, const bool descending) {
+    if (field != QStringLiteral("ticker") && field != QStringLiteral("name")
+        && field != QStringLiteral("value")) return;
+    beginResetModel();
+    sort_field_ = field;
+    descending_ = descending;
+    sortRows();
+    endResetModel();
+}
+
+void HoldingModel::sortRows() {
+    std::stable_sort(rows_.begin(), rows_.end(), [this](const HoldingRow& a, const HoldingRow& b) {
+        int comparison = 0;
+        if (sort_field_ == QStringLiteral("value")) {
+            // Different currencies are grouped, never compared as equivalent amounts.
+            comparison = QString::compare(a.currency, b.currency);
+            if (comparison != 0) return comparison < 0;
+            comparison = a.valueMinorUnits < b.valueMinorUnits ? -1
+                       : a.valueMinorUnits > b.valueMinorUnits ? 1 : 0;
+        } else {
+            comparison = QString::localeAwareCompare(
+                sort_field_ == QStringLiteral("name") ? a.name : a.ticker,
+                sort_field_ == QStringLiteral("name") ? b.name : b.ticker);
+        }
+        if (comparison == 0) comparison = QString::compare(a.ticker, b.ticker);
+        if (comparison == 0) comparison = QString::compare(a.name, b.name);
+        return descending_ ? comparison > 0 : comparison < 0;
+    });
 }
 
 ConnectionModel::ConnectionModel(QObject* parent) : QAbstractListModel(parent) {}
