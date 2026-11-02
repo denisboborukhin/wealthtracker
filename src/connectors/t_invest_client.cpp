@@ -320,7 +320,9 @@ TInvestClient::parsePortfolioResponse(const QByteArray &json, const QString &acc
              9,
              *currentValue,
              observedAt,
-             {QStringLiteral("t-invest-readonly-v1"), {}, instrumentId, index}, {}, {}});
+             {QStringLiteral("t-invest-readonly-v1"), {}, instrumentId, index},
+             validInstrumentText(item.value(QStringLiteral("ticker")), 64)
+                 ? item.value(QStringLiteral("ticker")).toString() : QString{}, {}});
     }
     batch.balances.push_back(
         {accountExternalId, observedAt, *total,

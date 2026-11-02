@@ -261,9 +261,11 @@ the token's bank-side scopes.
 | T-Invest | `GetAccounts`, `GetPortfolio`, and `GetInstrumentBy` at `https://invest-public-api.tbank.ru` |
 
 T-Invest requests a RUB-valued portfolio for each accessible open account.
-Portfolio value comes from `totalAmountPortfolio`; holding rows use ticker and
-name from the official [GetInstrumentBy](https://developer.tbank.ru/invest/api/instruments-service-get-instrument-by)
-read method, with quantity times current price in the instrument's currency.
+Portfolio value comes from `totalAmountPortfolio`; holding rows use the optional
+`ticker` supplied by [GetPortfolio](https://developer.tbank.ru/invest/services/operations/methods).
+The official [GetInstrumentBy](https://developer.tbank.ru/invest/api/instruments-service-get-instrument-by)
+read supplies names and fills missing tickers. A failed lookup or name-only response
+preserves the portfolio ticker. Values use quantity times current price in the instrument's currency.
 Instrument metadata is optional: each unique identifier is resolved once per
 refresh, with at most 256 lookups and a five-second metadata deadline within the
 existing overall synchronization deadline. Failed, malformed, or unavailable

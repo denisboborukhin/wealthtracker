@@ -249,6 +249,7 @@ When the user corrects your approach, append a one-line rule here before ending 
 - Queue every bank JavaScript completion onto Qt's application thread before touching timers, networking or models; verify the actual C++ Android WebView bridge, not only Java WebView tests.
 - Restore connected banks' last saved balances and automatic cashback after restart; preserve their observation times when refresh fails and test Android header contrast in dark system mode.
 - Resolve investment instrument IDs through the provider's verified reference data; show tickers and names, and never use internal IDs as asset labels.
+- Preserve validated portfolio tickers when optional instrument reference data is missing, fails, or returns only a name.
 - Read debt from verified product inventory rather than dashboard visibility; initialize each bank frontend module with its own verified service context before using its client.
 - Check post-phone identification hosts with Android's actual trust manager; a rendered login form does not verify every authentication dependency.
 

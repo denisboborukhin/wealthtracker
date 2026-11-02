@@ -198,6 +198,34 @@ TEST_CASE("T-Invest instrument metadata validates identity and bounded display f
         QJsonObject{{QStringLiteral("instrument"), instrument}}).toJson(), QStringLiteral("uid-1")));
 }
 
+TEST_CASE("T-Invest reads optional portfolio tickers without coupling balances to metadata")
+{
+    QJsonObject position{{QStringLiteral("instrumentUid"), QStringLiteral("fund-fixture")},
+        {QStringLiteral("quantity"), QJsonObject{{QStringLiteral("units"), "2"}}},
+        {QStringLiteral("currentPrice"), QJsonObject{{QStringLiteral("currency"), "rub"},
+                                                  {QStringLiteral("units"), "60"}}}};
+    QJsonValue ticker;
+    SECTION("TMOS ticker") { ticker = QStringLiteral("TMOS"); }
+    SECTION("Exchange suffix") { ticker = QStringLiteral("TMOS@"); }
+    SECTION("No ticker") {}
+    SECTION("Wrong type") { ticker = 42; }
+    SECTION("Control character") { ticker = QStringLiteral("TMOS\n"); }
+    SECTION("Oversized ticker") { ticker = QString(65, QLatin1Char('X')); }
+    position[QStringLiteral("ticker")] = ticker;
+    const auto portfolio = TInvestClient::parsePortfolioResponse(QJsonDocument(QJsonObject{
+        {QStringLiteral("totalAmountPortfolio"), QJsonObject{{QStringLiteral("currency"), "rub"},
+                                                           {QStringLiteral("units"), "120"}}},
+        {QStringLiteral("positions"), QJsonArray{position}}}).toJson(),
+        QStringLiteral("account"), QDateTime::currentDateTimeUtc());
+    REQUIRE(portfolio);
+    REQUIRE(portfolio->positions.size() == 1);
+    CHECK(portfolio->positions.front().currentValue.minorUnits == 12000);
+    CHECK(portfolio->balances.front().balance.minorUnits == 12000);
+    const bool validTicker = ticker == QJsonValue(QStringLiteral("TMOS"))
+        || ticker == QJsonValue(QStringLiteral("TMOS@"));
+    CHECK(portfolio->positions.front().ticker == (validTicker ? ticker.toString() : QString{}));
+}
+
 TEST_CASE("T-Invest metadata requests reject invalid identifiers before networking")
 {
     CapturingNetworkAccessManager network;

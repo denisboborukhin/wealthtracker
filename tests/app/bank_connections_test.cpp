@@ -186,6 +186,8 @@ public:
     bool failInstrument = false;
     bool mismatchedInstrument = false;
     bool multipleAccounts = false;
+    QString portfolioTicker;
+    bool instrumentNameOnly = false;
     int instrumentDelay = 0;
 
 protected:
@@ -205,6 +207,15 @@ protected:
             REQUIRE((body.value(QStringLiteral("accountId")).toString() == QStringLiteral("invest-a")
                 || (multipleAccounts && body.value(QStringLiteral("accountId")).toString() == QStringLiteral("invest-b"))));
             response = R"({"totalAmountPortfolio":{"currency":"rub","units":"120","nano":500000000},"positions":[{"instrumentUid":"instrument-a","quantity":{"units":"2"},"currentPrice":{"currency":"rub","units":"60","nano":250000000}}]})";
+            if (!portfolioTicker.isEmpty()) {
+                auto portfolio = QJsonDocument::fromJson(response).object();
+                auto positions = portfolio["positions"].toArray();
+                auto position = positions[0].toObject();
+                position["ticker"] = portfolioTicker;
+                positions[0] = position;
+                portfolio["positions"] = positions;
+                response = QJsonDocument(portfolio).toJson();
+            }
             if (failPortfolio) error = QNetworkReply::RemoteHostClosedError;
         } else if (request.url().path().endsWith(QStringLiteral("/GetInstrumentBy"))) {
             ++instrumentRequests;
@@ -213,6 +224,8 @@ protected:
             response = mismatchedInstrument
                 ? R"({"instrument":{"uid":"other-instrument","ticker":"WRONG","name":"Other instrument"}})"
                 : R"({"instrument":{"uid":"instrument-a","ticker":"SBER","name":"Сбер Банк"}})";
+            if (instrumentNameOnly)
+                response = R"({"instrument":{"uid":"instrument-a","name":"Т-Капитал Индекс МосБиржи"}})";
             if (failInstrument) error = QNetworkReply::RemoteHostClosedError;
         } else {
             ++unexpectedRequests;
@@ -1283,6 +1296,31 @@ TEST_CASE("T-Invest metadata deduplicates instruments and cannot reject valid ba
         CHECK(position.ticker == (named ? QStringLiteral("SBER") : QString{}));
         CHECK(position.instrumentName == (named ? QStringLiteral("Сбер Банк") : QString{}));
     }
+}
+
+TEST_CASE("T-Invest retains the portfolio TMOS ticker when reference data is incomplete") {
+    InvestmentNetworkFixture network;
+    network.portfolioTicker = QStringLiteral("TMOS");
+    SECTION("Reference data has a name but no ticker") { network.instrumentNameOnly = true; }
+    SECTION("Reference data fails") { network.failInstrument = true; }
+    SECTION("Reference data exceeds its deadline") { network.instrumentDelay = 6'000; }
+    wealthtracker::connectors::TInvestClient client(network);
+    std::optional<wealthtracker::connectors::NormalizedBatch> result;
+    QString failure;
+    QObject owner;
+    auto* coordinator = new wealthtracker::app::InvestmentSyncCoordinator(client,
+        []() -> std::expected<QByteArray, QString> { return QByteArrayLiteral("readonly-token-with-safe-length"); },
+        [&](wealthtracker::connectors::NormalizedBatch batch) { result = std::move(batch); },
+        [&](QString message) { failure = std::move(message); }, &owner);
+    coordinator->start();
+    REQUIRE(waitUntil([&] { return result.has_value() || !failure.isEmpty(); }, 6'000));
+    REQUIRE(failure.isEmpty());
+    REQUIRE(result);
+    REQUIRE(result->positions.size() == 1);
+    CHECK(result->positions.front().ticker == QStringLiteral("TMOS"));
+    if (network.instrumentNameOnly)
+        CHECK(result->positions.front().instrumentName == QStringLiteral("Т-Капитал Индекс МосБиржи"));
+    CHECK(result->balances.front().balance.minorUnits == 12050);
 }
 
 TEST_CASE("T-Invest cancellation during metadata prevents late portfolio publication") {

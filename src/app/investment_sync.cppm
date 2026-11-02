@@ -145,7 +145,7 @@ class InvestmentSyncCoordinator final : public QObject {
             if (metadata) {
                 for (auto& position : batch_.positions) {
                     if (position.instrumentId == metadata->instrumentId) {
-                        position.ticker = metadata->ticker;
+                        if (position.ticker.isEmpty()) position.ticker = metadata->ticker;
                         position.instrumentName = metadata->name;
                     }
                 }
