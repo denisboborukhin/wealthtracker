@@ -314,6 +314,15 @@ if(BUILD_TESTING)
     catch_discover_tests(app_tests)
 
     if(APPLE)
+        get_target_property(qmake_executable Qt6::qmake IMPORTED_LOCATION)
+        get_filename_component(qt_bin_dir "${qmake_executable}" DIRECTORY)
+        add_test(NAME connection_pages_ui
+            COMMAND sh "${PROJECT_SOURCE_DIR}/tests/ui/run.sh"
+                "${qt_bin_dir}/qmltestrunner" "${PROJECT_SOURCE_DIR}"
+                "${PROJECT_BINARY_DIR}/ui/qml/WealthTracker")
+    endif()
+
+    if(APPLE)
         add_executable(webview_tests
             tests/app/webview_test_main.cpp
             tests/app/browser_session_probe.cpp

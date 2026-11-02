@@ -470,6 +470,9 @@ public:
     wealthtracker::connectors::ModulbankClient modulbank;
     wealthtracker::connectors::TBankRetailClient tbank_retail;
     QHash<QString, wealthtracker::connectors::NormalizedBatch> bank_batches;
+    QHash<QString, bool> connection_results;
+    QVariantMap connection_states;
+    bool tbank_session_saved = false;
     QHash<QString, QString> bank_institutions;
     std::optional<wealthtracker::storage::Database> history_database;
     std::vector<wealthtracker::storage::BalanceCapture> balance_history;
@@ -828,11 +831,21 @@ bool AppController::removeCashbackCategory(const QString& bank, const QString& m
 }
 
 void AppController::refreshCashbackBanks() {
+    for (const auto& bank : {QStringLiteral("tbank"), QStringLiteral("alfa"),
+                             QStringLiteral("vtb"), QStringLiteral("ozon")})
+        refreshCashbackBank(bank);
+}
+
+void AppController::refreshCashbackBank(const QString& bank) {
     if (locked_ || demo_mode_) return;
-    if (tbankConnected() && !tbankSyncRunning() && !private_->tbank_cashback_sync) (void)synchronizeTBank();
-    if (alfaConnected() && !alfaSyncRunning() && !private_->alfa_cashback_sync) (void)synchronizeAlfa();
-    if (vtbConnected() && !vtbSyncRunning() && !private_->vtb_cashback_sync) (void)synchronizeVtb();
-    if (ozonConnected() && !ozonSyncRunning() && !private_->ozon_cashback_sync) (void)synchronizeOzon();
+    if (bank == QStringLiteral("tbank") && tbankConnected() && !tbankSyncRunning() && !private_->tbank_cashback_sync) (void)synchronizeTBank();
+    if (bank == QStringLiteral("alfa") && alfaConnected() && !alfaSyncRunning() && !private_->alfa_cashback_sync) (void)synchronizeAlfa();
+    if (bank == QStringLiteral("vtb") && vtbConnected() && !vtbSyncRunning() && !private_->vtb_cashback_sync) (void)synchronizeVtb();
+    if (bank == QStringLiteral("ozon") && ozonConnected() && !ozonSyncRunning() && !private_->ozon_cashback_sync) (void)synchronizeOzon();
+}
+
+QVariantMap AppController::connectionStates() const {
+    return private_->connection_states;
 }
 
 void AppController::initializeBalanceHistory(const QString& path) {
@@ -1259,6 +1272,7 @@ AppController::AppController(std::unique_ptr<CredentialBackend> credentials,
             private_->alfa_sync_running = false;
             alfa_login_active_ = false;
             alfa_connected_ = true;
+            private_->connection_results.insert(QStringLiteral("alfa-retail"), true);
             private_->bank_batches.insert(QStringLiteral("alfa-retail"), std::move(batch));
             recordBalanceHistory(QStringLiteral("alfa-retail"));
             rebuildBankModels();
@@ -1278,6 +1292,7 @@ AppController::AppController(std::unique_ptr<CredentialBackend> credentials,
             QTimer::singleShot(0,this,&AppController::startAlfaCashback);
         },
         [this](AlfaLoginFailure failure) {
+            private_->connection_results.insert(QStringLiteral("alfa-retail"), false);
             private_->alfa_sync_running = false;
             alfa_login_active_ = false;
             if (private_->bank_batches.contains(QStringLiteral("alfa-retail"))) {
@@ -1308,6 +1323,7 @@ AppController::AppController(std::unique_ptr<CredentialBackend> credentials,
             private_->vtb_sync_running = false;
             vtb_login_active_ = false;
             vtb_connected_ = true;
+            private_->connection_results.insert(QStringLiteral("vtb-retail"), true);
             private_->bank_batches.insert(QStringLiteral("vtb-retail"), std::move(batch));
             recordBalanceHistory(QStringLiteral("vtb-retail"));
             rebuildBankModels();
@@ -1327,6 +1343,7 @@ AppController::AppController(std::unique_ptr<CredentialBackend> credentials,
             QTimer::singleShot(0, this, &AppController::startVtbCashback);
         },
         [this](VtbLoginFailure failure) {
+            private_->connection_results.insert(QStringLiteral("vtb-retail"), false);
             private_->vtb_sync_running = false;
             vtb_login_active_ = false;
             if (private_->bank_batches.contains(QStringLiteral("vtb-retail"))) {
@@ -1357,6 +1374,7 @@ AppController::AppController(std::unique_ptr<CredentialBackend> credentials,
             private_->ozon_sync_running = false;
             ozon_login_active_ = false;
             ozon_connected_ = true;
+            private_->connection_results.insert(QStringLiteral("ozon-retail"), true);
             private_->bank_batches.insert(QStringLiteral("ozon-retail"), std::move(batch));
             recordBalanceHistory(QStringLiteral("ozon-retail"));
             rebuildBankModels();
@@ -1376,6 +1394,7 @@ AppController::AppController(std::unique_ptr<CredentialBackend> credentials,
             QTimer::singleShot(0, this, &AppController::startOzonCashback);
         },
         [this](OzonLoginFailure failure) {
+            private_->connection_results.insert(QStringLiteral("ozon-retail"), false);
             private_->ozon_sync_running = false;
             ozon_login_active_ = false;
             if (private_->bank_batches.contains(QStringLiteral("ozon-retail"))) {
@@ -1414,6 +1433,7 @@ AppController::AppController(std::unique_ptr<CredentialBackend> credentials,
                     std::string_view{
                         session.constData(),
                         static_cast<std::size_t>(session.size())});
+            private_->tbank_session_saved = tbank_connected_;
             session.fill('\0');
             if (!tbank_connected_) {
                 (void)private_->credentials->remove(
@@ -1913,62 +1933,33 @@ void AppController::refreshBankConnections() {
         return zenPluginAutoUpdate() ? QStringLiteral("Автообновление")
                                      : QStringLiteral("Настроен");
     }();
-    bank_connections_.replace({
+    QVector<ConnectionRow> rows{
         {QStringLiteral("tbank-retail"),
          QStringLiteral("Т-Банк"),
          QStringLiteral("Счета и остатки"),
          QStringLiteral("Вход внутри приложения · встроенный коннектор"),
-         tbank_login_active_
-             ? QStringLiteral("Вход в банк")
-             : private_->tbank_sync_running
-                 ? QStringLiteral("Синхронизация")
-                 : tbank_connected_
-                     ? tbankAutoUpdate()
-                         ? QStringLiteral("Автообновление")
-                         : QStringLiteral("Подключено")
-                     : QStringLiteral("Требуется вход"),
+         {},
          tbank_connected_,
          true},
         {QStringLiteral("alfa-retail"),
          QStringLiteral("Альфа-Банк"),
          QStringLiteral("Счета и остатки"),
          QStringLiteral("Вход внутри приложения · встроенный коннектор"),
-         alfa_login_active_
-             ? QStringLiteral("Вход в банк")
-             : private_->alfa_sync_running
-                 ? QStringLiteral("Синхронизация")
-                 : alfa_connected_
-                     ? alfaAutoUpdate() ? QStringLiteral("Автообновление")
-                                        : QStringLiteral("Подключено")
-                     : QStringLiteral("Требуется вход"),
+         {},
          alfa_connected_,
          true},
         {QStringLiteral("vtb-retail"),
          QStringLiteral("ВТБ"),
          QStringLiteral("Счета и остатки"),
          QStringLiteral("Вход внутри приложения · встроенный коннектор"),
-         vtb_login_active_
-             ? QStringLiteral("Вход в банк")
-             : private_->vtb_sync_running
-                 ? QStringLiteral("Синхронизация")
-                 : vtb_connected_
-                     ? vtbAutoUpdate() ? QStringLiteral("Автообновление")
-                                       : QStringLiteral("Подключено")
-                     : QStringLiteral("Требуется вход"),
+         {},
          vtb_connected_,
          true},
         {QStringLiteral("ozon-retail"),
          QStringLiteral("Ozon Банк"),
          QStringLiteral("Счета и остатки"),
          QStringLiteral("Вход внутри приложения · встроенный коннектор"),
-         ozon_login_active_
-             ? QStringLiteral("Вход в банк")
-             : private_->ozon_sync_running
-                 ? QStringLiteral("Синхронизация")
-                 : ozon_connected_
-                     ? ozonAutoUpdate() ? QStringLiteral("Автообновление")
-                                       : QStringLiteral("Подключено")
-                     : QStringLiteral("Требуется вход"),
+         {},
          ozon_connected_,
          true},
         {QStringLiteral("tbank-business"),
@@ -2023,7 +2014,61 @@ void AppController::refreshBankConnections() {
          localZenStatus,
          externalBundleSelected,
          !nodeExecutable().isEmpty()},
-    });
+    };
+    QVariantMap states;
+    for (auto& row : rows) {
+        const auto& id = row.connectorId;
+        const bool retail = id.endsWith(QStringLiteral("-retail")) && row.available;
+        bool busy = private_->bank_sync_coordinators.contains(id);
+        bool login = false;
+        bool saved = row.connected;
+        if (id == QStringLiteral("tbank-retail")) {
+            busy = private_->tbank_sync_running;
+            login = tbank_login_active_;
+            saved = private_->tbank_session_saved || tbank_connected_;
+        } else if (id == QStringLiteral("alfa-retail")) {
+            busy = private_->alfa_sync_running;
+            login = alfa_login_active_;
+        } else if (id == QStringLiteral("vtb-retail")) {
+            busy = private_->vtb_sync_running;
+            login = vtb_login_active_;
+        } else if (id == QStringLiteral("ozon-retail")) {
+            busy = private_->ozon_sync_running;
+            login = ozon_login_active_;
+        } else if (id == QStringLiteral("t-invest")) {
+            busy = bool(private_->investment_sync);
+        }
+        if (!row.available || id == QStringLiteral("zenplugins-local")) {
+            row.state = QStringLiteral("unavailable");
+        } else if (busy || login) {
+            row.state = QStringLiteral("updating");
+            row.status = login ? QStringLiteral("Вход в банк") : QStringLiteral("Обновляем…");
+        } else if (saved) {
+            const auto result = private_->connection_results.constFind(id);
+            if (result == private_->connection_results.cend()) {
+                row.state = QStringLiteral("saved");
+                row.status = retail ? QStringLiteral("Сессия сохранена · доступ не проверен")
+                                    : QStringLiteral("Токен сохранён · доступ не проверен");
+            } else if (*result) {
+                row.state = QStringLiteral("ready");
+                row.status = QStringLiteral("Данные получены");
+            } else {
+                row.state = QStringLiteral("error");
+                row.status = retail ? QStringLiteral("Сессия сохранена · данные не получены")
+                                    : QStringLiteral("Токен сохранён · данные не получены");
+            }
+        } else {
+            row.state = QStringLiteral("disconnected");
+            row.status = QStringLiteral("Не подключено");
+        }
+        states.insert(id, QVariantMap{{QStringLiteral("text"), row.status},
+                                     {QStringLiteral("state"), row.state}});
+    }
+    bank_connections_.replace(std::move(rows));
+    if (private_->connection_states != states) {
+        private_->connection_states = std::move(states);
+        emit connectionStatesChanged();
+    }
 }
 
 void AppController::refreshZenPluginAutoUpdateSchedule() {
@@ -2318,6 +2363,7 @@ void AppController::lock() {
         private_->tbank_sync_running = false;
         emit tbankConnectionChanged();
     }
+    refreshBankConnections();
     if (!locked_) {
         locked_ = true;
         emit lockedChanged();
@@ -2427,6 +2473,7 @@ bool AppController::saveBankToken(const QString& connectorId,
         coordinator->cancel();
     }
     private_->bank_batches.remove(connectorId);
+    private_->connection_results.remove(connectorId);
     if (!demo_mode_) rebuildBankModels();
     const bool investmentChanged =
         connectorId == QStringLiteral("t-invest") &&
@@ -2479,6 +2526,7 @@ void AppController::removeBankToken(const QString& connectorId) {
     investment_connected_ =
         connected_bank_ids_.contains(QStringLiteral("t-invest"));
     private_->bank_batches.remove(connectorId);
+    private_->connection_results.remove(connectorId);
     if (!demo_mode_) {
         rebuildBankModels();
     }
@@ -2523,7 +2571,9 @@ void AppController::synchronizeInvestments() {
             if (!batch.warnings.isEmpty()) {
                 sync_status_ += QStringLiteral(" · пропущено записей %1").arg(batch.warnings.size());
             }
+            private_->connection_results.insert(QStringLiteral("t-invest"), true);
             private_->bank_batches.insert(QStringLiteral("t-invest"), std::move(batch));
+            refreshBankConnections();
             recordBalanceHistory(QStringLiteral("t-invest"));
             rebuildBankModels();
             emit syncStatusChanged();
@@ -2531,9 +2581,12 @@ void AppController::synchronizeInvestments() {
         [this](const QString& message) {
             private_->investment_sync.clear();
             sync_status_ = QStringLiteral("Ошибка Т-Инвест: %1").arg(message);
+            private_->connection_results.insert(QStringLiteral("t-invest"), false);
+            refreshBankConnections();
             emit syncStatusChanged();
         }, this);
     private_->investment_sync = coordinator;
+    refreshBankConnections();
     sync_status_ = QStringLiteral("Получаем инвестиционные счета и остатки…");
     emit syncStatusChanged();
     coordinator->start();
@@ -2656,7 +2709,9 @@ void AppController::synchronizeBank(const QString& connectorId) {
             const auto accountCount = batch.accounts.size();
             const auto transactionCount = batch.transactions.size();
             const auto warningCount = batch.warnings.size();
+            private_->connection_results.insert(connectorId, true);
             private_->bank_batches.insert(connectorId, std::move(batch));
+            refreshBankConnections();
             recordBalanceHistory(connectorId);
             rebuildBankModels();
             sync_status_ =
@@ -2674,12 +2729,15 @@ void AppController::synchronizeBank(const QString& connectorId) {
         [this, connectorId, institution = configuration->institution](
             const wealthtracker::connectors::ConnectorError& error) {
             private_->bank_sync_coordinators.remove(connectorId);
+            private_->connection_results.insert(connectorId, false);
+            refreshBankConnections();
             sync_status_ =
                 QStringLiteral("%1: %2").arg(institution, error.message);
             emit syncStatusChanged();
         },
         this);
     private_->bank_sync_coordinators.insert(connectorId, coordinator);
+    refreshBankConnections();
     coordinator->start(*discovery);
 }
 
@@ -3478,6 +3536,7 @@ void AppController::acceptTBankSession(QByteArray session) {
     tbank_connected_ = false;
     tbank_login_active_ = false;
     private_->tbank_session_pending_validation = true;
+    private_->tbank_session_saved = true;
     tbank_login_status_ = QStringLiteral(
         "Сессия получена. Загружаем счета и остатки…");
     refreshBankConnections();
@@ -3487,6 +3546,7 @@ void AppController::acceptTBankSession(QByteArray session) {
         (void)private_->credentials->remove(
             QString::fromLatin1(tbankRetailCredentialKey));
         private_->tbank_session_pending_validation = false;
+        private_->tbank_session_saved = false;
         failTBankLogin(sync_status_);
     }
 }
@@ -3525,6 +3585,7 @@ bool AppController::synchronizeTBank() {
         sync_status_ = credential ? QStringLiteral("Сессия Т-Банка не найдена")
                                   : credential.error();
         tbank_connected_ = false;
+        private_->tbank_session_saved = false;
         private_->tbank_session_pending_validation = false;
         refreshBankConnections();
         tbank_login_status_ = sync_status_;
@@ -3536,8 +3597,10 @@ bool AppController::synchronizeTBank() {
     auto discovery = private_->tbank_retail.discoverAccounts(session);
     session.fill('\0');
     if (!discovery) {
+        private_->connection_results.insert(QStringLiteral("tbank-retail"), false);
         sync_status_ = discovery.error().message;
         tbank_login_status_ = sync_status_;
+        refreshBankConnections();
         emit syncStatusChanged();
         emit tbankConnectionChanged();
         return false;
@@ -3585,6 +3648,7 @@ bool AppController::synchronizeTBank() {
             private_->tbank_session_pending_validation = false;
             tbank_connected_ = true;
             const auto accountCount = batch.accounts.size();
+            private_->connection_results.insert(QStringLiteral("tbank-retail"), true);
             private_->bank_batches.insert(QStringLiteral("tbank-retail"),
                                           std::move(batch));
             recordBalanceHistory(QStringLiteral("tbank-retail"));
@@ -3603,6 +3667,7 @@ bool AppController::synchronizeTBank() {
             QTimer::singleShot(0,this,&AppController::startTBankCashback);
         },
         [this](ConnectorError error) {
+            private_->connection_results.insert(QStringLiteral("tbank-retail"), false);
             private_->tbank_sync_coordinator.clear();
             private_->tbank_sync_running = false;
             const bool authenticationRejected = error.code == ErrorCode::AuthenticationFailed;
@@ -3647,6 +3712,7 @@ void AppController::setTBankAutoUpdate(const bool enabled) {
 }
 
 void AppController::disconnectTBank() {
+    private_->tbank_session_saved = false;
     stopTBankCashback(true);
     if (private_->tbank_sync_coordinator) {
         private_->tbank_sync_coordinator->cancel();
@@ -3665,6 +3731,7 @@ void AppController::disconnectTBank() {
     }
     QSettings{}.remove(QStringLiteral("tbank"));
     private_->bank_batches.remove(QStringLiteral("tbank-retail"));
+    private_->connection_results.remove(QStringLiteral("tbank-retail"));
     if (!demo_mode_) {
         rebuildBankModels();
     }
@@ -3790,6 +3857,7 @@ void AppController::disconnectAlfa() {
     private_->next_alfa_auto_update_at = {};
     QSettings{}.remove(QStringLiteral("alfa"));
     private_->bank_batches.remove(QStringLiteral("alfa-retail"));
+    private_->connection_results.remove(QStringLiteral("alfa-retail"));
     if (!demo_mode_) {
         rebuildBankModels();
     }
@@ -3904,6 +3972,7 @@ void AppController::disconnectVtb() {
     private_->next_vtb_auto_update_at = {};
     QSettings{}.remove(QStringLiteral("vtb"));
     private_->bank_batches.remove(QStringLiteral("vtb-retail"));
+    private_->connection_results.remove(QStringLiteral("vtb-retail"));
     if (!demo_mode_) {
         rebuildBankModels();
     }
@@ -4018,6 +4087,7 @@ void AppController::disconnectOzon() {
     private_->next_ozon_auto_update_at = {};
     QSettings{}.remove(QStringLiteral("ozon"));
     private_->bank_batches.remove(QStringLiteral("ozon-retail"));
+    private_->connection_results.remove(QStringLiteral("ozon-retail"));
     if (!demo_mode_) {
         rebuildBankModels();
     }

@@ -339,9 +339,9 @@ TEST_CASE("T-Bank Alfa and VTB are built in while Sber remains an adapter slot")
               .contains(QStringLiteral("встроенный коннектор")));
     CHECK(connectionValue(controller.bankConnections(),
                           QStringLiteral("tbank-retail"),
-                          wealthtracker::app::ConnectionModel::StatusRole)
+                          wealthtracker::app::ConnectionModel::StateRole)
               .toString()
-              .contains(QStringLiteral("вход")));
+              == QStringLiteral("disconnected"));
     controller.describeBankConnection(QStringLiteral("tbank-retail"));
     CHECK(controller.connectionMessage().contains(
         QStringLiteral("идентификатор сессии")));

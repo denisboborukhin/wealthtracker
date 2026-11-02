@@ -5,6 +5,12 @@ in the [controller](../src/app/AppController.cpp), not live-account verification
 Retail web contracts are undocumented and can change; check synchronized account
 counts and balances against the bank's own application.
 
+Connection indicators distinguish **Не подключено**, saved sessions/tokens with
+unverified access, **Обновляем…**, **Данные получены**, and saved sessions/tokens
+whose latest refresh returned no data. Saved snapshots and refresh timestamps do
+not establish current access. A successful data indicator requires a validated
+response during this app run. Failed reads retain previous balances and cashback.
+
 | Integration | Data supplied | Authentication |
 | --- | --- | --- |
 | Retail T-Bank | Accounts and balances | Embedded official login |
@@ -35,6 +41,8 @@ by ten seconds instead of being dropped.
 ## Cashback
 
 Open **Кэшбэк** to view categories already selected in the bank's own app.
+Use **Обновить банк** on one bank's card for its balance and cashback refresh;
+other banks are not refreshed. **Обновить банки** keeps the combined refresh.
 T-Bank, Alfa-Bank, and VTB each have separate lists for the current calendar
 month and the next month. Enter a category and a percentage (0.01–100, up to two
 decimal places). Saving the same category for the same bank and month updates

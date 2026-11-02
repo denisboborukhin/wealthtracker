@@ -201,6 +201,7 @@ QVariant ConnectionModel::data(const QModelIndex& index, int role) const {
         case StatusRole: return row.status;
         case ConnectedRole: return row.connected;
         case AvailableRole: return row.available;
+        case StateRole: return row.state;
         default: return {};
     }
 }
@@ -212,7 +213,8 @@ QHash<int, QByteArray> ConnectionModel::roleNames() const {
             {MethodRole, "method"},
             {StatusRole, "status"},
             {ConnectedRole, "connected"},
-            {AvailableRole, "available"}};
+            {AvailableRole, "available"},
+            {StateRole, "connectionState"}};
 }
 
 void ConnectionModel::replace(QVector<ConnectionRow> rows) {
@@ -244,6 +246,9 @@ void ConnectionModel::replace(QVector<ConnectionRow> rows) {
             }
             if (current.available != replacement.available) {
                 changedRoles.push_back(AvailableRole);
+            }
+            if (current.state != replacement.state) {
+                changedRoles.push_back(StateRole);
             }
             if (changedRoles.isEmpty()) {
                 continue;

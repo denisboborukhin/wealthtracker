@@ -82,6 +82,7 @@ Flickable {
             }
             ActionButton {
                 id: configurationButton
+                objectName: "historyConfigure"
                 text: qsTr("Настроить")
                 enabled: !page.app.demoMode
                 onClicked: configuration.open()
@@ -117,12 +118,13 @@ Flickable {
                             }
                             Text { text: qsTr("Банки и кошельки"); color: Theme.textMuted; font.pixelSize: 11 }
                             MenuItem {
+                                objectName: "historyAllSources"
                                 Layout.fillWidth: true
                                 text: qsTr("Все источники")
                                 checkable: true
                                 checked: page.allConnections
                                 onTriggered: {
-                                    page.selectedConnectionIds = checked ? [] : page.allConnectionIds()
+                                    page.selectedConnectionIds = []
                                     page.allConnections = checked
                                 }
                             }
@@ -130,6 +132,7 @@ Flickable {
                                 model: page.connectionOptions
                                 delegate: MenuItem {
                                     id: sourceChoice
+                                    objectName: "historySource_" + modelData.id
                                     required property var modelData
                                     Layout.fillWidth: true
                                     text: modelData.label

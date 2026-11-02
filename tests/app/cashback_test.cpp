@@ -216,6 +216,8 @@ TEST_CASE("Cashback observes the existing bank synchronization without replacing
     auto network = std::make_unique<AccountNetwork>();
     auto* fixture = network.get();
     AppController controller(std::make_unique<Credentials>(), std::move(network), nullptr);
+    CHECK(controller.connectionStates()["tbank-retail"].toMap()["state"] == "saved");
+    CHECK(controller.connectionStates()["vtb-retail"].toMap()["state"] == "disconnected");
     const auto month = CashbackBook::monthStart(QDate::currentDate()).toString("yyyy-MM-dd");
     REQUIRE(controller.saveCashbackCategory("tbank", month, "Кафе", "5"));
     int updates = 0;
@@ -226,7 +228,8 @@ TEST_CASE("Cashback observes the existing bank synchronization without replacing
             if (!controller.tbankSyncRunning()) loop.quit();
         });
         QTimer::singleShot(1000, &loop, &QEventLoop::quit);
-        controller.refreshCashbackBanks();
+        controller.refreshCashbackBank("tbank");
+        CHECK(controller.connectionStates()["tbank-retail"].toMap()["state"] == "updating");
         CHECK(controller.cashbackBanks().front().toMap()["syncRunning"].toBool());
         loop.exec();
         CHECK_FALSE(controller.tbankSyncRunning());
@@ -235,12 +238,35 @@ TEST_CASE("Cashback observes the existing bank synchronization without replacing
     REQUIRE(updates >= 2);
     const auto bank = controller.cashbackBanks().front().toMap();
     CHECK_FALSE(bank["lastSync"].toString().isEmpty());
+    CHECK(controller.connectionStates()["tbank-retail"].toMap()["state"] == "ready");
     CHECK(bank["current"].toList().size() == 1);
     fixture->fail = true;
     refresh();
     CHECK(controller.cashbackBanks().front().toMap()["current"] == bank["current"]);
     CHECK(controller.cashbackBanks().front().toMap()["lastSync"] == bank["lastSync"]);
     CHECK_FALSE(controller.cashbackBanks().front().toMap()["syncStatus"].toString().isEmpty());
+    CHECK(controller.connectionStates()["tbank-retail"].toMap()["state"] == "error");
+    CHECK(controller.connectionStates()["tbank-retail"].toMap()["text"].toString().contains("Сессия сохранена"));
+    controller.disconnectTBank();
+    CHECK(controller.connectionStates()["tbank-retail"].toMap()["state"] == "disconnected");
+}
+
+TEST_CASE("Single-bank cashback refresh ignores other banks and respects privacy") {
+    SettingsScope settings;
+    auto network = std::make_unique<AccountNetwork>();
+    auto* fixture = network.get();
+    AppController controller(std::make_unique<Credentials>(), std::move(network), nullptr);
+    controller.refreshCashbackBank("alfa");
+    controller.refreshCashbackBank("unknown");
+    CHECK(fixture->accountReads == 0);
+    CHECK_FALSE(controller.tbankSyncRunning());
+    controller.lock();
+    controller.refreshCashbackBank("tbank");
+    CHECK(fixture->accountReads == 0);
+    REQUIRE(controller.unlock());
+    controller.loadDemoData();
+    controller.refreshCashbackBank("tbank");
+    CHECK(fixture->accountReads == 0);
 }
 
 TEST_CASE("T-Bank balance synchronization also publishes bank cashback without repeating account discovery") {

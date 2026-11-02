@@ -155,6 +155,7 @@ struct ConnectionRow {
     QString status;
     bool connected = false;
     bool available = false;
+    QString state = QStringLiteral("disconnected");
 };
 
 class ConnectionModel final : public QAbstractListModel {
@@ -169,6 +170,7 @@ public:
         StatusRole,
         ConnectedRole,
         AvailableRole,
+        StateRole,
     };
 
     explicit ConnectionModel(QObject* parent = nullptr);

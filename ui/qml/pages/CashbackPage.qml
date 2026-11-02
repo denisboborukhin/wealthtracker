@@ -215,11 +215,26 @@ Flickable {
                     anchors.top: parent.top
                     anchors.margins: 16
                     spacing: 12
-                    Text {
-                        text: bankCard.modelData.name
-                        color: Theme.text
-                        font.pixelSize: 17
-                        font.weight: Font.DemiBold
+                    GridLayout {
+                        Layout.fillWidth: true
+                        columns: page.width < 600 ? 1 : 2
+                        Text {
+                            Layout.fillWidth: true
+                            text: bankCard.modelData.name
+                            color: Theme.text
+                            font.pixelSize: 17
+                            font.weight: Font.DemiBold
+                        }
+                        ActionButton {
+                            objectName: "cashbackRefresh_" + bankCard.modelData.id
+                            Layout.fillWidth: page.width < 600
+                            text: bankCard.modelData.syncRunning || bankCard.modelData.cashbackRunning
+                                  ? qsTr("Обновляем…") : qsTr("Обновить банк")
+                            enabled: page.editable && bankCard.modelData.connected
+                                     && !bankCard.modelData.syncRunning && !bankCard.modelData.cashbackRunning
+                            Accessible.name: qsTr("Обновить кэшбэк: %1").arg(bankCard.modelData.name)
+                            onClicked: page.app.refreshCashbackBank(bankCard.modelData.id)
+                        }
                     }
                     Text {
                         Layout.fillWidth: true

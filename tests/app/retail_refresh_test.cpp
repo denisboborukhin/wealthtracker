@@ -156,6 +156,7 @@ TEST_CASE("VTB rejected startup retains its connection and opens the same bank p
     REQUIRE(waitFor([&] { return !controller.vtbSyncRunning(); }, 15'000));
     CHECK(controller.vtbConnected());
     CHECK(QSettings{}.value(QStringLiteral("vtb/connected")).toBool());
+    CHECK(controller.connectionStates()["vtb-retail"].toMap()["state"] == "error");
     CHECK_FALSE(controller.vtbLoginStatus().contains(QStringLiteral("истекла")));
     REQUIRE(controller.vtbWebView() == view);
     controller.beginVtbLogin();
@@ -183,6 +184,7 @@ TEST_CASE("Alfa unfinished authentication retains its connection and bank page")
     REQUIRE(waitFor([&] { return !controller.alfaSyncRunning(); }, 11'500));
     CHECK(controller.alfaConnected());
     CHECK(QSettings{}.value(QStringLiteral("alfa/connected")).toBool());
+    CHECK(controller.connectionStates()["alfa-retail"].toMap()["state"] == "error");
     CHECK(controller.accounts()->rowCount() == 0);
     REQUIRE(controller.alfaWebView() == view);
     controller.beginAlfaLogin();

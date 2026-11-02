@@ -42,6 +42,7 @@ class AppController final : public QObject {
     Q_PROPERTY(QAbstractItemModel* categories READ categories CONSTANT)
     Q_PROPERTY(QAbstractItemModel* holdings READ holdings CONSTANT)
     Q_PROPERTY(QAbstractItemModel* bankConnections READ bankConnections CONSTANT)
+    Q_PROPERTY(QVariantMap connectionStates READ connectionStates NOTIFY connectionStatesChanged)
     Q_PROPERTY(QVariantList cryptoWallets READ cryptoWallets NOTIFY cryptoWalletsChanged)
     Q_PROPERTY(QString cryptoStatus READ cryptoStatus NOTIFY cryptoWalletsChanged)
     Q_PROPERTY(bool cryptoSyncRunning READ cryptoSyncRunning NOTIFY cryptoWalletsChanged)
@@ -147,6 +148,8 @@ public:
     Q_INVOKABLE bool removeCashbackCategory(const QString& bank, const QString& month,
         const QString& category);
     Q_INVOKABLE void refreshCashbackBanks();
+    Q_INVOKABLE void refreshCashbackBank(const QString& bank);
+    [[nodiscard]] QVariantMap connectionStates() const;
 
     [[nodiscard]] QVariantList balanceHistoryAccounts() const;
     [[nodiscard]] QVariantList balanceHistoryConnections() const;
@@ -284,6 +287,7 @@ public:
     Q_INVOKABLE void disconnectOzon();
 
 signals:
+    void connectionStatesChanged();
     void cashbackChanged();
     void cryptoWalletsChanged();
     void balanceHistoryChanged();

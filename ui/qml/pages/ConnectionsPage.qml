@@ -12,6 +12,11 @@ Item {
     readonly property var hostWindow: ApplicationWindow.window
     readonly property bool mobileLogin: Qt.platform.os === "android" && connectionDialog.retailLoginActive
 
+    function stateTone(state) {
+        return state === "ready" ? "positive"
+             : state === "error" ? "warning" : "neutral"
+    }
+
     function openConnection(connectorId, institution, method, status,
                             connected, available) {
         page.app.describeBankConnection(connectorId)
@@ -65,6 +70,7 @@ Item {
         property string status: ""
         property bool connected: false
         property bool available: false
+        readonly property var currentState: page.app.connectionStates[connectorId] || ({})
         property var pluginValues: ({})
         signal resetSensitivePluginFields()
         readonly property bool builtinTBank:
@@ -317,8 +323,9 @@ Item {
                              && connectionDialog.effectiveConnected
                              && !connectionDialog.builtinRetail
                              && !connectionDialog.localPlugin
-                    text: qsTr("Подключено")
-                    tone: "positive"
+                    Layout.fillWidth: true
+                    text: connectionDialog.currentState.text || connectionDialog.status
+                    tone: page.stateTone(connectionDialog.currentState.state)
                 }
 
                 ColumnLayout {
@@ -604,9 +611,9 @@ Item {
                     spacing: 10
 
                     StatusBadge {
-                        text: connectionDialog.retailSyncRunning
-                              ? qsTr("Синхронизация") : qsTr("Подключено")
-                        tone: connectionDialog.retailSyncRunning ? "neutral" : "positive"
+                        Layout.fillWidth: true
+                        text: connectionDialog.currentState.text || connectionDialog.status
+                        tone: page.stateTone(connectionDialog.currentState.state)
                     }
                     RowLayout {
                         Layout.fillWidth: true
@@ -911,14 +918,14 @@ Item {
                     }
                     Text {
                         Layout.preferredWidth: 190
-                        visible: page.width >= 680
+                        visible: page.width >= 900
                         text: qsTr("Данные")
                         color: Theme.textMuted
                         font.pixelSize: 11
                     }
                     Text {
-                        Layout.preferredWidth: 132
-                        visible: page.width >= 680
+                        Layout.preferredWidth: 220
+                        visible: page.width >= 900
                         text: qsTr("Статус")
                         color: Theme.textMuted
                         font.pixelSize: 11
@@ -948,13 +955,14 @@ Item {
                         required property string status
                         required property bool connected
                         required property bool available
+                        required property string connectionState
 
                         width: ListView.view.width
-                        height: page.width < 600 ? connectorContent.implicitHeight + 32 : 76
+                        height: Math.max(76, connectorContent.implicitHeight + 32)
 
                         GridLayout {
                             id: connectorContent
-                            columns: page.width < 600 ? 1 : 4
+                            columns: page.width < 900 ? 1 : 4
                             anchors.left: parent.left
                             anchors.right: parent.right
                             anchors.verticalCenter: parent.verticalCenter
@@ -986,7 +994,7 @@ Item {
 
                             Text {
                                 Layout.preferredWidth: 190
-                                visible: page.width >= 680
+                                visible: page.width >= 900
                                 text: connectorRow.scope
                                 color: Theme.textMuted
                                 font.pixelSize: 12
@@ -994,17 +1002,15 @@ Item {
                             }
 
                             StatusBadge {
-                                Layout.preferredWidth: 132
-                                visible: page.width >= 680
+                                Layout.preferredWidth: page.width < 900 ? -1 : 220
+                                Layout.fillWidth: page.width < 900
                                 text: connectorRow.status
-                                tone: connectorRow.connected ? "positive"
-                                      : connectorRow.available ? "neutral"
-                                      : "warning"
+                                tone: page.stateTone(connectorRow.connectionState)
                             }
 
                             ActionButton {
                                 Layout.preferredWidth: 116
-                                Layout.fillWidth: page.width < 600
+                                Layout.fillWidth: page.width < 900
                                 text: connectorRow.connected ? qsTr("Управление")
                                       : connectorRow.available ? qsTr("Подключить")
                                                                : qsTr("Подробнее")

@@ -41,6 +41,7 @@ Open **История** for balances grouped by bank or EVM wallet. Positive bal
 stack above zero and negative balances below; shares use absolute connection
 balances when negatives are present. **Настроить** contains source, currency,
 and date selection.
+The **Все источники** checkbox selects or clears every source checkbox.
 The dashboard also shows combined history. A period can carry forward the last observation before
 its start, with its original timestamp. Changing the selected connections can
 change the total. Recording starts with successful refreshes in this version;
@@ -54,11 +55,17 @@ coverage, and verification limits.
 
 **Кэшбэк** automatically reads confirmed T-Bank, Alfa-Bank, and VTB categories for this month and
 next month after balance synchronization. Cashback has its own status and
-refresh time; a failed read preserves the previous result. Manual entries
+refresh time; a failed read preserves the previous result.
+Use **Обновить банк** on a bank's card to refresh only that bank, or **Обновить банки** for all connected banks. Manual entries
 survive restart and remain a fallback when automatic data is unavailable.
 Automatically read bank data stays in memory and
 is refreshed again after restart. See
 [Bank connections](docs/bank-connections.md#cashback).
+
+**Подключения** distinguishes saved sessions awaiting verification, ongoing refreshes,
+validated data, failed reads with a saved session, and disconnected banks.
+Indicators remain visible on phone screens. **Инвестиции** supports sorting by ticker,
+name, or exact current value in either direction; value sorting groups currencies separately.
 
 macOS credentials consolidate into one Keychain item and are read once per
 launch. The first migration may still request access to the old entries; macOS
