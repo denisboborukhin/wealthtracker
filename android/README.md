@@ -27,8 +27,8 @@ not change crypto code or TLS validation. Gradle verifies its distribution hash.
 Output:
 
 ```text
-android/output/wealthtracker-0.1.8-debug.apk
-android/output/wealthtracker-0.1.8-debug.apk.sha256
+android/output/wealthtracker-0.1.9-debug.apk
+android/output/wealthtracker-0.1.9-debug.apk.sha256
 ```
 
 The package ID is `org.wealthtracker.android`. Keep
@@ -42,7 +42,7 @@ Copy the APK to your phone, open it in Files, and permit installation from that
 source. Or authorize USB debugging on your phone and run:
 
 ```sh
-"$ANDROID_SDK_ROOT/platform-tools/adb" install -r android/output/wealthtracker-0.1.8-debug.apk
+"$ANDROID_SDK_ROOT/platform-tools/adb" install -r android/output/wealthtracker-0.1.9-debug.apk
 ```
 
 Install future versions over this app rather than uninstalling; uninstalling
