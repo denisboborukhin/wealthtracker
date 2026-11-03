@@ -18,6 +18,8 @@ qt_add_qml_module(
         Theme.qml
         components/MetricCard.qml
         components/BalanceHistoryPanel.qml
+        components/RetailConnection.qml
+        components/ConnectionList.qml
         components/SectionCard.qml
         components/ActionButton.qml
         components/DatePickerField.qml

@@ -113,7 +113,8 @@ TEST_CASE("privacy screen describes its scope and limitations") {
 TEST_CASE("retail connection dialogs never display another bank's sync status") {
     const auto source = readQml(QStringLiteral("pages/ConnectionsPage.qml"));
     CHECK_FALSE(source.contains(QByteArrayLiteral("page.app.syncStatus")));
-    CHECK(source.contains(QByteArrayLiteral("page.app.tbankLoginStatus")));
-    CHECK(source.contains(QByteArrayLiteral("page.app.alfaLoginStatus")));
-    CHECK(source.contains(QByteArrayLiteral("page.app.vtbLoginStatus")));
+    const auto adapter = readQml(QStringLiteral("components/RetailConnection.qml"));
+    CHECK_FALSE(adapter.contains(QByteArrayLiteral("app.syncStatus")));
+    CHECK(source.contains(QByteArrayLiteral("selectedRetail.loginStatus")));
+
 }

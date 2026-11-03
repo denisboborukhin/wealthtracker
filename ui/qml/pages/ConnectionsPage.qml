@@ -27,14 +27,14 @@ Item {
         connectionDialog.connected = connected
         connectionDialog.available = available
         connectionDialog.open()
-        if (connectorId === "tbank-retail")
-            page.app.prepareTBankConnection()
-        else if (connectorId === "alfa-retail")
-            page.app.prepareAlfaConnection()
-        else if (connectorId === "vtb-retail")
-            page.app.prepareVtbConnection()
-        else if (connectorId === "ozon-retail")
-            page.app.prepareOzonConnection()
+        selectedRetail.prepare()
+    }
+
+    RetailConnection {
+        id: selectedRetail
+        app: page.app
+        connectorId: connectionDialog.connectorId
+        fallbackConnected: connectionDialog.connected
     }
 
     PlatformDialogs.FileDialog {
@@ -81,116 +81,16 @@ Item {
             connectorId === "vtb-retail"
         readonly property bool builtinOzon:
             connectorId === "ozon-retail"
-        readonly property bool builtinRetail:
-            builtinTBank || builtinAlfa || builtinVtb || builtinOzon
-        readonly property bool localPlugin:
-            connectorId === "zenplugins-local"
-        readonly property bool effectiveConnected:
-            builtinTBank ? page.app.tbankConnected
-                         : builtinAlfa ? page.app.alfaConnected
-                         : builtinVtb ? page.app.vtbConnected
-                         : builtinOzon ? page.app.ozonConnected : connected
-        readonly property bool retailLoginActive:
-            builtinTBank ? page.app.tbankLoginActive
-                         : builtinAlfa ? page.app.alfaLoginActive
-                         : builtinVtb ? page.app.vtbLoginActive
-                         : builtinOzon && page.app.ozonLoginActive
-        readonly property bool retailSyncRunning:
-            builtinTBank ? page.app.tbankSyncRunning
-                         : builtinAlfa ? page.app.alfaSyncRunning
-                         : builtinVtb ? page.app.vtbSyncRunning
-                         : builtinOzon && page.app.ozonSyncRunning
-        readonly property bool retailAutoUpdate:
-            builtinTBank ? page.app.tbankAutoUpdate
-                         : builtinAlfa ? page.app.alfaAutoUpdate
-                         : builtinVtb ? page.app.vtbAutoUpdate
-                         : builtinOzon && page.app.ozonAutoUpdate
-        readonly property string retailLastSync:
-            builtinTBank ? page.app.tbankLastSync
-                         : builtinAlfa ? page.app.alfaLastSync
-                         : builtinVtb ? page.app.vtbLastSync
-                         : builtinOzon ? page.app.ozonLastSync : ""
-        readonly property string retailNextSync:
-            builtinTBank ? page.app.tbankNextSync
-                         : builtinAlfa ? page.app.alfaNextSync
-                         : builtinVtb ? page.app.vtbNextSync
-                         : builtinOzon ? page.app.ozonNextSync : ""
-        readonly property string retailLoginStatus:
-            builtinTBank ? page.app.tbankLoginStatus
-                         : builtinAlfa ? page.app.alfaLoginStatus
-                         : builtinVtb ? page.app.vtbLoginStatus
-                         : builtinOzon ? page.app.ozonLoginStatus : ""
-        readonly property var retailWebView:
-            builtinTBank ? page.app.tbankWebView
-                         : builtinAlfa ? page.app.alfaWebView
-                         : builtinVtb ? page.app.vtbWebView
-                         : builtinOzon ? page.app.ozonWebView : null
-
-        function beginRetailLogin() {
-            if (builtinTBank)
-                page.app.beginTBankLogin()
-            else if (builtinAlfa)
-                page.app.beginAlfaLogin()
-            else if (builtinVtb)
-                page.app.beginVtbLogin()
-            else
-                page.app.beginOzonLogin()
-        }
-
-        function reloadRetailLogin() {
-            if (builtinTBank)
-                page.app.reloadTBankLoginPage()
-            else if (builtinAlfa)
-                page.app.reloadAlfaLoginPage()
-            else if (builtinVtb)
-                page.app.reloadVtbLoginPage()
-            else
-                page.app.reloadOzonLoginPage()
-        }
-
-        function cancelRetailLogin() {
-            if (builtinTBank)
-                page.app.cancelTBankLogin()
-            else if (builtinAlfa)
-                page.app.cancelAlfaLogin()
-            else if (builtinVtb)
-                page.app.cancelVtbLogin()
-            else
-                page.app.cancelOzonLogin()
-        }
-
-        function synchronizeRetail() {
-            if (builtinTBank)
-                page.app.synchronizeTBank()
-            else if (builtinAlfa)
-                page.app.synchronizeAlfa()
-            else if (builtinVtb)
-                page.app.synchronizeVtb()
-            else
-                page.app.synchronizeOzon()
-        }
-
-        function setRetailAutoUpdate(enabled) {
-            if (builtinTBank)
-                page.app.setTBankAutoUpdate(enabled)
-            else if (builtinAlfa)
-                page.app.setAlfaAutoUpdate(enabled)
-            else if (builtinVtb)
-                page.app.setVtbAutoUpdate(enabled)
-            else
-                page.app.setOzonAutoUpdate(enabled)
-        }
-
-        function disconnectRetail() {
-            if (builtinTBank)
-                page.app.disconnectTBank()
-            else if (builtinAlfa)
-                page.app.disconnectAlfa()
-            else if (builtinVtb)
-                page.app.disconnectVtb()
-            else
-                page.app.disconnectOzon()
-        }
+        readonly property bool builtinRetail: selectedRetail.supported
+        readonly property bool localPlugin: connectorId === "zenplugins-local"
+        readonly property bool effectiveConnected: selectedRetail.connected
+        readonly property bool retailLoginActive: selectedRetail.loginActive
+        readonly property bool retailSyncRunning: selectedRetail.syncRunning
+        readonly property bool retailAutoUpdate: selectedRetail.autoUpdate
+        readonly property string retailLastSync: selectedRetail.lastSync
+        readonly property string retailNextSync: selectedRetail.nextSync
+        readonly property string retailLoginStatus: selectedRetail.loginStatus
+        readonly property var retailWebView: selectedRetail.webView
 
         function pluginPreferences() {
             return pluginValues
@@ -628,7 +528,7 @@ Item {
                             accessibleName: qsTr("Автообновление банковского подключения")
                             checked: connectionDialog.retailAutoUpdate
                             enabled: !connectionDialog.retailSyncRunning
-                            onToggled: connectionDialog.setRetailAutoUpdate(checked)
+                            onToggled: selectedRetail.setAutoUpdate(checked)
                         }
                     }
                     Text {
@@ -715,13 +615,13 @@ Item {
                         text: !connectionDialog.effectiveConnected ? qsTr("Войти")
                               : connectionDialog.builtinVtb ? qsTr("Открыть ВТБ") : qsTr("Открыть банк")
                         primary: true
-                        onClicked: connectionDialog.beginRetailLogin()
+                        onClicked: selectedRetail.beginLogin()
                     }
                     ActionButton {
                         visible: connectionDialog.builtinRetail
                                  && connectionDialog.retailLoginActive
                         text: qsTr("Повторить")
-                        onClicked: connectionDialog.reloadRetailLogin()
+                        onClicked: selectedRetail.reloadLogin()
                     }
                     ActionButton {
                         visible: connectionDialog.builtinAlfa
@@ -735,7 +635,7 @@ Item {
                                  && connectionDialog.retailLoginActive
                         text: qsTr("Отмена")
                         destructive: true
-                        onClicked: connectionDialog.cancelRetailLogin()
+                        onClicked: selectedRetail.cancelLogin()
                     }
                     ActionButton {
                         visible: connectionDialog.localPlugin
@@ -797,7 +697,7 @@ Item {
                                  && !connectionDialog.retailLoginActive
                         text: qsTr("Обновить")
                         primary: true
-                        onClicked: connectionDialog.synchronizeRetail()
+                        onClicked: selectedRetail.synchronize()
                     }
                     ActionButton {
                         visible: connectionDialog.builtinRetail
@@ -807,7 +707,7 @@ Item {
                         text: qsTr("Отключить")
                         destructive: true
                         onClicked: {
-                            connectionDialog.disconnectRetail()
+                            selectedRetail.disconnectBank()
                             connectionDialog.close()
                         }
                     }
@@ -856,7 +756,7 @@ Item {
             ActionButton {
                 Layout.fillWidth: true
                 text: qsTr("Перезагрузить страницу")
-                onClicked: connectionDialog.reloadRetailLogin()
+                onClicked: selectedRetail.reloadLogin()
             }
         }
         }
@@ -864,7 +764,7 @@ Item {
         onClosed: {
             if (connectionDialog.builtinRetail
                     && connectionDialog.retailLoginActive)
-                connectionDialog.cancelRetailLogin()
+                selectedRetail.cancelLogin()
             const hostWindow = page.hostWindow
             if (Qt.platform.os === "android" && hostWindow) Qt.callLater(() => hostWindow.requestActivate())
             tokenField.clear()
@@ -897,141 +797,13 @@ Item {
             }
         }
 
-        SectionCard {
+        ConnectionList {
             Layout.fillWidth: true
             Layout.fillHeight: true
-
-            ColumnLayout {
-                anchors.fill: parent
-                spacing: 0
-
-                RowLayout {
-                    Layout.fillWidth: true
-                    Layout.leftMargin: 20
-                    Layout.rightMargin: 20
-                    Layout.preferredHeight: 48
-                    Text {
-                        Layout.fillWidth: true
-                        text: qsTr("Банк и способ")
-                        color: Theme.text
-                        font.pixelSize: 11
-                    }
-                    Text {
-                        Layout.preferredWidth: 190
-                        visible: page.width >= 900
-                        text: qsTr("Данные")
-                        color: Theme.textMuted
-                        font.pixelSize: 11
-                    }
-                    Text {
-                        Layout.preferredWidth: 220
-                        visible: page.width >= 900
-                        text: qsTr("Статус")
-                        color: Theme.textMuted
-                        font.pixelSize: 11
-                    }
-                    Item { Layout.preferredWidth: 116 }
-                }
-
-                Rectangle {
-                    Layout.fillWidth: true
-                    Layout.preferredHeight: 1
-                    color: Theme.border
-                }
-
-                ListView {
-                    Layout.fillWidth: true
-                    Layout.fillHeight: true
-                    clip: true
-                    model: page.app.bankConnections
-
-                    delegate: Item {
-                        id: connectorRow
-
-                        required property string connectorId
-                        required property string institution
-                        required property string scope
-                        required property string method
-                        required property string status
-                        required property bool connected
-                        required property bool available
-                        required property string connectionState
-
-                        width: ListView.view.width
-                        height: Math.max(76, connectorContent.implicitHeight + 32)
-
-                        GridLayout {
-                            id: connectorContent
-                            columns: page.width < 900 ? 1 : 4
-                            anchors.left: parent.left
-                            anchors.right: parent.right
-                            anchors.verticalCenter: parent.verticalCenter
-                            anchors.leftMargin: 16
-                            anchors.rightMargin: 16
-                            columnSpacing: 18
-                            rowSpacing: 10
-
-                            ColumnLayout {
-                                Layout.fillWidth: true
-                                Layout.minimumWidth: 0
-                                spacing: 3
-                                Text {
-                                    Layout.fillWidth: true
-                                    text: connectorRow.institution
-                                    color: Theme.text
-                                    font.pixelSize: 14
-                                    font.weight: Font.Medium
-                                    elide: Text.ElideRight
-                                }
-                                Text {
-                                    Layout.fillWidth: true
-                                    text: connectorRow.method
-                                    color: Theme.textMuted
-                                    font.pixelSize: 11
-                                    elide: Text.ElideRight
-                                }
-                            }
-
-                            Text {
-                                Layout.preferredWidth: 190
-                                visible: page.width >= 900
-                                text: connectorRow.scope
-                                color: Theme.textMuted
-                                font.pixelSize: 12
-                                elide: Text.ElideRight
-                            }
-
-                            StatusBadge {
-                                Layout.preferredWidth: page.width < 900 ? -1 : 220
-                                Layout.fillWidth: page.width < 900
-                                text: connectorRow.status
-                                tone: page.stateTone(connectorRow.connectionState)
-                            }
-
-                            ActionButton {
-                                Layout.preferredWidth: 116
-                                Layout.fillWidth: page.width < 900
-                                text: connectorRow.connected ? qsTr("Управление")
-                                      : connectorRow.available ? qsTr("Подключить")
-                                                               : qsTr("Подробнее")
-                                onClicked: page.openConnection(
-                                    connectorRow.connectorId,
-                                    connectorRow.institution,
-                                    connectorRow.method,
-                                    connectorRow.status,
-                                    connectorRow.connected,
-                                    connectorRow.available)
-                            }
-                        }
-
-                        Rectangle {
-                            width: parent.width
-                            height: 1
-                            anchors.bottom: parent.bottom
-                            color: Theme.border
-                        }
-                    }
-                }
+            model: page.app.bankConnections
+            pageWidth: page.width
+            onConnectionRequested: function(connectorId, institution, method, status, connected, available) {
+                page.openConnection(connectorId, institution, method, status, connected, available)
             }
         }
 
