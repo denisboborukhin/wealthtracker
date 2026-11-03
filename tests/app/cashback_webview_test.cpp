@@ -1,10 +1,9 @@
 #include "app/AppController.hpp"
+#include "../support/QtTestSupport.hpp"
 
 #include <catch2/catch_test_macros.hpp>
 
-#include <QCoreApplication>
 #include <QDateTime>
-#include <QEventLoop>
 #include <QJsonArray>
 #include <QJsonDocument>
 #include <QJsonObject>
@@ -12,13 +11,11 @@
 #include <QHash>
 #include <QNetworkAccessManager>
 #include <QSettings>
-#include <QTemporaryDir>
-#include <QTimer>
 #include <QtWebView/QWebView>
 
-#include <functional>
-
 namespace {
+using wealthtracker::test::SettingsScope;
+using wealthtracker::test::waitUntil;
 using wealthtracker::app::AppController;
 
 using Secrets = QHash<QString, QByteArray>;
@@ -42,39 +39,10 @@ private:
     std::shared_ptr<Secrets> secrets_;
 };
 
-struct SettingsScope {
-    QTemporaryDir directory;
-    QString organization = QCoreApplication::organizationName();
-    QString application = QCoreApplication::applicationName();
-    QSettings::Format format = QSettings::defaultFormat();
-    SettingsScope() {
-        QSettings::setDefaultFormat(QSettings::IniFormat);
-        QSettings::setPath(QSettings::IniFormat, QSettings::UserScope, directory.path());
-        QCoreApplication::setOrganizationName(QStringLiteral("CashbackWebViewTests"));
-        QCoreApplication::setApplicationName(QStringLiteral("CashbackWebViewTests"));
-    }
-    ~SettingsScope() {
-        QCoreApplication::setOrganizationName(organization);
-        QCoreApplication::setApplicationName(application);
-        QSettings::setDefaultFormat(format);
-    }
-};
-
-bool waitFor(const std::function<bool()>& ready) {
-    if (ready()) return true;
-    QEventLoop loop;
-    QTimer poll;
-    QObject::connect(&poll, &QTimer::timeout, &loop, [&] { if (ready()) loop.quit(); });
-    poll.start(10);
-    QTimer::singleShot(5000, &loop, &QEventLoop::quit);
-    loop.exec();
-    return ready();
-}
-
 void evaluate(QWebView* view, const QString& script) {
     bool completed = false;
     view->runJavaScript(script, [&](const QVariant&) { completed = true; });
-    REQUIRE(waitFor([&] { return completed; }));
+    REQUIRE(waitUntil([&] { return completed; }));
 }
 
 QVariantMap vtb(const AppController& controller) {
@@ -113,16 +81,16 @@ QString fixture() {
 }
 
 TEST_CASE("VTB balance refresh automatically reads cashback and preserves choices on failure and cancellation") {
-    SettingsScope settings;
+    SettingsScope settings(QStringLiteral("CashbackWebViewTests"), QStringLiteral("CashbackWebViewTests"));
     QSettings{}.setValue(QStringLiteral("vtb/connected"),true);
     AppController controller(nullptr,nullptr);
     const auto month = QDate::currentDate().toString(QStringLiteral("yyyy-MM-01"));
     REQUIRE(controller.saveCashbackCategory("vtb",month,"Manual fallback","3"));
-    REQUIRE(waitFor([&] { return controller.vtbSyncRunning(); }));
+    REQUIRE(waitUntil([&] { return controller.vtbSyncRunning(); }));
     auto* view = static_cast<QWebView*>(controller.vtbWebView());
     REQUIRE(view);
     view->loadHtml(fixture(),controller.vtbLoginUrl());
-    REQUIRE(waitFor([&] { return vtb(controller)["currentFromBank"].toBool(); }));
+    REQUIRE(waitUntil([&] { return vtb(controller)["currentFromBank"].toBool(); }));
     CHECK_FALSE(controller.vtbSyncRunning());
     const auto initial = vtb(controller);
     REQUIRE(initial["current"].toList().size() == 1);
@@ -133,7 +101,7 @@ TEST_CASE("VTB balance refresh automatically reads cashback and preserves choice
 
     evaluate(view,QStringLiteral("cashbackFail = true"));
     REQUIRE(controller.synchronizeVtb());
-    REQUIRE(waitFor([&] { return !controller.vtbSyncRunning() &&
+    REQUIRE(waitUntil([&] { return !controller.vtbSyncRunning() &&
         !vtb(controller)["cashbackRunning"].toBool() &&
         vtb(controller)["cashbackStatus"] != initial["cashbackStatus"]; }));
     CHECK(vtb(controller)["current"] == initial["current"]);
@@ -141,7 +109,7 @@ TEST_CASE("VTB balance refresh automatically reads cashback and preserves choice
 
     evaluate(view,QStringLiteral("cashbackFail = false; cashbackHold = true"));
     REQUIRE(controller.synchronizeVtb());
-    REQUIRE(waitFor([&] { return !controller.vtbSyncRunning() && vtb(controller)["cashbackRunning"].toBool(); }));
+    REQUIRE(waitUntil([&] { return !controller.vtbSyncRunning() && vtb(controller)["cashbackRunning"].toBool(); }));
     controller.lock();
     CHECK(controller.cashbackBanks().isEmpty());
     evaluate(view,QStringLiteral("if (globalThis.finishCashback) finishCashback()"));
@@ -154,7 +122,7 @@ TEST_CASE("VTB balance refresh automatically reads cashback and preserves choice
 }
 
 TEST_CASE("Saved cashback and capital survive restart and failed refresh until explicit disconnect") {
-    SettingsScope settings;
+    SettingsScope settings(QStringLiteral("CashbackWebViewTests"), QStringLiteral("CashbackWebViewTests"));
     QSettings{}.setValue(QStringLiteral("vtb/connected"), true);
     const auto secrets = std::make_shared<Secrets>();
     const auto path = settings.directory.filePath("history.db");
@@ -164,11 +132,11 @@ TEST_CASE("Saved cashback and capital survive restart and failed refresh until e
     {
         AppController controller(std::make_unique<Credentials>(secrets),
             std::make_unique<QNetworkAccessManager>(), nullptr, path);
-        REQUIRE(waitFor([&] { return controller.vtbSyncRunning(); }));
+        REQUIRE(waitUntil([&] { return controller.vtbSyncRunning(); }));
         auto* view = static_cast<QWebView*>(controller.vtbWebView());
         REQUIRE(view);
         view->loadHtml(fixture(), controller.vtbLoginUrl());
-        REQUIRE(waitFor([&] { return vtb(controller)["currentFromBank"].toBool(); }));
+        REQUIRE(waitUntil([&] { return vtb(controller)["currentFromBank"].toBool(); }));
         saved = vtb(controller);
         capital = controller.netWorth();
         updated = controller.netWorthUpdatedAt();
@@ -184,11 +152,11 @@ TEST_CASE("Saved cashback and capital survive restart and failed refresh until e
         CHECK(vtb(restored)["current"] == saved["current"]);
         CHECK(vtb(restored)["nextSelectionRequired"] == saved["nextSelectionRequired"]);
         CHECK(vtb(restored)["currentLastSync"] == saved["currentLastSync"]);
-        REQUIRE(waitFor([&] { return restored.vtbSyncRunning(); }));
+        REQUIRE(waitUntil([&] { return restored.vtbSyncRunning(); }));
         auto* view = static_cast<QWebView*>(restored.vtbWebView());
         REQUIRE(view);
         view->loadHtml(QStringLiteral("<html><script>globalThis.mf_1488_core={get:()=>Promise.resolve(()=>({http:{get:()=>Promise.reject({status:403})}}))}</script></html>"), restored.vtbLoginUrl());
-        REQUIRE(waitFor([&] { return !restored.vtbSyncRunning(); }));
+        REQUIRE(waitUntil([&] { return !restored.vtbSyncRunning(); }));
         CHECK(restored.netWorth() == capital);
         CHECK(restored.netWorthUpdatedAt() == updated);
         CHECK(vtb(restored)["current"] == saved["current"]);

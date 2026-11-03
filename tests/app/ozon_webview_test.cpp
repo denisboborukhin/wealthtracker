@@ -1,19 +1,17 @@
 #include "app/AppController.hpp"
+#include "../support/QtTestSupport.hpp"
 
 #include <catch2/catch_test_macros.hpp>
 
-#include <QCoreApplication>
 #include <QEventLoop>
 #include <QHash>
 #include <QNetworkAccessManager>
-#include <QSettings>
-#include <QTemporaryDir>
 #include <QTimer>
 #include <QtWebView/QWebView>
 
-#include <functional>
-
 namespace {
+using wealthtracker::test::SettingsScope;
+using wealthtracker::test::waitUntil;
 using wealthtracker::app::AppController;
 using Secrets = QHash<QString, QByteArray>;
 
@@ -37,38 +35,10 @@ private:
     std::shared_ptr<Secrets> values_;
 };
 
-struct SettingsScope {
-    QTemporaryDir directory;
-    QString organization = QCoreApplication::organizationName();
-    QString application = QCoreApplication::applicationName();
-    QSettings::Format format = QSettings::defaultFormat();
-    SettingsScope() {
-        QSettings::setDefaultFormat(QSettings::IniFormat);
-        QSettings::setPath(QSettings::IniFormat, QSettings::UserScope, directory.path());
-        QCoreApplication::setOrganizationName(QStringLiteral("OzonWebViewTests"));
-        QCoreApplication::setApplicationName(QStringLiteral("OzonWebViewTests"));
-    }
-    ~SettingsScope() {
-        QCoreApplication::setOrganizationName(organization);
-        QCoreApplication::setApplicationName(application);
-        QSettings::setDefaultFormat(format);
-    }
-};
-
-bool waitFor(const std::function<bool()>& ready) {
-    if (ready()) return true;
-    QEventLoop loop;
-    QTimer timer;
-    QObject::connect(&timer, &QTimer::timeout, &loop, [&] { if (ready()) loop.quit(); });
-    timer.start(10);
-    QTimer::singleShot(5000, &loop, &QEventLoop::quit);
-    loop.exec();
-    return ready();
-}
 }
 
 TEST_CASE("Ozon validated balances reach capital and survive restart and failed refresh") {
-    SettingsScope settings;
+    SettingsScope settings(QStringLiteral("OzonWebViewTests"), QStringLiteral("OzonWebViewTests"));
     const auto secrets = std::make_shared<Secrets>();
     const auto path = settings.directory.filePath("history.db");
     QString capital;
@@ -88,7 +58,7 @@ TEST_CASE("Ozon validated balances reach capital and survive restart and failed 
             {type:'MKK_INSTALLMENT',version:1,status:'READY',data:{__typename:'MkkInstallmentData',mkkInstallmentStatus:'INSTALLMENT_LIMIT_PROGRESS'}}
           ]}};
         </script>Synthetic Ozon dashboard</html>)HTML"), controller.ozonLoginUrl());
-        REQUIRE(waitFor([&] { return controller.ozonConnected(); }));
+        REQUIRE(waitUntil([&] { return controller.ozonConnected(); }));
         CHECK_FALSE(controller.ozonLoginActive());
         CHECK(controller.accounts()->rowCount() == 3);
         CHECK(controller.netWorth() == QStringLiteral("273,45 ₽"));
@@ -104,11 +74,11 @@ TEST_CASE("Ozon validated balances reach capital and survive restart and failed 
         CHECK(restored.netWorth() == capital);
         CHECK(restored.netWorthUpdatedAt() == updated);
         CHECK_FALSE(restored.ozonAutoUpdate());
-        REQUIRE(waitFor([&] { return restored.ozonSyncRunning(); }));
+        REQUIRE(waitUntil([&] { return restored.ozonSyncRunning(); }));
         auto* view = static_cast<QWebView*>(restored.ozonWebView());
         REQUIRE(view);
         view->loadHtml(QStringLiteral("<html><script>globalThis.__wealthtrackerOzonSync={status:'invalid',cancelled:false,reasonCode:'OZON-SCHEMA'}</script>Synthetic incompatible dashboard</html>"), restored.ozonLoginUrl());
-        REQUIRE(waitFor([&] { return !restored.ozonSyncRunning(); }));
+        REQUIRE(waitUntil([&] { return !restored.ozonSyncRunning(); }));
         CHECK(restored.ozonConnected());
         CHECK(restored.netWorth() == capital);
         CHECK(restored.netWorthUpdatedAt() == updated);
@@ -123,7 +93,7 @@ TEST_CASE("Ozon validated balances reach capital and survive restart and failed 
 }
 
 TEST_CASE("Ozon keeps the login page open while its dashboard module is unavailable") {
-    SettingsScope settings;
+    SettingsScope settings(QStringLiteral("OzonWebViewTests"), QStringLiteral("OzonWebViewTests"));
     AppController controller(nullptr, nullptr);
     controller.beginOzonLogin();
     auto* view = static_cast<QWebView*>(controller.ozonWebView());
@@ -143,7 +113,7 @@ TEST_CASE("Ozon keeps the login page open while its dashboard module is unavaila
 }
 
 TEST_CASE("Ozon login recovers from a read left pending before authentication") {
-    SettingsScope settings;
+    SettingsScope settings(QStringLiteral("OzonWebViewTests"), QStringLiteral("OzonWebViewTests"));
     AppController controller(nullptr, nullptr);
     controller.beginOzonLogin();
     auto* view = static_cast<QWebView*>(controller.ozonWebView());
@@ -160,7 +130,7 @@ TEST_CASE("Ozon login recovers from a read left pending before authentication") 
           data:{__typename:'MainAccountData',balanceCents:12345}}]}};
       },50);
     </script>Synthetic authenticated dashboard</html>)HTML"), controller.ozonLoginUrl());
-    REQUIRE(waitFor([&] { return controller.ozonConnected(); }));
+    REQUIRE(waitUntil([&] { return controller.ozonConnected(); }));
     CHECK_FALSE(controller.ozonLoginActive());
     CHECK(controller.accounts()->rowCount() == 1);
     CHECK(controller.netWorth() == QStringLiteral("123,45 ₽"));

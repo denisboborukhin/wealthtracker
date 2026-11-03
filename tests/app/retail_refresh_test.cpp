@@ -1,58 +1,24 @@
 #include "app/AppController.hpp"
+#include "../support/QtTestSupport.hpp"
 
 #include <catch2/catch_test_macros.hpp>
 
 #include <QAbstractItemModel>
-#include <QCoreApplication>
 #include <QDateTime>
 #include <QElapsedTimer>
 #include <QNetworkAccessManager>
 #include <QNetworkReply>
 #include <QNetworkRequest>
-#include <QEventLoop>
 #include <QSettings>
-#include <QTemporaryDir>
-#include <QTimer>
 #include <QUrl>
 #include <QtWebView/QWebView>
 #include <QtWebView/QWebViewLoadingInfo>
 
-#include <functional>
 #include <memory>
 
 namespace {
-
-struct SettingsScope {
-    QString organization = QCoreApplication::organizationName();
-    QString application = QCoreApplication::applicationName();
-    QSettings::Format format = QSettings::defaultFormat();
-    QTemporaryDir directory;
-
-    SettingsScope() {
-        QCoreApplication::setOrganizationName(QStringLiteral("WealthTrackerSessionTests"));
-        QCoreApplication::setApplicationName(QStringLiteral("RetailRefresh"));
-        QSettings::setDefaultFormat(QSettings::IniFormat);
-        QSettings::setPath(QSettings::IniFormat, QSettings::UserScope, directory.path());
-    }
-
-    ~SettingsScope() {
-        QSettings::setDefaultFormat(format);
-        QCoreApplication::setOrganizationName(organization);
-        QCoreApplication::setApplicationName(application);
-    }
-};
-
-bool waitFor(const std::function<bool()>& ready, const int timeoutMilliseconds) {
-    QEventLoop loop;
-    QTimer timer;
-    QObject::connect(&timer, &QTimer::timeout, &loop, [&] {
-        if (ready()) loop.quit();
-    });
-    timer.start(10);
-    QTimer::singleShot(timeoutMilliseconds, &loop, &QEventLoop::quit);
-    loop.exec();
-    return ready();
-}
+using wealthtracker::test::SettingsScope;
+using wealthtracker::test::waitFor;
 
 class StartupCredentials final : public wealthtracker::app::CredentialBackend {
 public:
@@ -96,7 +62,7 @@ TEST_CASE("Retail refresh retries after a busy or locked timer deadline") {
     SECTION("Another bank is logging in") {}
     SECTION("The privacy screen is locked") { privacyScreen = true; }
 
-    SettingsScope settings;
+    SettingsScope settings(QStringLiteral("WealthTrackerSessionTests"), QStringLiteral("RetailRefresh"));
     REQUIRE(settings.directory.isValid());
     QSettings{}.setValue(QStringLiteral("vtb/connected"), true);
     wealthtracker::app::AppController controller(
@@ -140,7 +106,7 @@ TEST_CASE("Retail refresh retries after a busy or locked timer deadline") {
 }
 
 TEST_CASE("VTB rejected startup retains its connection and opens the same bank page") {
-    SettingsScope settings;
+    SettingsScope settings(QStringLiteral("WealthTrackerSessionTests"), QStringLiteral("RetailRefresh"));
     QSettings{}.setValue(QStringLiteral("vtb/connected"), true);
     wealthtracker::app::AppController controller(
         std::unique_ptr<wealthtracker::app::CredentialBackend>{}, nullptr);
@@ -171,7 +137,7 @@ TEST_CASE("VTB rejected startup retains its connection and opens the same bank p
 }
 
 TEST_CASE("Alfa unfinished authentication retains its connection and bank page") {
-    SettingsScope settings;
+    SettingsScope settings(QStringLiteral("WealthTrackerSessionTests"), QStringLiteral("RetailRefresh"));
     QSettings{}.setValue(QStringLiteral("alfa/connected"), true);
     wealthtracker::app::AppController controller(
         std::unique_ptr<wealthtracker::app::CredentialBackend>{}, nullptr);
@@ -199,7 +165,7 @@ TEST_CASE("Alfa unfinished authentication retains its connection and bank page")
 }
 
 TEST_CASE("Retail refresh rejections update only the requested bank status") {
-    SettingsScope settings;
+    SettingsScope settings(QStringLiteral("WealthTrackerSessionTests"), QStringLiteral("RetailRefresh"));
     REQUIRE(settings.directory.isValid());
     wealthtracker::app::AppController controller(
         std::unique_ptr<wealthtracker::app::CredentialBackend>{}, nullptr);
@@ -233,7 +199,7 @@ TEST_CASE("Retail bank pages can open during their own startup refresh without n
     bool alfa = false;
     SECTION("Alfa") { alfa = true; }
     SECTION("VTB") {}
-    SettingsScope settings;
+    SettingsScope settings(QStringLiteral("WealthTrackerSessionTests"), QStringLiteral("RetailRefresh"));
     QSettings{}.setValue(alfa ? QStringLiteral("alfa/connected") : QStringLiteral("vtb/connected"), true);
     wealthtracker::app::AppController controller(
         std::unique_ptr<wealthtracker::app::CredentialBackend>{}, nullptr);
@@ -267,7 +233,7 @@ TEST_CASE("Retail startup refreshes overlap and stop after ten seconds while log
     bool openAlfa = false;
     SECTION("All three background refreshes time out") {}
     SECTION("Interactive Alfa remains open while other refreshes time out") { openAlfa = true; }
-    SettingsScope settings;
+    SettingsScope settings(QStringLiteral("WealthTrackerSessionTests"), QStringLiteral("RetailRefresh"));
     QSettings{}.setValue(QStringLiteral("alfa/connected"), true);
     QSettings{}.setValue(QStringLiteral("vtb/connected"), true);
     QElapsedTimer elapsed;
@@ -308,7 +274,7 @@ TEST_CASE("Retail startup refreshes overlap and stop after ten seconds while log
 }
 
 TEST_CASE("Manual retail refreshes overlap even when T-Bank starts last") {
-    SettingsScope settings;
+    SettingsScope settings(QStringLiteral("WealthTrackerSessionTests"), QStringLiteral("RetailRefresh"));
     QSettings{}.setValue(QStringLiteral("alfa/connected"), true);
     QSettings{}.setValue(QStringLiteral("vtb/connected"), true);
     wealthtracker::app::AppController controller(std::make_unique<StartupCredentials>(),
