@@ -4,6 +4,8 @@
 #include <catch2/catch_test_macros.hpp>
 
 #include <QCoreApplication>
+#include <QCryptographicHash>
+#include <QTemporaryDir>
 #include <QElapsedTimer>
 #include <QEventLoop>
 #include <QFile>
@@ -51,11 +53,12 @@ namespace {
 class MemoryCredentialBackend final
     : public wealthtracker::app::CredentialBackend {
 public:
-    bool supported() const noexcept override { return true; }
+    bool supported() const noexcept override { return available; }
 
     std::expected<void, QString> put(const QString& key,
                                      const QByteArray& secret) override {
         ++writeCount;
+        if (failWrites) return std::unexpected(QStringLiteral("Fixture write failed"));
         values.insert(key, secret);
         return {};
     }
@@ -76,6 +79,8 @@ public:
     }
 
     QHash<QString, QByteArray> values;
+    bool available = true;
+    bool failWrites = false;
     int writeCount = 0;
     int removalCount = 0;
 };
@@ -1484,4 +1489,51 @@ TEST_CASE("Controller preserves saved history when the vault key is missing or i
     CHECK(restored.balanceHistoryError().isEmpty());
     CHECK(restored.balanceHistoryAccounts().size() == 2);
     CHECK(restored.balanceHistoryChart({}, QStringLiteral("RUB")).value("lastValue").toString() == "4000.00 RUB");
+}
+
+TEST_CASE("Legacy T-Bank migration preserves retryable state until replacement succeeds") {
+    const ZenSettingsCleanup pluginCleanup;
+    const TBankSettingsCleanup bankCleanup;
+    QTemporaryDir directory;
+    REQUIRE(directory.isValid());
+    const auto path = directory.filePath("tbank-retail.js");
+    QFile bundle(path);
+    REQUIRE(bundle.open(QIODevice::WriteOnly));
+    bundle.write("global.main = async function () {};");
+    bundle.close();
+    REQUIRE(QFile::copy(QStringLiteral(WEALTHTRACKER_SOURCE_DIR "/tests/fixtures/preferences.xml"),
+                        directory.filePath("preferences.xml")));
+    REQUIRE(wealthtracker::connectors::inspectZenPluginBundle(path));
+    const auto canonical = QFileInfo(path).canonicalFilePath();
+    const auto key = QStringLiteral("zen-plugin-state-%1").arg(QString::fromLatin1(
+        QCryptographicHash::hash((QStringLiteral("tbank-retail\n") + canonical).toUtf8(),
+                                 QCryptographicHash::Sha256).toHex()));
+    auto backend = std::make_unique<MemoryCredentialBackend>();
+    auto* stored = backend.get();
+    bool malformed = false;
+    SECTION("Replacement write fails") { stored->failWrites = true; }
+    SECTION("Credential backend is unavailable") { stored->available = false; }
+    SECTION("Malformed state remains available for recovery") { malformed = true; }
+    SECTION("Successful migration removes old state") {}
+    const auto legacy = malformed ? QByteArrayLiteral("invalid")
+        : QByteArrayLiteral(R"({"pluginData":{"sessionId":"fixture-session-123456789"}})");
+    stored->values[key] = legacy;
+    QSettings{}.setValue("zenPlugin/bundlePath", canonical);
+    QSettings{}.setValue("zenPlugin/autoUpdate", false);
+    wealthtracker::app::AppController controller(std::move(backend), nullptr);
+    const bool succeeded = !malformed && !stored->failWrites && stored->available;
+    CHECK(stored->values.contains(key) == !succeeded);
+    CHECK(QSettings{}.contains("zenPlugin/bundlePath") == !succeeded);
+    CHECK(stored->values.contains("tbank-retail-session") == succeeded);
+    if (!succeeded) CHECK(stored->values[key] == legacy);
+    if (!succeeded && !malformed) {
+        auto retryBackend = std::make_unique<MemoryCredentialBackend>();
+        auto* retry = retryBackend.get();
+        retry->values = stored->values;
+        wealthtracker::app::AppController reopened(std::move(retryBackend), nullptr);
+        CHECK(retry->values.contains("tbank-retail-session"));
+        CHECK_FALSE(retry->values.contains(key));
+        CHECK_FALSE(QSettings{}.contains("zenPlugin/bundlePath"));
+    }
+
 }

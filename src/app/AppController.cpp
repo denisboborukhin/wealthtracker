@@ -1455,6 +1455,7 @@ AppController::AppController(std::unique_ptr<CredentialBackend> credentials,
                 configuredBundle);
         if (descriptor
             && descriptor->pluginId == QString::fromLatin1(tbankRetailPluginId)) {
+            bool migrationComplete = false;
             if (private_->credentials && private_->credentials->supported()) {
                 const auto legacyStateKey = zenStateCredentialKey(*descriptor);
                 auto legacyState = private_->credentials->get(legacyStateKey);
@@ -1475,23 +1476,26 @@ AppController::AppController(std::unique_ptr<CredentialBackend> credentials,
                             const auto migrated = private_->credentials->put(
                                 QString::fromLatin1(tbankRetailCredentialKey), session);
                             tbank_connected_ = migrated.has_value();
+                            migrationComplete = migrated.has_value();
                         }
                         session.fill('\0');
                     }
                     encoded.fill('\0');
                 }
-                (void)private_->credentials->remove(legacyStateKey);
+                if (migrationComplete) (void)private_->credentials->remove(legacyStateKey);
             }
-            const auto legacyLastSync = settings.value(
-                QStringLiteral("zenPlugin/lastSyncAt"));
-            if (legacyLastSync.isValid()) {
-                settings.setValue(QStringLiteral("tbank/lastSyncAt"),
-                                  legacyLastSync);
+            if (migrationComplete) {
+                const auto legacyLastSync = settings.value(
+                    QStringLiteral("zenPlugin/lastSyncAt"));
+                if (legacyLastSync.isValid()) {
+                    settings.setValue(QStringLiteral("tbank/lastSyncAt"),
+                                      legacyLastSync);
+                }
+                settings.setValue(
+                    QStringLiteral("tbank/autoUpdate"),
+                    settings.value(QStringLiteral("zenPlugin/autoUpdate"), true));
+                settings.remove(QStringLiteral("zenPlugin"));
             }
-            settings.setValue(
-                QStringLiteral("tbank/autoUpdate"),
-                settings.value(QStringLiteral("zenPlugin/autoUpdate"), true));
-            settings.remove(QStringLiteral("zenPlugin"));
         } else if (descriptor) {
             private_->zen_descriptor = std::move(*descriptor);
             private_->configured_zen_state_key =
