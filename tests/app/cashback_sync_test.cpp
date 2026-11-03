@@ -8,6 +8,7 @@
 #include <QJsonObject>
 
 import wt.cashback_sync;
+import wt.cashback_state;
 import wt.cashback;
 
 namespace {
@@ -256,4 +257,29 @@ TEST_CASE("Saved automatic cashback rejects corrupt metadata schemas and categor
     CHECK_FALSE(parse_cashback_snapshot("vtb", {}));
     CHECK_FALSE(parse_cashback_snapshot("vtb", "not json"));
     CHECK_FALSE(parse_cashback_snapshot("vtb", QByteArray(128 * 1024 + 1, ' ')));
+}
+
+TEST_CASE("Automatic cashback state retains observations on failed reads and isolates banks") {
+    using wealthtracker::app::CashbackState;
+    const auto observed = QDateTime::fromString("2026-11-01T12:00:00Z", Qt::ISODate);
+    CashbackSnapshot snapshot;
+    snapshot.months.insert(QDate(2026,11,1));
+    REQUIRE(snapshot.categories.set("ozon", "2026-11-01", "Кафе", "5", QDate(2026,11,1)));
+    CashbackState state;
+    state.accept("ozon", snapshot, "ready", observed);
+    REQUIRE(state.find("ozon"));
+    const auto rows = state.find("ozon")->rows("ozon", QDate(2026,11,1));
+    state.setStatus("ozon", "failed");
+    CHECK(state.find("ozon")->rows("ozon", QDate(2026,11,1)) == rows);
+    CHECK(state.updatedAt("ozon") == observed);
+    CHECK(state.status("ozon") == "failed");
+    CHECK_FALSE(state.find("vtb"));
+    CashbackState restored;
+    restored.restore("ozon", state.snapshot("ozon"));
+    CHECK(restored.updatedAt("ozon") == observed);
+    CHECK(restored.find("ozon")->rows("ozon",QDate(2026,11,1)) == rows);
+    state.clear("ozon");
+    CHECK_FALSE(state.find("ozon"));
+    CHECK_FALSE(state.updatedAt("ozon").isValid());
+    CHECK(restored.find("ozon"));
 }

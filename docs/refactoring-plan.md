@@ -171,8 +171,22 @@ Implemented so far:
 - Centralized product/Android/Conan versions in version.json and added
   scripts/verify.sh with docs/verification.md.
 
-Still pending: shared test helpers and directly importable QML test module;
-controller domain ownership extraction; unified connection state/scheduling;
-connection UI components/presentation adapter. Unintegrated product capabilities
-and unreachable pages are retained pending the scope decisions above. This
-progress record does not mark the full plan complete.
+Further implementation (current refactoring pass):
+- Shared isolated QSettings and bounded wait support now serves the cashback,
+  Ozon and retail WebView suites, preserving each suite's timing semantics.
+- Automatic cashback snapshots, last-success times and status now belong to
+  CashbackState. Bank readers, credentials and encrypted persistence keep their
+  established boundaries; manual selections remain separate.
+- ConnectionPresentation consumes a typed ConnectionState; refresh scheduling
+  uses one policy with the existing six-hour cadence and ten-second minimum.
+  Per-bank coordinators still own activity: this is not yet a unified state store.
+- ConnectionList and RetailConnection separate the list and selected bank
+  presentation/commands. Connection page size is now 818 lines; phone/desktop
+  before/after renders are identical. Adapter behavior tests are part of CTest's
+  QML test command.
+
+Still pending: directly importable QML test module without source adaptation;
+remaining controller domain ownership (history, crypto, plugin and financial
+projection); unified activity ownership; token/plugin/login content components.
+Unintegrated product capabilities and unreachable pages are retained pending the
+scope decisions above. This record does not mark the full plan complete.

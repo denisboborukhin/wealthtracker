@@ -178,3 +178,18 @@ and warning counts. It does not publish the parsed records to the models.
 Ledger import (`ImportSession`, `LedgerRepository`) and core categorization/XIRR
 are implemented library capabilities with tests but no current application callers.
 They are retained pending a product decision on persistent transaction import.
+
+## Extracted presentation and state policies
+
+`CashbackState` owns automatic selections, observation timestamps and status per
+bank. Failed reads update status without replacing prior selections or their
+observation time. The controller continues to own transport commands and database
+access. `ConnectionState` is the typed input to the shared connection presentation
+policy; saved access material remains distinct from a validated financial read.
+The shared scheduling policy preserves six-hour refreshes and a ten-second minimum
+retry. Individual coordinators still own their bank's active operations.
+
+The connection list is rendered by `ConnectionList.qml`; `RetailConnection.qml`
+adapts only the four supported retail IDs to existing controller properties and
+commands. Unknown IDs have no retail commands. Native view ownership and deferred
+cleanup remain with the existing login dialog/coordinators.

@@ -164,6 +164,8 @@ target_sources(
             src/app/reporting.cppm
             src/app/crypto_wallet.cppm
             src/app/cashback.cppm
+            src/app/connection_state.cppm
+            src/app/cashback_state.cppm
             src/app/cashback_sync.cppm
             src/app/alfa_cashback.cppm
             src/app/tbank_cashback.cppm
@@ -290,6 +292,7 @@ if(BUILD_TESTING)
 
     add_executable(app_tests
         tests/app/test_main.cpp
+        tests/app/connection_state_test.cpp
         tests/app/finance_models_test.cpp
         tests/app/reporting_test.cpp
         tests/app/balance_history_view_test.cpp

@@ -36,10 +36,12 @@
 import wt.connectors;
 import wt.alfa_login;
 import wt.bank_sync;
+import wt.connection_state;
 import wt.balance_history_view;
 import wt.crypto_wallet;
 import wt.cashback;
 import wt.cashback_sync;
+import wt.cashback_state;
 import wt.tbank_cashback;
 import wt.storage;
 import wt.investment_sync;
@@ -303,17 +305,9 @@ constexpr int autoUpdateIntervalSeconds =
 
 QDateTime scheduleAutoUpdate(QTimer& timer, const QDateTime& from,
                             const int intervalSeconds = autoUpdateIntervalSeconds) {
-    const auto now = QDateTime::currentDateTimeUtc();
-    auto next = from.toUTC().addSecs(intervalSeconds);
-    auto secondsUntilNext = now.secsTo(next);
-    if (secondsUntilNext < 10) {
-        secondsUntilNext = 10;
-        next = now.addSecs(secondsUntilNext);
-    }
-    const auto milliseconds = std::min<qint64>(
-        secondsUntilNext * 1000LL, std::numeric_limits<int>::max());
-    timer.start(static_cast<int>(milliseconds));
-    return next;
+    const auto schedule = connectionRefreshSchedule(from, QDateTime::currentDateTimeUtc(), intervalSeconds);
+    timer.start(schedule.delayMilliseconds);
+    return schedule.next;
 }
 
 std::optional<QDateTime> settingsDateTime(const QString& key) {
@@ -523,13 +517,11 @@ public:
     bool cashback_storage_ready = false;
     QTimer cashback_month_timer;
     QDate cashback_month;
-    QHash<QString,CashbackSnapshot> bank_cashback;
+    CashbackState cashback_state;
     QHash<QString,QDateTime> balance_updated_at;
     QPointer<CashbackSync> vtb_cashback_sync;
     QPointer<CashbackSync> alfa_cashback_sync;
     QPointer<CashbackSync> ozon_cashback_sync;
-    QHash<QString,QString> cashback_status;
-    QHash<QString,QDateTime> cashback_updated_at;
     QPointer<TBankCashbackSync> tbank_cashback_sync;
     std::optional<TBankCashbackContext> tbank_cashback_context;
 };
@@ -538,22 +530,20 @@ void AppController::startVtbCashback() {
     if (locked_ || demo_mode_ || !vtb_connected_ || vtb_login_active_ || private_->vtb_sync_running || private_->vtb_cashback_sync) return;
     auto* page = static_cast<QWebView*>(private_->vtb_login->existingWebView());
     if (!page) return;
-    private_->cashback_status[QStringLiteral("vtb")] = QStringLiteral("Получаем выбранные категории кэшбэка…");
+    private_->cashback_state.setStatus(QStringLiteral("vtb"), QStringLiteral("Получаем выбранные категории кэшбэка…"));
     auto* coordinator = new CashbackSync(
         [this](CashbackSnapshot snapshot) {
             auto* finished = private_->vtb_cashback_sync.data();
             private_->vtb_cashback_sync.clear();
             if (finished) finished->deleteLater();
-            private_->bank_cashback[QStringLiteral("vtb")].merge(QStringLiteral("vtb"),snapshot,QDateTime::currentDateTime());
+            private_->cashback_state.accept(QStringLiteral("vtb"), snapshot, QStringLiteral("Категории получены из ВТБ"), QDateTime::currentDateTime());
             persistBankCashback(QStringLiteral("vtb"));
-            private_->cashback_updated_at[QStringLiteral("vtb")] = QDateTime::currentDateTimeUtc();
-            private_->cashback_status[QStringLiteral("vtb")] = QStringLiteral("Категории получены из ВТБ");
             emit cashbackChanged();
         }, [this](QString error) {
             auto* finished = private_->vtb_cashback_sync.data();
             private_->vtb_cashback_sync.clear();
             if (finished) finished->deleteLater();
-            private_->cashback_status[QStringLiteral("vtb")] = std::move(error);
+            private_->cashback_state.setStatus(QStringLiteral("vtb"), std::move(error));
             emit cashbackChanged();
         }, this);
     private_->vtb_cashback_sync = coordinator;
@@ -566,13 +556,12 @@ void AppController::stopVtbCashback(const bool clearData) {
         private_->vtb_cashback_sync->cancel();
         private_->vtb_cashback_sync->deleteLater();
         private_->vtb_cashback_sync.clear();
-        private_->cashback_status[QStringLiteral("vtb")] = QStringLiteral("Обновление кэшбэка остановлено. Предыдущие данные сохранены.");
+        private_->cashback_state.setStatus(QStringLiteral("vtb"), QStringLiteral("Обновление кэшбэка остановлено. Предыдущие данные сохранены."));
     }
     if (clearData) {
-        private_->bank_cashback.remove(QStringLiteral("vtb"));
+        private_->cashback_state.clear(QStringLiteral("vtb"));
+        private_->cashback_state.setStatus(QStringLiteral("vtb"), {});
         persistBankCashback(QStringLiteral("vtb"), true);
-        private_->cashback_updated_at[QStringLiteral("vtb")] = {};
-        private_->cashback_status[QStringLiteral("vtb")].clear();
     }
     emit cashbackChanged();
 }
@@ -606,22 +595,20 @@ void AppController::startAlfaCashback() {
     if (locked_ || demo_mode_ || !alfa_connected_ || alfa_login_active_ || private_->alfa_sync_running || private_->alfa_cashback_sync) return;
     auto* page = static_cast<QWebView*>(private_->alfa_login->existingWebView());
     if (!page) return;
-    private_->cashback_status[QStringLiteral("alfa")] = QStringLiteral("Получаем выбранные категории кэшбэка…");
+    private_->cashback_state.setStatus(QStringLiteral("alfa"), QStringLiteral("Получаем выбранные категории кэшбэка…"));
     auto* coordinator = new CashbackSync(
         [this](CashbackSnapshot snapshot) {
             auto* finished = private_->alfa_cashback_sync.data();
             private_->alfa_cashback_sync.clear();
             if (finished) finished->deleteLater();
-            private_->bank_cashback[QStringLiteral("alfa")].merge(QStringLiteral("alfa"),snapshot,QDateTime::currentDateTime());
+            private_->cashback_state.accept(QStringLiteral("alfa"), snapshot, QStringLiteral("Категории получены из Альфа-Банка"), QDateTime::currentDateTime());
             persistBankCashback(QStringLiteral("alfa"));
-            private_->cashback_updated_at[QStringLiteral("alfa")] = QDateTime::currentDateTimeUtc();
-            private_->cashback_status[QStringLiteral("alfa")] = QStringLiteral("Категории получены из Альфа-Банка");
             emit cashbackChanged();
         }, [this](QString error) {
             auto* finished = private_->alfa_cashback_sync.data();
             private_->alfa_cashback_sync.clear();
             if (finished) finished->deleteLater();
-            private_->cashback_status[QStringLiteral("alfa")] = std::move(error);
+            private_->cashback_state.setStatus(QStringLiteral("alfa"), std::move(error));
             emit cashbackChanged();
         },this);
     private_->alfa_cashback_sync = coordinator;
@@ -634,13 +621,11 @@ void AppController::stopAlfaCashback(const bool clearData) {
         private_->alfa_cashback_sync->cancel();
         private_->alfa_cashback_sync->deleteLater();
         private_->alfa_cashback_sync.clear();
-        private_->cashback_status[QStringLiteral("alfa")] = QStringLiteral("Обновление кэшбэка остановлено. Предыдущие данные сохранены.");
+        private_->cashback_state.setStatus(QStringLiteral("alfa"), QStringLiteral("Обновление кэшбэка остановлено. Предыдущие данные сохранены."));
     }
     if (clearData) {
-        private_->bank_cashback.remove(QStringLiteral("alfa"));
+        private_->cashback_state.clear(QStringLiteral("alfa"));
         persistBankCashback(QStringLiteral("alfa"), true);
-        private_->cashback_updated_at.remove(QStringLiteral("alfa"));
-        private_->cashback_status.remove(QStringLiteral("alfa"));
     }
     emit cashbackChanged();
 }
@@ -649,22 +634,20 @@ void AppController::startOzonCashback() {
     if (locked_ || demo_mode_ || !ozon_connected_ || ozon_login_active_ || private_->ozon_sync_running || private_->ozon_cashback_sync) return;
     auto* page = static_cast<QWebView*>(private_->ozon_login->existingWebView());
     if (!page) return;
-    private_->cashback_status[QStringLiteral("ozon")] = QStringLiteral("Получаем выбранные категории кэшбэка…");
+    private_->cashback_state.setStatus(QStringLiteral("ozon"), QStringLiteral("Получаем выбранные категории кэшбэка…"));
     auto* coordinator = new CashbackSync(
         [this](CashbackSnapshot snapshot) {
             auto* finished = private_->ozon_cashback_sync.data();
             private_->ozon_cashback_sync.clear();
             if (finished) finished->deleteLater();
-            private_->bank_cashback[QStringLiteral("ozon")].merge(QStringLiteral("ozon"),snapshot,QDateTime::currentDateTime());
+            private_->cashback_state.accept(QStringLiteral("ozon"), snapshot, QStringLiteral("Категории получены из Ozon Банка"), QDateTime::currentDateTime());
             persistBankCashback(QStringLiteral("ozon"));
-            private_->cashback_updated_at[QStringLiteral("ozon")] = QDateTime::currentDateTimeUtc();
-            private_->cashback_status[QStringLiteral("ozon")] = QStringLiteral("Категории получены из Ozon Банка");
             emit cashbackChanged();
         }, [this](QString error) {
             auto* finished = private_->ozon_cashback_sync.data();
             private_->ozon_cashback_sync.clear();
             if (finished) finished->deleteLater();
-            private_->cashback_status[QStringLiteral("ozon")] = std::move(error);
+            private_->cashback_state.setStatus(QStringLiteral("ozon"), std::move(error));
             emit cashbackChanged();
         },this);
     private_->ozon_cashback_sync = coordinator;
@@ -677,13 +660,11 @@ void AppController::stopOzonCashback(const bool clearData) {
         private_->ozon_cashback_sync->cancel();
         private_->ozon_cashback_sync->deleteLater();
         private_->ozon_cashback_sync.clear();
-        private_->cashback_status[QStringLiteral("ozon")] = QStringLiteral("Обновление кэшбэка остановлено. Предыдущие данные сохранены.");
+        private_->cashback_state.setStatus(QStringLiteral("ozon"), QStringLiteral("Обновление кэшбэка остановлено. Предыдущие данные сохранены."));
     }
     if (clearData) {
-        private_->bank_cashback.remove(QStringLiteral("ozon"));
+        private_->cashback_state.clear(QStringLiteral("ozon"));
         persistBankCashback(QStringLiteral("ozon"), true);
-        private_->cashback_updated_at.remove(QStringLiteral("ozon"));
-        private_->cashback_status.remove(QStringLiteral("ozon"));
     }
     emit cashbackChanged();
 }
@@ -693,7 +674,7 @@ void AppController::startTBankCashback() {
         private_->tbank_cashback_sync || !private_->tbank_cashback_context || !private_->credentials) return;
     auto credential = private_->credentials->get(QString::fromLatin1(tbankRetailCredentialKey));
     if (!credential || !*credential) {
-        private_->cashback_status[QStringLiteral("tbank")] = QStringLiteral("Сессия для чтения кэшбэка Т-Банка недоступна.");
+        private_->cashback_state.setStatus(QStringLiteral("tbank"), QStringLiteral("Сессия для чтения кэшбэка Т-Банка недоступна."));
         emit cashbackChanged();
         return;
     }
@@ -702,20 +683,18 @@ void AppController::startTBankCashback() {
             auto* finished = private_->tbank_cashback_sync.data();
             private_->tbank_cashback_sync.clear();
             if (finished) finished->deleteLater();
-            private_->bank_cashback[QStringLiteral("tbank")].merge(QStringLiteral("tbank"),snapshot,QDateTime::currentDateTime());
+            private_->cashback_state.accept(QStringLiteral("tbank"), snapshot, QStringLiteral("Категории получены из Т-Банка"), QDateTime::currentDateTime());
             persistBankCashback(QStringLiteral("tbank"));
-            private_->cashback_updated_at[QStringLiteral("tbank")] = QDateTime::currentDateTimeUtc();
-            private_->cashback_status[QStringLiteral("tbank")] = QStringLiteral("Категории получены из Т-Банка");
             emit cashbackChanged();
         }, [this](QString error) {
             auto* finished = private_->tbank_cashback_sync.data();
             private_->tbank_cashback_sync.clear();
             if (finished) finished->deleteLater();
-            private_->cashback_status[QStringLiteral("tbank")] = std::move(error);
+            private_->cashback_state.setStatus(QStringLiteral("tbank"), std::move(error));
             emit cashbackChanged();
         },this);
     private_->tbank_cashback_sync = coordinator;
-    private_->cashback_status[QStringLiteral("tbank")] = QStringLiteral("Получаем выбранные категории кэшбэка…");
+    private_->cashback_state.setStatus(QStringLiteral("tbank"), QStringLiteral("Получаем выбранные категории кэшбэка…"));
     coordinator->start(std::move(**credential),*private_->tbank_cashback_context);
     emit cashbackChanged();
 }
@@ -725,13 +704,11 @@ void AppController::stopTBankCashback(const bool clearData) {
         private_->tbank_cashback_sync->cancel();
         private_->tbank_cashback_sync->deleteLater();
         private_->tbank_cashback_sync.clear();
-        private_->cashback_status[QStringLiteral("tbank")] = QStringLiteral("Обновление кэшбэка остановлено. Предыдущие данные сохранены.");
+        private_->cashback_state.setStatus(QStringLiteral("tbank"), QStringLiteral("Обновление кэшбэка остановлено. Предыдущие данные сохранены."));
     }
     if (clearData) {
-        private_->bank_cashback.remove(QStringLiteral("tbank"));
+        private_->cashback_state.clear(QStringLiteral("tbank"));
         persistBankCashback(QStringLiteral("tbank"), true);
-        private_->cashback_updated_at.remove(QStringLiteral("tbank"));
-        private_->cashback_status.remove(QStringLiteral("tbank"));
         private_->tbank_cashback_context.reset();
     }
     emit cashbackChanged();
@@ -755,11 +732,10 @@ QVariantList AppController::cashbackBanks() const {
     const auto current = CashbackBook::monthStart(QDate::currentDate());
     const auto append = [&](const QString& id, const QString& name, bool connected, bool running,
                             const QString& lastSync, const QString& status) {
-        const auto found = private_->bank_cashback.constFind(id);
-        const auto* automatic = found == private_->bank_cashback.cend() ? nullptr : &*found;
+        const auto* automatic = private_->cashback_state.find(id);
         const bool currentFromBank = automatic && automatic->months.contains(current);
         const bool nextFromBank = automatic && automatic->months.contains(current.addMonths(1));
-        const auto cashbackStatus = private_->cashback_status.value(id,QStringLiteral("Категории ещё не получены из банка"));
+        const auto cashbackStatus = private_->cashback_state.status(id);
         result.push_back(QVariantMap{{QStringLiteral("id"), id}, {QStringLiteral("name"), name},
             {QStringLiteral("connected"), connected}, {QStringLiteral("syncRunning"), running},
             {QStringLiteral("lastSync"), lastSync}, {QStringLiteral("syncStatus"), status},
@@ -768,8 +744,8 @@ QVariantList AppController::cashbackBanks() const {
                 (id == QStringLiteral("ozon") && !private_->ozon_cashback_sync.isNull()) ||
                 (id == QStringLiteral("tbank") && !private_->tbank_cashback_sync.isNull())},
             {QStringLiteral("cashbackStatus"), cashbackStatus},
-            {QStringLiteral("cashbackLastSync"), private_->cashback_updated_at.value(id).isValid()
-                ? private_->cashback_updated_at.value(id).toLocalTime().toString(QStringLiteral("dd.MM.yyyy HH:mm:ss")) : QString{}},
+            {QStringLiteral("cashbackLastSync"), private_->cashback_state.updatedAt(id).isValid()
+                ? private_->cashback_state.updatedAt(id).toLocalTime().toString(QStringLiteral("dd.MM.yyyy HH:mm:ss")) : QString{}},
             {QStringLiteral("currentFromBank"), currentFromBank}, {QStringLiteral("nextFromBank"), nextFromBank},
             {QStringLiteral("currentLastSync"), currentFromBank ? automatic->observedAt.value(current).toLocalTime().toString(QStringLiteral("dd.MM.yyyy HH:mm:ss")) : QString{}},
             {QStringLiteral("nextLastSync"), nextFromBank ? automatic->observedAt.value(current.addMonths(1)).toLocalTime().toString(QStringLiteral("dd.MM.yyyy HH:mm:ss")) : QString{}},
@@ -895,12 +871,7 @@ void AppController::initializeBalanceHistory(const QString& path) {
             private_->cashback_error = QStringLiteral("Не удалось прочитать сохранённый кэшбэк. Предыдущая запись сохранена.");
             continue;
         }
-        private_->bank_cashback.insert(bank, *snapshot);
-        for (const auto& observed : snapshot->observedAt) {
-            if (observed > private_->cashback_updated_at.value(bank))
-                private_->cashback_updated_at.insert(bank, observed);
-        }
-        private_->cashback_status.insert(bank, QStringLiteral("Сохранённые категории · последнее успешное обновление"));
+        private_->cashback_state.restore(bank, *snapshot);
     }
     auto wallets = repository.wallets();
     if (!wallets) return;
@@ -916,7 +887,7 @@ void AppController::persistBankCashback(const QString& bank, const bool remove) 
     if (remove) {
         if (repository.remove_cashback_snapshot(bank.toStdString())) return;
     } else {
-        const auto encoded = serialize_cashback_snapshot(bank, private_->bank_cashback.value(bank));
+        const auto encoded = serialize_cashback_snapshot(bank, private_->cashback_state.snapshot(bank));
         if (encoded && repository.save_cashback_snapshot(bank.toStdString(), encoded->toStdString())) return;
     }
     private_->cashback_error = QStringLiteral("Не удалось сохранить кэшбэк. Последняя сохранённая запись не изменена.");
@@ -2033,29 +2004,21 @@ void AppController::refreshBankConnections() {
         } else if (id == QStringLiteral("t-invest")) {
             busy = bool(private_->investment_sync);
         }
-        if (!row.available || id == QStringLiteral("zenplugins-local")) {
-            row.state = QStringLiteral("unavailable");
-        } else if (busy || login) {
-            row.state = QStringLiteral("updating");
-            row.status = login ? QStringLiteral("Вход в банк") : QStringLiteral("Обновляем…");
-        } else if (saved) {
-            const auto result = private_->connection_results.constFind(id);
-            if (result == private_->connection_results.cend()) {
-                row.state = QStringLiteral("saved");
-                row.status = retail ? QStringLiteral("Сессия сохранена · доступ не проверен")
-                                    : QStringLiteral("Токен сохранён · доступ не проверен");
-            } else if (*result) {
-                row.state = QStringLiteral("ready");
-                row.status = QStringLiteral("Данные получены");
-            } else {
-                row.state = QStringLiteral("error");
-                row.status = retail ? QStringLiteral("Сессия сохранена · данные не получены")
-                                    : QStringLiteral("Токен сохранён · данные не получены");
-            }
-        } else {
-            row.state = QStringLiteral("disconnected");
-            row.status = QStringLiteral("Не подключено");
-        }
+        const auto result = private_->connection_results.constFind(id);
+        const ConnectionState connection{
+            .available = row.available,
+            .externallyManaged = id == QStringLiteral("zenplugins-local"),
+            .saved = saved,
+            .loginActive = login,
+            .refreshActive = busy,
+            .lastRead = result == private_->connection_results.cend()
+                ? ConnectionReadResult::Unverified
+                : *result ? ConnectionReadResult::Succeeded : ConnectionReadResult::Failed,
+            .accessMaterial = retail ? ConnectionAccessMaterial::Session : ConnectionAccessMaterial::Token,
+        };
+        const auto presentation = connectionPresentation(connection, row.status);
+        row.state = presentation.state;
+        row.status = presentation.text;
         states.insert(id, QVariantMap{{QStringLiteral("text"), row.status},
                                      {QStringLiteral("state"), row.state}});
     }
@@ -2091,80 +2054,47 @@ void AppController::scheduleZenPluginAutoUpdateAfter(const QDateTime& from) {
 }
 
 void AppController::refreshTBankAutoUpdateSchedule() {
-    private_->tbank_auto_update_timer.stop();
-    private_->next_tbank_auto_update_at = {};
-    if (!tbankAutoUpdate() || !tbank_connected_) {
-        return;
-    }
-    if (const auto lastSync = settingsDateTime(
-            QStringLiteral("tbank/lastSyncAt"))) {
-        scheduleTBankAutoUpdateAfter(*lastSync);
-    }
+    refreshConnectionSchedule(private_->tbank_auto_update_timer, private_->next_tbank_auto_update_at,
+        tbankAutoUpdate() && tbank_connected_,
+        settingsDateTime(QStringLiteral("tbank/lastSyncAt")));
 }
 
 void AppController::scheduleTBankAutoUpdateAfter(const QDateTime& from) {
-    if (!tbankAutoUpdate() || !tbank_connected_) {
-        return;
-    }
-    private_->next_tbank_auto_update_at =
-        scheduleAutoUpdate(private_->tbank_auto_update_timer, from);
+    scheduleConnectionRefreshAfter(private_->tbank_auto_update_timer, private_->next_tbank_auto_update_at,
+        tbankAutoUpdate() && tbank_connected_, from);
 }
 
 void AppController::refreshAlfaAutoUpdateSchedule() {
-    private_->alfa_auto_update_timer.stop();
-    private_->next_alfa_auto_update_at = {};
-    if (!alfaAutoUpdate() || !alfa_connected_) {
-        return;
-    }
-    if (const auto lastSync = settingsDateTime(QStringLiteral("alfa/lastSyncAt"))) {
-        scheduleAlfaAutoUpdateAfter(*lastSync);
-    }
+    refreshConnectionSchedule(private_->alfa_auto_update_timer, private_->next_alfa_auto_update_at,
+        alfaAutoUpdate() && alfa_connected_,
+        settingsDateTime(QStringLiteral("alfa/lastSyncAt")));
 }
 
 void AppController::scheduleAlfaAutoUpdateAfter(const QDateTime& from) {
-    if (!alfaAutoUpdate() || !alfa_connected_) {
-        return;
-    }
-    private_->next_alfa_auto_update_at =
-        scheduleAutoUpdate(private_->alfa_auto_update_timer, from);
+    scheduleConnectionRefreshAfter(private_->alfa_auto_update_timer, private_->next_alfa_auto_update_at,
+        alfaAutoUpdate() && alfa_connected_, from);
 }
 
 void AppController::refreshVtbAutoUpdateSchedule() {
-    private_->vtb_auto_update_timer.stop();
-    private_->next_vtb_auto_update_at = {};
-    if (!vtbAutoUpdate() || !vtb_connected_) {
-        return;
-    }
-    if (const auto lastSync = settingsDateTime(QStringLiteral("vtb/lastSyncAt"))) {
-        scheduleVtbAutoUpdateAfter(*lastSync);
-    }
+    refreshConnectionSchedule(private_->vtb_auto_update_timer, private_->next_vtb_auto_update_at,
+        vtbAutoUpdate() && vtb_connected_,
+        settingsDateTime(QStringLiteral("vtb/lastSyncAt")));
 }
 
 void AppController::scheduleVtbAutoUpdateAfter(const QDateTime& from) {
-    if (!vtbAutoUpdate() || !vtb_connected_) {
-        return;
-    }
-    private_->next_vtb_auto_update_at =
-        scheduleAutoUpdate(private_->vtb_auto_update_timer, from);
+    scheduleConnectionRefreshAfter(private_->vtb_auto_update_timer, private_->next_vtb_auto_update_at,
+        vtbAutoUpdate() && vtb_connected_, from);
 }
 
 void AppController::refreshOzonAutoUpdateSchedule() {
-    private_->ozon_auto_update_timer.stop();
-    private_->next_ozon_auto_update_at = {};
-    if (!ozonAutoUpdate() || !ozon_connected_) {
-        return;
-    }
-    if (const auto lastSync = settingsDateTime(QStringLiteral("ozon/lastSyncAt"))) {
-        scheduleOzonAutoUpdateAfter(*lastSync);
-    }
+    refreshConnectionSchedule(private_->ozon_auto_update_timer, private_->next_ozon_auto_update_at,
+        ozonAutoUpdate() && ozon_connected_,
+        settingsDateTime(QStringLiteral("ozon/lastSyncAt")));
 }
 
 void AppController::scheduleOzonAutoUpdateAfter(const QDateTime& from) {
-    if (!ozonAutoUpdate() || !ozon_connected_) {
-        return;
-    }
-    private_->next_ozon_auto_update_at =
-        scheduleAutoUpdate(private_->ozon_auto_update_timer, from);
+    scheduleConnectionRefreshAfter(private_->ozon_auto_update_timer, private_->next_ozon_auto_update_at,
+        ozonAutoUpdate() && ozon_connected_, from);
 }
 
 void AppController::loadDemoData() {
@@ -3622,7 +3552,7 @@ bool AppController::synchronizeTBank() {
                     }
                     private_->tbank_cashback_context = std::move(*context);
                 }
-                else private_->cashback_status[QStringLiteral("tbank")] = context.error();
+                else private_->cashback_state.setStatus(QStringLiteral("tbank"), context.error());
             }
             return batch;
         },
