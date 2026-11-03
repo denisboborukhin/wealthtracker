@@ -92,9 +92,9 @@ TEST_CASE("VTB is an available embedded retail connection") {
         WEALTHTRACKER_SOURCE_DIR "/ui/qml/pages/ConnectionsPage.qml"));
     REQUIRE(page.open(QIODevice::ReadOnly));
     const auto source = page.readAll();
-    CHECK(source.contains(QByteArrayLiteral("page.app.beginVtbLogin()")));
-    CHECK(source.contains(QByteArrayLiteral("page.app.vtbWebView")));
-    CHECK(source.contains(QByteArrayLiteral("page.app.synchronizeVtb()")));
+    CHECK(source.contains(QByteArrayLiteral("selectedRetail.beginLogin()")));
+    CHECK(source.contains(QByteArrayLiteral("selectedRetail.webView")));
+    CHECK(source.contains(QByteArrayLiteral("selectedRetail.synchronize()")));
 
     QFile coordinator(QStringLiteral(
         WEALTHTRACKER_SOURCE_DIR "/src/app/vtb_login.cppm"));

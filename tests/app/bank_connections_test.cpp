@@ -398,10 +398,10 @@ TEST_CASE("T-Bank login UI embeds a coordinator-owned native WebView") {
         WEALTHTRACKER_SOURCE_DIR "/ui/qml/pages/ConnectionsPage.qml"));
     REQUIRE(page.open(QIODevice::ReadOnly));
     const auto source = page.readAll();
-    CHECK(source.contains(QByteArrayLiteral("page.app.beginTBankLogin()")));
+    CHECK(source.contains(QByteArrayLiteral("selectedRetail.beginLogin()")));
     CHECK(source.contains(QByteArrayLiteral("WindowContainer {")));
     CHECK(source.contains(QByteArrayLiteral(
-        "page.app.tbankWebView")));
+        "selectedRetail.webView")));
     CHECK(source.contains(QByteArrayLiteral(
         "? connectionDialog.retailWebView : null")));
     CHECK_FALSE(source.contains(QByteArrayLiteral("sessionid")));
@@ -466,8 +466,8 @@ TEST_CASE("Alfa login UI projects bounded finance fields without reading cookies
         WEALTHTRACKER_SOURCE_DIR "/ui/qml/pages/ConnectionsPage.qml"));
     REQUIRE(page.open(QIODevice::ReadOnly));
     const auto source = page.readAll();
-    CHECK(source.contains(QByteArrayLiteral("page.app.beginAlfaLogin()")));
-    CHECK(source.contains(QByteArrayLiteral("page.app.alfaWebView")));
+    CHECK(source.contains(QByteArrayLiteral("selectedRetail.beginLogin()")));
+    CHECK(source.contains(QByteArrayLiteral("selectedRetail.webView")));
     CHECK(source.contains(QByteArrayLiteral(
         "Т-Банк, Альфа-Банк, ВТБ и Ozon Банк используют встроенные локальные коннекторы")));
     CHECK_FALSE(source.contains(QByteArrayLiteral(
