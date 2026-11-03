@@ -238,3 +238,29 @@ TEST_CASE("Ozon requires explicit installment coverage even without a widget") {
         CHECK(parsed->batch->accounts.size() == 1);
     } else CHECK_FALSE(parsed->batch);
 }
+
+TEST_CASE("Ozon expires pre-login reads and permits a fresh authenticated attempt") {
+    QJSEngine engine;
+    REQUIRE_FALSE(engine.evaluate(QStringLiteral(R"JS(
+      var globalThis=this; var location={origin:'https://finance.ozon.ru'};
+      var aborted=0; var now=10000; Date.now=function(){return now};
+      var old={status:'running',cancelled:false,attempt:1,startedAt:0,
+        controller:{abort:function(){aborted++}}};
+      globalThis.__wealthtrackerOzonSync=old;
+    )JS")).isError());
+    const auto run = [&] { return engine.evaluate(wealthtracker::app::ozon_expire_pending_read_script()); };
+    engine.evaluate("now=9999");
+    CHECK_FALSE(run().toBool());
+    CHECK(engine.evaluate("aborted").toInt() == 0);
+    engine.evaluate("now=10000");
+    CHECK(run().toBool());
+    CHECK(engine.evaluate("aborted").toInt() == 1);
+    CHECK(engine.evaluate("old.cancelled").toBool());
+    CHECK(engine.evaluate("__wealthtrackerOzonSync.status").toString() == "waiting");
+    CHECK(engine.evaluate("__wealthtrackerOzonSync.retryAt").toInt() == 10500);
+    CHECK_FALSE(run().toBool());
+    engine.evaluate("__wealthtrackerOzonSync={status:'ready',startedAt:0,cancelled:false}");
+    CHECK_FALSE(run().toBool());
+    engine.evaluate("__wealthtrackerOzonSync=old;old.cancelled=false;location.origin='https://sso.ozon.ru'");
+    CHECK_FALSE(run().toBool());
+}

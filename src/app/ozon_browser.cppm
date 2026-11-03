@@ -28,8 +28,24 @@ struct OzonFinancialProjection {
     QString reasonCode;
 };
 
+// A dashboard read started before authentication must not hold the new session forever.
+[[nodiscard]] const QString& ozon_expire_pending_read_script() {
+    static const QString script = QStringLiteral(R"JS((() => {
+  if (location.origin !== 'https://finance.ozon.ru') return false
+  const state = globalThis.__wealthtrackerOzonSync
+  if (!state || state.cancelled || state.status !== 'running' ||
+      typeof state.startedAt !== 'number' || Date.now() - state.startedAt < 10000) return false
+  state.cancelled = true
+  state.controller?.abort()
+  globalThis.__wealthtrackerOzonSync = {status:'waiting',cancelled:false,
+    attempt:state.attempt,reasonCode:'OZON-READ',retryAt:Date.now() + 500}
+  return true
+})())JS");
+    return script;
+}
+
 [[nodiscard]] const QString& ozon_sync_start_script() {
-    static const QString script = QStringLiteral(R"OZON((() => {
+    static const QString script = ozon_expire_pending_read_script() + QStringLiteral(";\n") + QStringLiteral(R"OZON((() => {
   try {
     if (location.origin !== 'https://finance.ozon.ru') return 'wrong-origin'
     const key = '__wealthtrackerOzonSync'
@@ -39,7 +55,7 @@ struct OzonFinancialProjection {
     const attempt = old && !old.cancelled ? old.attempt + 1 : 1
     if (old?.controller) old.controller.abort()
     const state = globalThis[key] = {status:'running', cancelled:false,
-      controller:new AbortController(), attempt:attempt}
+      controller:new AbortController(), attempt:attempt, startedAt:Date.now()}
     const active = () => globalThis[key] === state && !state.cancelled
     const fail = code => { throw {code:code} }
     const prefix = 'https://cdn2.ozone.ru/s3/bozon-fe-main/release/apps/main/_app/immutable/chunks/'

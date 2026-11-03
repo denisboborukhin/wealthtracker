@@ -287,7 +287,14 @@ private:
             return;
         }
         if (projection->stage == OzonProjectionStage::Waiting) {
-            if (!waiting_observed_) reportStatus(QStringLiteral("Проверяем доступ к счетам Ozon Банка…"));
+            if (!waiting_observed_ || projection->reasonCode != waiting_reason_) {
+                reportStatus(projection->reasonCode == QStringLiteral("OZON-READ")
+                    ? QStringLiteral("Запрос Ozon Банка не завершился. Повторяем проверку доступа (OZON-READ)…")
+                    : projection->reasonCode == QStringLiteral("OZON-MODULE")
+                        ? QStringLiteral("Ожидаем модуль счетов Ozon Банка (OZON-MODULE)…")
+                        : QStringLiteral("Проверяем доступ к счетам Ozon Банка…"));
+            }
+            waiting_reason_ = projection->reasonCode;
             waiting_observed_ = true;
             return;
         }
@@ -348,6 +355,7 @@ private:
     bool probe_pending_ = false;
     bool authentication_observed_ = false;
     bool waiting_observed_ = false;
+    QString waiting_reason_;
 };
 
 } // namespace wealthtracker::app

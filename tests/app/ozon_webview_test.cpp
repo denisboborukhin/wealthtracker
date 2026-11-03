@@ -141,3 +141,27 @@ TEST_CASE("Ozon keeps the login page open while its dashboard module is unavaila
     controller.cancelOzonLogin();
     CHECK_FALSE(controller.ozonLoginActive());
 }
+
+TEST_CASE("Ozon login recovers from a read left pending before authentication") {
+    SettingsScope settings;
+    AppController controller(nullptr, nullptr);
+    controller.beginOzonLogin();
+    auto* view = static_cast<QWebView*>(controller.ozonWebView());
+    REQUIRE(view);
+    view->loadHtml(QStringLiteral(R"HTML(<html><script>
+      const pending = {status:'running',cancelled:false,startedAt:Date.now()-11000,
+        attempt:1,controller:{abort:function(){}}};
+      globalThis.__wealthtrackerOzonSync = pending;
+      const timer = setInterval(function() {
+        if (!pending.cancelled) return;
+        clearInterval(timer);
+        globalThis.__wealthtrackerOzonSync = {status:'ready',cancelled:false,
+          installmentDebt:null,page:{widgets:[{type:'MAIN_ACCOUNT',version:1,status:'READY',
+          data:{__typename:'MainAccountData',balanceCents:12345}}]}};
+      },50);
+    </script>Synthetic authenticated dashboard</html>)HTML"), controller.ozonLoginUrl());
+    REQUIRE(waitFor([&] { return controller.ozonConnected(); }));
+    CHECK_FALSE(controller.ozonLoginActive());
+    CHECK(controller.accounts()->rowCount() == 1);
+    CHECK(controller.netWorth() == QStringLiteral("123,45 ₽"));
+}
