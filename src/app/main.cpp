@@ -28,7 +28,7 @@ int main(int argc, char* argv[]) {
     }
     QGuiApplication::setApplicationName(QStringLiteral("WealthTracker"));
     QGuiApplication::setOrganizationName(QStringLiteral("WealthTracker"));
-    QGuiApplication::setApplicationVersion(QStringLiteral("0.1.0"));
+    QGuiApplication::setApplicationVersion(QStringLiteral(WT_APPLICATION_VERSION));
     QQuickStyle::setStyle(QStringLiteral("Basic"));
 
 #if defined(Q_OS_MACOS)

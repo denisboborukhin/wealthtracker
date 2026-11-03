@@ -1,8 +1,14 @@
 cmake_minimum_required(VERSION 3.30)
 
+set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/version.json")
+file(READ "${CMAKE_CURRENT_SOURCE_DIR}/version.json" release_metadata)
+string(JSON product_version GET "${release_metadata}" product)
+string(JSON android_version_name GET "${release_metadata}" androidName)
+string(JSON android_version_code GET "${release_metadata}" androidCode)
+
 project(
     WealthTracker
-    VERSION 0.1.0
+    VERSION "${product_version}"
     DESCRIPTION "Local-first personal finance and investment tracker"
     LANGUAGES CXX
 )

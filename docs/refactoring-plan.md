@@ -159,3 +159,20 @@ a separate scope decision, not a prerequisite for simplifying the active app.
   Schedule user-run smoke checks for touched bank adapters before release.
 - Keep each stage revertible through its commits. Any storage format change needs
   its own migration and rollback design; none is required by this plan.
+
+## Implementation progress
+
+Implemented so far:
+- Credential migration preserves retryable state on failed replacement writes,
+  unavailable backends and malformed input; successful retry/cleanup is tested.
+- Removed unused LineChart/netWorthSeries and overwritten status initialization.
+- Removed the unused direct Qt Concurrent dependency; desktop and Android build.
+- Corrected retention/schema/holding-label documentation.
+- Centralized product/Android/Conan versions in version.json and added
+  scripts/verify.sh with docs/verification.md.
+
+Still pending: shared test helpers and directly importable QML test module;
+controller domain ownership extraction; unified connection state/scheduling;
+connection UI components/presentation adapter. Unintegrated product capabilities
+and unreachable pages are retained pending the scope decisions above. This
+progress record does not mark the full plan complete.

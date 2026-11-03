@@ -1,14 +1,20 @@
 from conan import ConanFile
 from conan.tools.cmake import cmake_layout
+import json
+from pathlib import Path
 
 
 class WealthTrackerRecipe(ConanFile):
     name = "wealthtracker"
-    version = "0.1.0"
+    exports = "version.json"
     package_type = "application"
 
     settings = "os", "arch", "compiler", "build_type"
     generators = "CMakeDeps", "CMakeToolchain", "VirtualRunEnv"
+
+    def set_version(self):
+        metadata = json.loads((Path(self.recipe_folder) / "version.json").read_text(encoding="utf-8"))
+        self.version = metadata["product"]
 
     default_options = {
         "sqlcipher/*:shared": False,

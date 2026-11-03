@@ -38,7 +38,8 @@ cmake -S . -B build/android-release -G Ninja \
     -DCMAKE_EXPORT_COMPILE_COMMANDS=ON -DBUILD_TESTING=OFF \
     -DCMAKE_BUILD_TYPE=Release -DQT_ANDROID_DEPLOYMENT_TYPE=Debug
 cmake --build build/android-release --target wealthtracker_make_apk -j 6
-apk=android/output/wealthtracker-0.1.10-debug.apk
+android_version=$(python -c 'import json; print(json.load(open("version.json"))["androidName"])')
+apk="android/output/wealthtracker-${android_version}-debug.apk"
 cp build/android-release/ui/qml/android-build/wealthtracker.apk "$apk"
 "${ANDROID_SDK_ROOT}/build-tools/36.0.0/apksigner" verify --verbose "$apk"
 shasum -a 256 "$apk" > "${apk}.sha256"
