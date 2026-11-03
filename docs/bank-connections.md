@@ -291,3 +291,10 @@ Bundles run with the current user's file and network permissions. Review and
 pin their source before building and running them. WealthTracker does not
 include ZenPlugins source or generated bundles. See
 [Security design](security-design.md#external-plugins) for the process boundary.
+
+The Ozon main-page reader accepts two observed public module versions under the
+exact `bozon-fe-main/release/apps/main/_app/immutable/chunks/` CDN path:
+`BKxA_2Oi.js` export `Mi` (observed November 3, 2026) and `B6d1cMwe.js`
+export `ki`. Each must expose a `mainPage` handler declared as the read-only
+`GetMainPage` query. Unknown modules remain unselected. The current module was
+identified from public software asset URLs, without reading bank data responses.

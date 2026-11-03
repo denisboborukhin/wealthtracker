@@ -62,16 +62,18 @@ struct OzonFinancialProjection {
     // Import only the exact software asset already loaded by the bank dashboard.
     const assets = performance.getEntriesByType('resource').map(e => e.name)
     for (const script of document.scripts) if (script.src) assets.push(script.src)
-    const expected = prefix + 'B6d1cMwe.js'
-    if (!assets.includes(expected)) {
+    const readers = [{url:prefix + 'BKxA_2Oi.js',exportName:'Mi'},
+      {url:prefix + 'B6d1cMwe.js',exportName:'ki'}]
+    const selected = readers.find(reader => assets.includes(reader.url))
+    if (!selected) {
       state.status = 'waiting'
       state.reasonCode = 'OZON-MODULE'
       state.retryAt = Date.now() + 500
       return state.status
     }
-    import(expected).then(module => {
+    import(selected.url).then(module => {
       if (!active()) return
-      const handler = module.ki
+      const handler = module[selected.exportName]
       if (typeof handler !== 'function' || handler.url !== 'mainPage' ||
           handler.declaration?.operationName !== 'GetMainPage' ||
           handler.declaration?.operationType !== 'query') fail('OZON-MODULE')

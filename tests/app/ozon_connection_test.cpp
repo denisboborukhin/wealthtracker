@@ -5,6 +5,10 @@
 #include <QJsonArray>
 #include <QJsonDocument>
 #include <QJsonObject>
+#include <QCoreApplication>
+#include <QRegularExpression>
+#include <QProcess>
+#include <QStandardPaths>
 #include <QUrl>
 
 import wt.connectors;
@@ -124,7 +128,7 @@ TEST_CASE("Ozon script reuses only the observed dashboard software and bank read
     const auto& script = ozon_sync_start_script();
     CHECK(script.contains(QStringLiteral("/bozon-fe-main/release/apps/main/_app/immutable/chunks/")));
     CHECK(script.contains(QStringLiteral("B6d1cMwe.js")));
-    CHECK(script.contains(QStringLiteral("assets.includes(expected)")));
+    CHECK(script.contains(QStringLiteral("assets.includes(reader.url)")));
     CHECK(script.contains(QStringLiteral("handler.url !== 'mainPage'")));
     CHECK(script.contains(QStringLiteral("operationType !== 'query'")));
     CHECK(script.contains(QStringLiteral("handler.call({}, {signal:state.controller.signal})")));
@@ -263,4 +267,39 @@ TEST_CASE("Ozon expires pre-login reads and permits a fresh authenticated attemp
     CHECK_FALSE(run().toBool());
     engine.evaluate("__wealthtrackerOzonSync=old;old.cancelled=false;location.origin='https://sso.ozon.ru'");
     CHECK_FALSE(run().toBool());
+}
+
+TEST_CASE("Ozon selects only verified main-page modules and their declared read export") {
+    const auto node = QStandardPaths::findExecutable(QStringLiteral("node"));
+    if (node.isEmpty()) SKIP("Node.js is required for the async dashboard reader fixture");
+    QString asset = QStringLiteral("BKxA_2Oi.js");
+    QString exportName = QStringLiteral("Mi");
+    bool known = true;
+    SECTION("Current module") {}
+    SECTION("Previous verified module") { asset = "B6d1cMwe.js"; exportName = "ki"; }
+    SECTION("Unknown module is never imported") { asset = "unknown.js"; known = false; }
+    const auto setup = QStringLiteral(R"JS(
+      var globalThis=this;
+      var location={origin:'https://finance.ozon.ru'};
+      var document={scripts:[]}; var calls=0; var imported='';
+      var AbortController=function(){this.signal={};this.abort=function(){}};
+      var performance={getEntriesByType:function(){return [{name:
+        'https://cdn2.ozone.ru/s3/bozon-fe-main/release/apps/main/_app/immutable/chunks/%1'}]}};
+      var handler=function(){calls++;return Promise.reject({code:'OZON-READ'})};
+      handler.url='mainPage';handler.declaration={operationName:'GetMainPage',operationType:'query'};
+      var fixtureModule={};fixtureModule['%2']=handler;
+    )JS").arg(asset,exportName);
+    auto script = wealthtracker::app::ozon_sync_start_script();
+    script.replace(QStringLiteral("import("), QStringLiteral("__import("));
+    QProcess process;
+    process.start(node, {QStringLiteral("-e"), setup
+        + QStringLiteral("var __import=function(url){imported=url;return Promise.resolve(fixtureModule)};\n")
+        + script + QStringLiteral(";setImmediate(()=>process.stdout.write(JSON.stringify({calls,imported})))")});
+    REQUIRE(process.waitForFinished(5000));
+    INFO(process.readAllStandardError().toStdString());
+    REQUIRE(process.exitCode() == 0);
+    const auto result = QJsonDocument::fromJson(process.readAllStandardOutput()).object();
+    CHECK(result["calls"].toInt() == (known ? 1 : 0));
+    if (known) CHECK(result["imported"].toString().endsWith(asset));
+    else CHECK(result["imported"].toString().isEmpty());
 }
