@@ -174,48 +174,15 @@ Item {
                     wrapMode: Text.WordWrap
                 }
 
-                ColumnLayout {
+                BankTokenEditor {
+                    id: tokenEditor
                     Layout.fillWidth: true
+                    connectorId: connectionDialog.connectorId
+                    connected: connectionDialog.connected
                     visible: connectionDialog.available
                                && !connectionDialog.connected
                                && !connectionDialog.builtinRetail
                                && !connectionDialog.localPlugin
-                    spacing: 7
-
-                    Text {
-                        text: qsTr("Токен только для чтения")
-                        color: Theme.text
-                        font.pixelSize: 12
-                        font.weight: Font.Medium
-                    }
-                    TextField {
-                        id: tokenField
-                        Layout.fillWidth: true
-                        Layout.preferredHeight: 40
-                        echoMode: TextInput.Password
-                        placeholderText: connectionDialog.connectorId === "alfa-api"
-                                         ? qsTr("Access token Альфа-Банка")
-                                         : connectionDialog.connectorId === "tbank-business"
-                                           ? qsTr("T-API токен")
-                                           : connectionDialog.connectorId === "modulbank"
-                                             ? qsTr("API-токен или sandboxtoken")
-                                             : qsTr("Read-only токен Т-Инвест")
-                        color: Theme.text
-                        selectByMouse: true
-                        background: Rectangle {
-                            color: Theme.surface
-                            border.color: tokenField.activeFocus
-                                          ? Theme.primary : Theme.borderStrong
-                            radius: 7
-                        }
-                    }
-                    Text {
-                        Layout.fillWidth: true
-                        text: qsTr("Токен хранится в системном хранилище ключей и используется только для чтения.")
-                        color: Theme.textMuted
-                        font.pixelSize: 11
-                        wrapMode: Text.WordWrap
-                    }
                 }
 
                 StatusBadge {
@@ -570,11 +537,11 @@ Item {
                                  && !connectionDialog.localPlugin
                         text: qsTr("Сохранить токен")
                         primary: true
-                        enabled: tokenField.text.trim().length > 0
+                        enabled: tokenEditor.canSave
                         onClicked: {
                             if (page.app.saveBankToken(connectionDialog.connectorId,
-                                                  tokenField.text)) {
-                                tokenField.clear()
+                                                  tokenEditor.token)) {
+                                tokenEditor.clear()
                                 connectionDialog.close()
                             }
                         }
@@ -767,7 +734,7 @@ Item {
                 selectedRetail.cancelLogin()
             const hostWindow = page.hostWindow
             if (Qt.platform.os === "android" && hostWindow) Qt.callLater(() => hostWindow.requestActivate())
-            tokenField.clear()
+            tokenEditor.clear()
             pluginPromptField.clear()
             clearSensitivePluginFields()
         }

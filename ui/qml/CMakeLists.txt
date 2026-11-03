@@ -19,6 +19,7 @@ qt_add_qml_module(
         components/MetricCard.qml
         components/BalanceHistoryPanel.qml
         components/RetailConnection.qml
+        components/BankTokenEditor.qml
         components/ConnectionList.qml
         components/SectionCard.qml
         components/ActionButton.qml
