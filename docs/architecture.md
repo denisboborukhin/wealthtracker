@@ -193,3 +193,12 @@ The connection list is rendered by `ConnectionList.qml`; `RetailConnection.qml`
 adapts only the four supported retail IDs to existing controller properties and
 commands. Unknown IDs have no retail commands. Native view ownership and deferred
 cleanup remain with the existing login dialog/coordinators.
+
+`HistoryStore` owns the SQLCipher connection, capture collection, saved wallet
+configuration and observation times. The controller uses read-only views and
+explicit save/remove/append methods, and retains presentation notifications.
+Initialization preserves the existing key name, schema and restoration order;
+missing keys never replace an existing database. Wallet history failures do not
+change the bank history error. `CredentialBackend.hpp` is the shared credential
+boundary used by the controller and store. `BankTokenEditor.qml` owns token entry,
+password masking, save eligibility and clearing after save/dialog closure.

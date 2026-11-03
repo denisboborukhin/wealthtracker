@@ -186,7 +186,22 @@ Further implementation (current refactoring pass):
   QML test command.
 
 Still pending: directly importable QML test module without source adaptation;
-remaining controller domain ownership (history, crypto, plugin and financial
-projection); unified activity ownership; token/plugin/login content components.
+remaining controller domain ownership (crypto, plugin and financial
+projection); unified activity ownership; plugin/login content components.
 Unintegrated product capabilities and unreachable pages are retained pending the
 scope decisions above. This record does not mark the full plan complete.
+
+History/token extraction pass:
+- HistoryStore now owns the SQLCipher connection, capture vector, persisted wallet
+  configuration and balance observation times. Read-only accessors serve projections;
+  append/save/remove operations keep mutation inside the service.
+- The credential-store interface moved to its own shared boundary header without
+  changing AppController's public include contract.
+- Existing initialization order is retained: cashback restoration precedes wallet
+  loading, and the store becomes active only after all required reads succeed.
+- Bank completeness/errors and wallet append errors retain their separate policies.
+- BankTokenEditor owns the masked field, save eligibility and sensitive text reset.
+
+Remaining wallet work is live portfolio state/refresh orchestration, not persisted
+wallet configuration. Remaining large controller responsibilities are plugin
+orchestration and financial projection. The full plan remains in progress.

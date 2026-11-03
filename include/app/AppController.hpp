@@ -1,6 +1,7 @@
 #pragma once
 
 #include "app/FinanceModels.hpp"
+#include "app/CredentialBackend.hpp"
 
 #include <QByteArray>
 #include <QDateTime>
@@ -23,17 +24,6 @@ namespace wealthtracker::app {
 
 class AppControllerPrivate;
 
-class CredentialBackend {
-public:
-    virtual ~CredentialBackend() = default;
-    [[nodiscard]] virtual bool supported() const noexcept = 0;
-    [[nodiscard]] virtual std::expected<void, QString>
-    put(const QString& key, const QByteArray& secret) = 0;
-    [[nodiscard]] virtual std::expected<std::optional<QByteArray>, QString>
-    get(const QString& key) = 0;
-    [[nodiscard]] virtual std::expected<void, QString>
-    remove(const QString& key) = 0;
-};
 
 class AppController final : public QObject {
     Q_OBJECT

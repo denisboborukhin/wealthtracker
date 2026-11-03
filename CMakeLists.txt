@@ -169,6 +169,7 @@ target_sources(
             src/app/cashback_sync.cppm
             src/app/alfa_cashback.cppm
             src/app/tbank_cashback.cppm
+            src/app/history_store.cppm
             src/app/balance_history_view.cppm
             src/app/transfer_matching.cppm
             src/app/bank_sync.cppm
@@ -292,6 +293,7 @@ if(BUILD_TESTING)
 
     add_executable(app_tests
         tests/app/test_main.cpp
+        tests/app/history_store_test.cpp
         tests/app/connection_state_test.cpp
         tests/app/finance_models_test.cpp
         tests/app/reporting_test.cpp
