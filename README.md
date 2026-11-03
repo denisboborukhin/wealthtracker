@@ -6,7 +6,8 @@ operations, cash-flow reports, investment holdings, and public Ethereum wallets 
 The app starts empty on first launch. Demonstration data can be enabled in Settings.
 Balance observations from successful connections and refreshes are saved in an
 encrypted local database and remain available after restart or disconnect.
-Other synchronized financial data lives in memory and is lost when the app exits.
+Validated retail balances and automatic cashback are restored from the encrypted
+history store. Transaction and investment holding details require a fresh synchronization.
 Connection settings and credentials are stored separately. On macOS, retail browser data
 is retained across launches; a bank can still require reauthentication when its
 session expires.
@@ -58,8 +59,8 @@ next month after balance synchronization. Cashback has its own status and
 refresh time; a failed read preserves the previous result.
 Use **Обновить банк** on a bank's card to refresh only that bank, or **Обновить банки** for all connected banks. Manual entries
 survive restart and remain a fallback when automatic data is unavailable.
-Automatically read bank data stays in memory and
-is refreshed again after restart. See
+Automatic cashback snapshots are saved in the encrypted history store and
+restored after restart; failed refreshes preserve their observation times. See
 [Bank connections](docs/bank-connections.md#cashback).
 
 **Подключения** distinguishes saved sessions awaiting verification, ongoing refreshes,

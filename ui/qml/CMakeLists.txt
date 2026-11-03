@@ -17,7 +17,6 @@ qt_add_qml_module(
         Main.qml
         Theme.qml
         components/MetricCard.qml
-        components/LineChart.qml
         components/BalanceHistoryPanel.qml
         components/SectionCard.qml
         components/ActionButton.qml
@@ -43,11 +42,16 @@ target_link_libraries(
     PRIVATE
         app
         Qt6::QuickControls2
-        Qt6::Concurrent
         OpenSSL::SSL
 )
 enable_strict_warnings(wealthtracker)
 enable_sanitizers(wealthtracker)
+
+if(ANDROID)
+    target_compile_definitions(wealthtracker PRIVATE WT_APPLICATION_VERSION="${android_version_name}")
+else()
+    target_compile_definitions(wealthtracker PRIVATE WT_APPLICATION_VERSION="${PROJECT_VERSION}")
+endif()
 
 set_target_properties(
     wealthtracker

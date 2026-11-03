@@ -33,6 +33,7 @@ recorded history remains available.
 | --- | --- |
 | Retail T-Bank | `TBankLoginCoordinator` validates a session; `BankSyncCoordinator` reads accounts and balances |
 | Retail Alfa-Bank | `AlfaLoginCoordinator` projects accounts and balances from dashboard bootstrap data |
+| Ozon Bank | `OzonLoginCoordinator` reads main/savings balances and installment debt; cashback uses its loyalty context |
 | Retail VTB | `VtbLoginCoordinator` uses the authenticated page client to read products and balances |
 | T-Invest | `InvestmentSyncCoordinator` lists accounts and reads one RUB-valued portfolio per account |
 | Alfa B2C, T-Bank Business, Modulbank | `BankSyncCoordinator` reads accounts and bounded operation pages or statements |
@@ -90,8 +91,8 @@ reuses validated account loyalty IDs and makes the bank frontend's exact bonuses
 read through the existing native session. Each automatic month has explicit
 coverage, selection state, and an observation timestamp. Partial refreshes
 replace only covered months; never-fetched months use manual fallbacks.
-Automatic snapshots stay in memory, while manual selections retain their
-original settings format.
+Automatic snapshots persist in the encrypted balance-history store (schema v4),
+while manual selections retain their original settings format.
 
 [Alfa cashback](../src/app/alfa_cashback.cppm) loads the bank-owned loyalty
 reader module without mounting its UI. It discovers monthly baskets through
@@ -111,8 +112,8 @@ connections within three days. Matches are deterministic and one-to-one;
 ambiguous batches remain unclassified. Transfers stay visible in the operations
 list and are excluded from cash-flow and category totals.
 
-T-Invest portfolio value uses the API total. Holding rows use instrument
-identifiers and quantity times current price in the instrument's currency.
+T-Invest portfolio value uses the API total. Holding rows use validated portfolio tickers and instrument reference names,
+with quantity times current price in the instrument's currency.
 
 Current financial batches remain in process memory. Balance history is stored
 separately in `balance-history.db` under Qt's `AppDataLocation`, using SQLCipher.
@@ -132,6 +133,7 @@ complete connection capture atomically, including an empty account set. Account
 identity includes the connection and currency, and amounts remain integer minor
 units. Schema version 2 adds encrypted wallet-address/name configuration and
 permits USDT-valued snapshots, migrating version 1 captures within a transaction.
+Versions 3 and 4 add persisted cashback snapshots, including Ozon.
 This database has its own schema version and does not modify the ledger
 migrations. Captures survive restart and disconnect; removing a wallet deletes
 its tracking configuration but retains its captures. Failed refreshes and demo
@@ -172,3 +174,7 @@ not restore transaction or holding models after restart.
 
 The statement-checking command selects a parser and reports sample operation
 and warning counts. It does not publish the parsed records to the models.
+
+Ledger import (`ImportSession`, `LedgerRepository`) and core categorization/XIRR
+are implemented library capabilities with tests but no current application callers.
+They are retained pending a product decision on persistent transaction import.

@@ -53,7 +53,6 @@ class AppController final : public QObject {
     Q_PROPERTY(QVariantList balanceHistoryConnections READ balanceHistoryConnections NOTIFY balanceHistoryChanged)
     Q_PROPERTY(QStringList balanceHistoryCurrencies READ balanceHistoryCurrencies NOTIFY balanceHistoryChanged)
     Q_PROPERTY(QString balanceHistoryError READ balanceHistoryError NOTIFY balanceHistoryChanged)
-    Q_PROPERTY(QVariantList netWorthSeries READ netWorthSeries NOTIFY dashboardChanged)
     Q_PROPERTY(QString netWorth READ netWorth NOTIFY dashboardChanged)
     Q_PROPERTY(QString netWorthUpdatedAt READ netWorthUpdatedAt NOTIFY dashboardChanged)
     Q_PROPERTY(QString reportIncome READ reportIncome NOTIFY dashboardChanged)
@@ -168,7 +167,6 @@ public:
     [[nodiscard]] QAbstractItemModel* categories() noexcept;
     [[nodiscard]] QAbstractItemModel* holdings() noexcept;
     [[nodiscard]] QAbstractItemModel* bankConnections() noexcept;
-    [[nodiscard]] QVariantList netWorthSeries() const;
     [[nodiscard]] QString netWorth() const;
     [[nodiscard]] QString netWorthUpdatedAt() const;
     [[nodiscard]] QString reportIncome() const;
@@ -328,7 +326,6 @@ private:
     CategoryModel categories_;
     HoldingModel holdings_;
     ConnectionModel bank_connections_;
-    QVariantList net_worth_series_;
     QString import_status_;
     QString sync_status_;
     QString connection_message_;

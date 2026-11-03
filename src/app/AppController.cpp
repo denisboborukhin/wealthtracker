@@ -1632,7 +1632,6 @@ QAbstractItemModel* AppController::transactions() noexcept { return &transaction
 QAbstractItemModel* AppController::categories() noexcept { return &categories_; }
 QAbstractItemModel* AppController::holdings() noexcept { return &holdings_; }
 QAbstractItemModel* AppController::bankConnections() noexcept { return &bank_connections_; }
-QVariantList AppController::netWorthSeries() const { return net_worth_series_; }
 
 QString AppController::netWorth() const {
     return demo_mode_ ? QStringLiteral("4 826 450 ₽") : live_net_worth_;
@@ -1970,27 +1969,21 @@ void AppController::refreshBankConnections() {
          QStringLiteral("Т-Банк Бизнес"),
          QStringLiteral("Счета и выписки"),
          QStringLiteral("Официальный T-API · только чтение"),
-         connected_bank_ids_.contains(QStringLiteral("tbank-business"))
-             ? QStringLiteral("Подключено")
-             : QStringLiteral("Требуется токен"),
+         {},
          connected_bank_ids_.contains(QStringLiteral("tbank-business")),
          true},
         {QStringLiteral("alfa-api"),
          QStringLiteral("Альфа-Банк API"),
          QStringLiteral("Счета и операции"),
          QStringLiteral("Официальный B2C API · только чтение"),
-         connected_bank_ids_.contains(QStringLiteral("alfa-api"))
-             ? QStringLiteral("Подключено")
-             : QStringLiteral("Требуется доступ"),
+         {},
          connected_bank_ids_.contains(QStringLiteral("alfa-api")),
          true},
         {QStringLiteral("modulbank"),
          QStringLiteral("Модульбанк"),
          QStringLiteral("Счета и операции"),
          QStringLiteral("Официальный API · только чтение"),
-         connected_bank_ids_.contains(QStringLiteral("modulbank"))
-             ? QStringLiteral("Подключено")
-             : QStringLiteral("Требуется токен"),
+         {},
          connected_bank_ids_.contains(QStringLiteral("modulbank")),
          true},
         {QStringLiteral("sber-retail"),
@@ -2004,9 +1997,7 @@ void AppController::refreshBankConnections() {
          QStringLiteral("Т-Инвестиции"),
          QStringLiteral("Счета, остатки и позиции"),
          QStringLiteral("Официальный read-only API"),
-         connected_bank_ids_.contains(QStringLiteral("t-invest"))
-             ? QStringLiteral("Подключено")
-             : QStringLiteral("Требуется токен"),
+         {},
          connected_bank_ids_.contains(QStringLiteral("t-invest")),
          true},
         {QStringLiteral("zenplugins-local"),
@@ -2242,8 +2233,7 @@ void AppController::loadDemoData() {
          QStringLiteral("372 300 ₽"), QStringLiteral("16,0%"), QStringLiteral("+13,8%"), true, 37230000, QStringLiteral("RUB")},
     });
 
-    net_worth_series_ = {3260000, 3380000, 3510000, 3470000, 3720000, 3890000,
-                         4050000, 4210000, 4380000, 4520000, 4690000, 4826450};
+
     import_status_ = QStringLiteral("Выберите выписку для локального предварительного просмотра");
     sync_status_ = QStringLiteral("Т-Инвестиции: демонстрационные данные");
     emit dashboardChanged();
@@ -2301,7 +2291,6 @@ void AppController::clearDemoData() {
     transactions_.replace({});
     categories_.replace({});
     holdings_.replace({});
-    net_worth_series_.clear();
     live_net_worth_ = QStringLiteral("0 ₽");
     live_portfolio_value_ = QStringLiteral("0 ₽");
     live_report_income_ = QStringLiteral("0 ₽");
@@ -2946,7 +2935,6 @@ void AppController::rebuildBankModels() {
     holdings_.replace(std::move(holdingRows));
     live_portfolio_value_ = portfolioValid
         ? QStringLiteral("%1 ₽").arg(formatMinorUnits(portfolioValue)) : QStringLiteral("—");
-    net_worth_series_.clear();
     live_net_worth_ = netWorthValid
                           ? QStringLiteral("%1 ₽").arg(formatMinorUnits(rubNetWorth))
                           : QStringLiteral("—");

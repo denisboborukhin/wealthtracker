@@ -27,7 +27,7 @@ endif()
 find_package(Boost REQUIRED)
 find_package(
     Qt6 6.11 REQUIRED
-    COMPONENTS Core Gui Qml Quick QuickControls2 Network Concurrent WebView
+    COMPONENTS Core Gui Qml Quick QuickControls2 Network WebView
 )
 find_package(sqlcipher REQUIRED CONFIG)
 find_package(OpenSSL REQUIRED CONFIG)
