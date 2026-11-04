@@ -186,6 +186,10 @@ bank. Failed reads update status without replacing prior selections or their
 observation time. The controller continues to own transport commands and database
 access. `ConnectionState` is the typed input to the shared connection presentation
 policy; saved access material remains distinct from a validated financial read.
+`ConnectionActivityRegistry` owns per-connection activity and last-read results,
+including retail connected/login/refresh flags and T-Bank pending session validation.
+The list and existing public properties derive from these records; API credential
+inventory and coordinator ownership remain separate.
 The shared scheduling policy preserves six-hour refreshes and a ten-second minimum
 retry. Individual coordinators still own their bank's active operations.
 
@@ -216,3 +220,8 @@ The application and native `qml_tests` runner link the same static WealthTracker
 QML module/plugin. Qt Quick tests therefore instantiate compiled application
 resources directly, without modifying copies of QML source. The existing
 `connection_pages_ui` CTest command and `wealthtracker_qmllint` target remain.
+
+`restoreConnections` reads saved credential/settings facts and handles legacy
+plugin migration before refresh scheduling. It preserves source state until a
+replacement secret is stored. The facade applies the result after coordinator
+initialization and before restoring balances and queuing background refreshes.

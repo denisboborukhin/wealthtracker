@@ -228,3 +228,10 @@ Startup restoration pass:
   initialization steps; their order and callbacks remain unchanged.
 - Twelve focused restoration/migration tests pass, including unavailable backends,
   malformed/oversized state, failed replacement writes and successful retry.
+
+Connection activity pass:
+- ConnectionActivityRegistry replaces scattered retail connected/login/refresh
+  flags and the separate last-read map. Saved and pending T-Bank sessions remain
+  independent; API credential inventory and coordinator lifetimes are retained.
+- Twelve focused native checks pass for activity, scheduling, overlapping refreshes,
+  privacy cancellation, rejected commands and saved-data retention.

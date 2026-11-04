@@ -7,6 +7,63 @@ import wt.connection_state;
 
 using namespace wealthtracker::app;
 
+TEST_CASE("Connection activity preserves saved and pending T-Bank sessions independently") {
+    ConnectionActivityRegistry activities;
+    auto& tbank = activities[QStringLiteral("tbank-retail")];
+    tbank.savedSession = true;
+    tbank.pendingSessionValidation = true;
+    CHECK_FALSE(tbank.connected);
+    CHECK(tbank.pendingSessionValidation);
+    CHECK(tbank.lastRead == ConnectionReadResult::Unverified);
+
+    tbank.pendingSessionValidation = false;
+    tbank.lastRead = ConnectionReadResult::Failed;
+    const auto activity = activities.value(QStringLiteral("tbank-retail"));
+    CHECK_FALSE(activity.connected);
+    CHECK(activity.savedSession);
+    CHECK_FALSE(activity.pendingSessionValidation);
+    CHECK(connectionPresentation(ConnectionState{
+        .saved = activity.savedSession || activity.connected,
+        .lastRead = activity.lastRead,
+        .accessMaterial = ConnectionAccessMaterial::Session,
+    }).state == "error");
+}
+
+TEST_CASE("Connection activity read resets preserve per-connector activity") {
+    ConnectionActivityRegistry activities;
+    const auto tbankId = QStringLiteral("tbank-retail");
+    const auto investmentId = QStringLiteral("t-invest");
+    const auto apiId = QStringLiteral("bank-api");
+    activities[tbankId] = ConnectionActivity{
+        .connected = true,
+        .loginActive = true,
+        .refreshActive = true,
+        .savedSession = true,
+        .pendingSessionValidation = true,
+        .lastRead = ConnectionReadResult::Failed,
+    };
+    activities[investmentId].lastRead = ConnectionReadResult::Succeeded;
+    activities[apiId].lastRead = ConnectionReadResult::Failed;
+
+    activities.resetRead(tbankId);
+    const auto tbank = activities.value(tbankId);
+    CHECK(tbank.lastRead == ConnectionReadResult::Unverified);
+    CHECK(tbank.connected);
+    CHECK(tbank.loginActive);
+    CHECK(tbank.refreshActive);
+    CHECK(tbank.savedSession);
+    CHECK(tbank.pendingSessionValidation);
+    CHECK(activities.value(investmentId).lastRead == ConnectionReadResult::Succeeded);
+    CHECK(activities.value(apiId).lastRead == ConnectionReadResult::Failed);
+
+    activities.resetRead(QStringLiteral("missing"));
+    CHECK(activities.value(QStringLiteral("missing")).lastRead == ConnectionReadResult::Unverified);
+    CHECK_FALSE(activities.value(QStringLiteral("missing")).connected);
+    activities[tbankId] = {};
+    CHECK_FALSE(activities.value(tbankId).savedSession);
+    CHECK(activities.value(investmentId).lastRead == ConnectionReadResult::Succeeded);
+}
+
 TEST_CASE("Connection presentation separates saved material from validated reads") {
     ConnectionState state;
     CHECK(connectionPresentation(state).state == "disconnected");

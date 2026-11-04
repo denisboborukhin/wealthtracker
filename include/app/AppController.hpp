@@ -327,17 +327,9 @@ private:
     QString zen_plugin_prompt_;
     bool zen_plugin_prompt_secret_ = true;
     bool zen_plugin_running_ = false;
-    bool tbank_connected_ = false;
-    bool tbank_login_active_ = false;
     QString tbank_login_status_;
-    bool alfa_connected_ = false;
-    bool alfa_login_active_ = false;
     QString alfa_login_status_;
-    bool vtb_connected_ = false;
-    bool vtb_login_active_ = false;
     QString vtb_login_status_;
-    bool ozon_connected_ = false;
-    bool ozon_login_active_ = false;
     QString ozon_login_status_;
     QString live_portfolio_value_ = QStringLiteral("0 ₽");
     QString live_net_worth_ = QStringLiteral("0 ₽");

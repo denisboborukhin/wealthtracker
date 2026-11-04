@@ -3,6 +3,7 @@ module;
 // Keep Qt template declarations in the global module on NDK Clang.
 extern "C++" {
 #include <QDateTime>
+#include <QHash>
 #include <QString>
 #include <QTimer>
 
@@ -17,6 +18,35 @@ export namespace wealthtracker::app {
 
 enum class ConnectionReadResult { Unverified, Succeeded, Failed };
 enum class ConnectionAccessMaterial { Session, Token };
+
+struct ConnectionActivity {
+    bool connected = false;
+    bool loginActive = false;
+    bool refreshActive = false;
+    bool savedSession = false;
+    bool pendingSessionValidation = false;
+    ConnectionReadResult lastRead = ConnectionReadResult::Unverified;
+};
+
+class ConnectionActivityRegistry {
+public:
+    ConnectionActivity& operator[](const QString& connectorId) {
+        return activities_[connectorId];
+    }
+
+    [[nodiscard]] ConnectionActivity value(const QString& connectorId) const {
+        return activities_.value(connectorId);
+    }
+
+    void resetRead(const QString& connectorId) {
+        auto activity = activities_.find(connectorId);
+        if (activity != activities_.end())
+            activity->lastRead = ConnectionReadResult::Unverified;
+    }
+
+private:
+    QHash<QString, ConnectionActivity> activities_;
+};
 
 // Saved access material does not establish that the bank currently returns data.
 struct ConnectionState {

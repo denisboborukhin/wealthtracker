@@ -448,7 +448,7 @@ TEST_CASE("T-Bank login UI embeds a coordinator-owned native WebView") {
     const auto beginOffset = controller.indexOf(
         QByteArrayLiteral("void AppController::beginTBankLogin()"));
     const auto activeGuardOffset = controller.indexOf(
-        QByteArrayLiteral("if (tbank_login_active_)"), beginOffset);
+        QByteArrayLiteral("if (tbankLoginActive())"), beginOffset);
     const auto startOffset = controller.indexOf(
         QByteArrayLiteral("private_->tbank_login->start"), beginOffset);
     REQUIRE(beginOffset >= 0);
