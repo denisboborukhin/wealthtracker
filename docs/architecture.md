@@ -202,3 +202,17 @@ missing keys never replace an existing database. Wallet history failures do not
 change the bank history error. `CredentialBackend.hpp` is the shared credential
 boundary used by the controller and store. `BankTokenEditor.qml` owns token entry,
 password masking, save eligibility and clearing after save/dialog closure.
+
+`WalletService` owns current wallet rows, refresh queue, failure counts and request
+coordinators; `HistoryStore` retains persisted configuration and captures. Privacy
+and demo guards stay in the controller, including rechecking after save signals.
+`projectFinance` builds rows and formatted totals from explicit batches, metadata,
+reporting dates and today's date; it performs no network or model mutation.
+`PluginService` owns the selected descriptor, host runner, prompt correlation,
+private startup message and credential-state persistence. The facade retains
+presentation signals, published batches and scheduled refresh policy.
+
+The application and native `qml_tests` runner link the same static WealthTracker
+QML module/plugin. Qt Quick tests therefore instantiate compiled application
+resources directly, without modifying copies of QML source. The existing
+`connection_pages_ui` CTest command and `wealthtracker_qmllint` target remain.

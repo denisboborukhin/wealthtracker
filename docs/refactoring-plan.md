@@ -34,7 +34,7 @@ Line-count reduction alone is not an acceptance criterion.
 | P2 | Unused old chart surface | [LineChart.qml](../ui/qml/components/LineChart.qml) is registered in CMake but never instantiated. `netWorthSeries` has no QML/test consumer; its property, getter, backing vector and demo/reset writes are removal candidates. |
 | P2 | Initial status calculations are overwritten | API/T-Invest row status ternaries at controller 1965–2005 are overwritten by the common state projection at 2047–2063. Remove the redundant initial calculations. |
 | P2 | Version information is duplicated | Root CMake, Conan recipe and runtime use 0.1.0; Android CMake uses code 11/name 0.1.10; shell script repeats the APK filename. Establish one explicit version source, retaining the distinct monotonic Android code. |
-| P2 | Test infrastructure repeats and some UI tests check spelling | Settings isolation, fake replies and wait loops recur across app tests. [ui_contract_test.cpp](../tests/app/ui_contract_test.cpp) checks many source substrings. [tests/ui/run.sh](../tests/ui/run.sh) rewrites copied QML imports to load tests. Extract modest test helpers and make the QML module directly testable. |
+| P2 | Test infrastructure repeats and some UI tests check spelling | Settings isolation, fake replies and wait loops recur across app tests. [ui_contract_test.cpp](../tests/app/ui_contract_test.cpp) checks many source substrings. `tests/ui/run.sh` (now removed) rewrites copied QML imports to load tests. Extract modest test helpers and make the QML module directly testable. |
 | P2 | Possible unused direct dependency | CMake requests/links `Qt6::Concurrent`, but reference searches found no `QtConcurrent`, `QFuture` or `QPromise` use in source/tests. Confirm with clean builds before removing. No package-size saving has been measured. |
 
 ## Scope decisions: unreachable does not mean obsolete
@@ -185,9 +185,9 @@ Further implementation (current refactoring pass):
   before/after renders are identical. Adapter behavior tests are part of CTest's
   QML test command.
 
-Still pending: directly importable QML test module without source adaptation;
-remaining controller domain ownership (crypto, plugin and financial
-projection); unified activity ownership; plugin/login content components.
+Remaining at the previous pass: QML test-module integration, live wallet/plugin
+ownership and financial projection. These are addressed in the pass below;
+unified activity ownership and plugin/login content components remain.
 Unintegrated product capabilities and unreachable pages are retained pending the
 scope decisions above. This record does not mark the full plan complete.
 
@@ -205,3 +205,19 @@ History/token extraction pass:
 Remaining wallet work is live portfolio state/refresh orchestration, not persisted
 wallet configuration. Remaining large controller responsibilities are plugin
 orchestration and financial projection. The full plan remains in progress.
+
+Wallet/plugin/projection pass:
+- WalletService owns live wallet results, queue, failures and synchronization
+  children. The controller retains privacy/demo checks and periodic scheduling.
+- Financial row construction and totals are now a pure projectFinance function;
+  controller model replacement and signal ordering remain at the facade boundary.
+- PluginService owns descriptor/runner/session correlation, private run preparation
+  and credential-state persistence. UI running/text projection, batch publication,
+  settings presentation and refresh scheduling remain controller adapters.
+- QML is a shared static module linked by the application and a native QuickTest
+  runner. Tests use the real compiled resources; the source-copy/import-rewriting
+  script was removed. The existing lint and CTest entry points are retained.
+
+Remaining work includes consolidating controller activity projections, extracting
+plugin/login UI content and making initialization/migration wiring smaller. Product
+scope decisions for unreachable pages and unintegrated libraries remain separate.

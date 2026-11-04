@@ -176,6 +176,7 @@ target_sources(
             src/app/transfer_matching.cppm
             src/app/bank_sync.cppm
             src/app/investment_sync.cppm
+            src/app/plugin_service.cppm
             src/app/zen_plugin_runner.cppm
             src/app/tbank_auth.cppm
             src/app/tbank_browser.cppm
@@ -295,6 +296,7 @@ if(BUILD_TESTING)
 
     add_executable(app_tests
         tests/app/test_main.cpp
+        tests/app/plugin_service_test.cpp
         tests/app/wallet_service_test.cpp
         tests/app/finance_projection_test.cpp
         tests/app/history_store_test.cpp

@@ -3,7 +3,6 @@
 
 #include <QDate>
 #include <QDir>
-#include <QCryptographicHash>
 #include <QDesktopServices>
 #include <QFileInfo>
 #include <QHash>
@@ -50,7 +49,7 @@ import wt.finance_projection;
 import wt.tbank_login;
 import wt.vtb_login;
 import wt.ozon_login;
-import wt.zen_plugin_runner;
+import wt.plugin_service;
 
 namespace wealthtracker::app {
 namespace {
@@ -276,12 +275,6 @@ QString formatSyncDateTime(const QDateTime& value) {
         .toString(local, QStringLiteral("d MMMM, HH:mm"));
 }
 
-bool canPersistZenPreference(
-    const wealthtracker::connectors::ZenPluginPreference& field) {
-    using wealthtracker::connectors::ZenPluginPreferenceKind;
-    return !field.sensitive && field.kind != ZenPluginPreferenceKind::Password;
-}
-
 QString zenPreferenceKindName(
     wealthtracker::connectors::ZenPluginPreferenceKind kind);
 
@@ -298,17 +291,6 @@ QJsonObject savedZenPluginPreferences() {
         return {};
     }
     return document.object();
-}
-
-QJsonObject persistableZenPreferences(
-    const ZenPluginDescriptor& descriptor, const QJsonObject& preferences) {
-    QJsonObject safe;
-    for (const auto& field : descriptor.preferences) {
-        if (canPersistZenPreference(field) && preferences.contains(field.key)) {
-            safe.insert(field.key, preferences.value(field.key));
-        }
-    }
-    return safe;
 }
 
 QVariantList zenPluginFieldVariants(const ZenPluginDescriptor& descriptor) {
@@ -347,15 +329,6 @@ QString nodeExecutable() {
         }
     }
     return {};
-}
-
-QString zenStateCredentialKey(const ZenPluginDescriptor& descriptor) {
-    QCryptographicHash hash(QCryptographicHash::Sha256);
-    hash.addData(descriptor.pluginId.toUtf8());
-    hash.addData("\n");
-    hash.addData(descriptor.bundlePath.toUtf8());
-    return QStringLiteral("zen-plugin-state-%1")
-        .arg(QString::fromLatin1(hash.result().toHex()));
 }
 
 QString zenPreferenceKindName(
@@ -414,12 +387,9 @@ public:
     QTimer crypto_timer;
     QHash<QString, QPointer<BankSyncCoordinator>> bank_sync_coordinators;
     QPointer<InvestmentSyncCoordinator> investment_sync;
-    std::optional<ZenPluginDescriptor> zen_descriptor;
-    std::unique_ptr<ZenPluginRunner> zen_runner;
+    PluginService plugin;
     QTimer zen_auto_update_timer;
     QDateTime next_zen_auto_update_at;
-    QString zen_prompt_id;
-    QString configured_zen_state_key;
     std::unique_ptr<TBankLoginCoordinator> tbank_login;
     QTimer tbank_auto_update_timer;
     QDateTime next_tbank_auto_update_at;
@@ -1149,7 +1119,7 @@ AppController::AppController(std::unique_ptr<CredentialBackend> credentials,
             && descriptor->pluginId == QString::fromLatin1(tbankRetailPluginId)) {
             bool migrationComplete = false;
             if (private_->credentials && private_->credentials->supported()) {
-                const auto legacyStateKey = zenStateCredentialKey(*descriptor);
+                const auto legacyStateKey = pluginStateCredentialKey(*descriptor);
                 auto legacyState = private_->credentials->get(legacyStateKey);
                 if (legacyState && *legacyState) {
                     auto encoded = std::move(**legacyState);
@@ -1189,22 +1159,22 @@ AppController::AppController(std::unique_ptr<CredentialBackend> credentials,
                 settings.remove(QStringLiteral("zenPlugin"));
             }
         } else if (descriptor) {
-            private_->zen_descriptor = std::move(*descriptor);
-            private_->configured_zen_state_key =
-                zenStateCredentialKey(*private_->zen_descriptor);
-            zen_plugin_id_ = private_->zen_descriptor->pluginId;
-            zen_plugin_bundle_path_ = private_->zen_descriptor->bundlePath;
+            private_->plugin.select(std::move(*descriptor));
+            private_->plugin.setConfiguredStateKey(
+                pluginStateCredentialKey(*private_->plugin.descriptor()));
+            zen_plugin_id_ = private_->plugin.descriptor()->pluginId;
+            zen_plugin_bundle_path_ = private_->plugin.descriptor()->bundlePath;
             zen_plugin_institution_ = settings
                 .value(QStringLiteral("zenPlugin/institution"), zen_plugin_id_)
                 .toString();
             zen_plugin_fields_ =
-                zenPluginFieldVariants(*private_->zen_descriptor);
+                zenPluginFieldVariants(*private_->plugin.descriptor());
         }
     }
     private_->zen_auto_update_timer.setSingleShot(true);
     connect(&private_->zen_auto_update_timer, &QTimer::timeout, this,
             [this] {
-                if (zenPluginAutoUpdate() && private_->zen_descriptor &&
+                if (zenPluginAutoUpdate() && private_->plugin.descriptor() &&
                     !zen_plugin_running_) {
                     if (!synchronizeZenPlugin()) {
                         scheduleZenPluginAutoUpdateAfter(
@@ -1418,7 +1388,7 @@ QString AppController::zenPluginNextSync() const {
     if (!zenPluginAutoUpdate()) {
         return QStringLiteral("Выключено");
     }
-    if (!private_->zen_descriptor) {
+    if (!private_->plugin.descriptor()) {
         return QStringLiteral("Выберите bundle");
     }
     if (!private_->next_zen_auto_update_at.isValid()) {
@@ -1614,7 +1584,7 @@ QWindow* AppController::ozonWebView() {
 }
 
 void AppController::refreshBankConnections() {
-    const bool externalBundleSelected = private_->zen_descriptor.has_value();
+    const bool externalBundleSelected = private_->plugin.descriptor().has_value();
     const auto localZenStatus = [this, externalBundleSelected] {
         if (nodeExecutable().isEmpty()) {
             return QStringLiteral("Требуется Node.js");
@@ -1754,7 +1724,7 @@ void AppController::refreshZenPluginAutoUpdateSchedule() {
     private_->zen_auto_update_timer.stop();
     private_->next_zen_auto_update_at = {};
 
-    if (!zenPluginAutoUpdate() || !private_->zen_descriptor) {
+    if (!zenPluginAutoUpdate() || !private_->plugin.descriptor()) {
         return;
     }
     const auto lastSync =
@@ -1766,7 +1736,7 @@ void AppController::refreshZenPluginAutoUpdateSchedule() {
 }
 
 void AppController::scheduleZenPluginAutoUpdateAfter(const QDateTime& from) {
-    if (!zenPluginAutoUpdate() || !private_->zen_descriptor) {
+    if (!zenPluginAutoUpdate() || !private_->plugin.descriptor()) {
         return;
     }
 
@@ -2450,9 +2420,9 @@ bool AppController::inspectZenPluginBundle(const QUrl& source) {
     }
 
     const auto previousStateKey =
-        private_->zen_descriptor ? zenStateCredentialKey(*private_->zen_descriptor)
+        private_->plugin.descriptor() ? pluginStateCredentialKey(*private_->plugin.descriptor())
                                  : QString{};
-    const auto newStateKey = zenStateCredentialKey(*descriptor);
+    const auto newStateKey = pluginStateCredentialKey(*descriptor);
     if (!previousStateKey.isEmpty() && previousStateKey != newStateKey) {
         QSettings settings;
         settings.remove(QStringLiteral("zenPlugin/preferences"));
@@ -2460,16 +2430,16 @@ bool AppController::inspectZenPluginBundle(const QUrl& source) {
         settings.setValue(QStringLiteral("zenPlugin/autoUpdate"), false);
     }
 
-    private_->zen_descriptor = std::move(*descriptor);
-    zen_plugin_id_ = private_->zen_descriptor->pluginId;
+    private_->plugin.select(std::move(*descriptor));
+    zen_plugin_id_ = private_->plugin.descriptor()->pluginId;
     zen_plugin_bundle_path_ =
-        private_->zen_descriptor->bundlePath;
+        private_->plugin.descriptor()->bundlePath;
     zen_plugin_institution_ =
         zen_plugin_id_ == QStringLiteral("altabanka-rs")
         ? QStringLiteral("Alta Banka (Сербия)")
         : zen_plugin_id_;
     zen_plugin_fields_ =
-        zenPluginFieldVariants(*private_->zen_descriptor);
+        zenPluginFieldVariants(*private_->plugin.descriptor());
     refreshZenPluginAutoUpdateSchedule();
     refreshBankConnections();
     sync_status_ =
@@ -2483,7 +2453,7 @@ bool AppController::inspectZenPluginBundle(const QUrl& source) {
 
 bool AppController::startZenPlugin(
     const QString& institution, const QVariantMap& preferences) {
-    if (zen_plugin_running_ || !private_->zen_descriptor) {
+    if (zen_plugin_running_ || !private_->plugin.descriptor()) {
         sync_status_ = zen_plugin_running_
             ? QStringLiteral("Плагин уже выполняется")
             : QStringLiteral("Сначала выберите собранный bundle");
@@ -2512,127 +2482,32 @@ bool AppController::startZenPlugin(
         return false;
     }
 
-    QJsonObject normalizedPreferences;
-    QDateTime from =
-        QDateTime(QDate::currentDate().addYears(-1), QTime(0, 0),
-                  QTimeZone::UTC);
-    for (const auto& field :
-         private_->zen_descriptor->preferences) {
-        auto value =
-            preferences.value(field.key, field.defaultValue);
-        if (field.kind
-            == wealthtracker::connectors::
-                ZenPluginPreferenceKind::Checkbox) {
-            normalizedPreferences.insert(field.key, value.toBool());
-        } else {
-            const auto text = value.toString();
-            if (field.required && text.trimmed().isEmpty()) {
-                sync_status_ =
-                    QStringLiteral("Заполните поле «%1»")
-                        .arg(field.label);
-                emit syncStatusChanged();
-                return false;
-            }
-            normalizedPreferences.insert(field.key, text);
-            if (field.key == QStringLiteral("startDate")) {
-                auto parsed =
-                    QDateTime::fromString(text, Qt::ISODateWithMs);
-                if (!parsed.isValid()) {
-                    parsed =
-                        QDateTime::fromString(text, Qt::ISODate);
-                }
-                if (parsed.isValid()) {
-                    from = parsed.toUTC();
-                }
-            }
-        }
-    }
-
-    QJsonObject state;
-    const auto stateKey =
-        zenStateCredentialKey(*private_->zen_descriptor);
-    auto savedState = private_->credentials->get(stateKey);
-    if (!savedState) {
-        sync_status_ = savedState.error();
+    auto prepared = private_->plugin.prepare(preferences, private_->credentials.get());
+    if (!prepared) {
+        sync_status_ = prepared.error();
         emit syncStatusChanged();
         return false;
     }
-    if (*savedState) {
-        QByteArray encoded = std::move(**savedState);
-        QJsonParseError parseError;
-        const auto document =
-            QJsonDocument::fromJson(encoded, &parseError);
-        encoded.fill('\0');
-        if (parseError.error == QJsonParseError::NoError
-            && document.isObject()) {
-            state = document.object();
-        } else {
-            const auto removed =
-                private_->credentials->remove(stateKey);
-            if (!removed) {
-                sync_status_ = removed.error();
-                emit syncStatusChanged();
-                return false;
-            }
-        }
-    }
+    const auto safePreferences = prepared->safePreferences;
+    const auto stateKey = prepared->stateKey;
 
-    const wealthtracker::connectors::ZenPluginRunRequest request{
-        .descriptor = *private_->zen_descriptor,
-        .preferences = std::move(normalizedPreferences),
-        .state = std::move(state),
-        .from = from,
-        .to = QDateTime::currentDateTimeUtc(),
-        .allowedOrigins = {},
-    };
-    const auto safePreferences =
-        persistableZenPreferences(request.descriptor, request.preferences);
-    auto startMessage =
-        wealthtracker::connectors::makeZenPluginStartMessage(
-            request);
-    if (!startMessage) {
-        sync_status_ = startMessage.error().message;
-        emit syncStatusChanged();
-        return false;
-    }
-
-    const auto pluginId = private_->zen_descriptor->pluginId;
+    const auto pluginId = private_->plugin.descriptor()->pluginId;
     const auto batchKey =
         QStringLiteral("zen:") + pluginId;
     zen_plugin_institution_ = displayName;
-    private_->zen_prompt_id.clear();
-    private_->zen_runner = std::make_unique<ZenPluginRunner>(
-        pluginId,
-        [this](wealthtracker::connectors::ZenPluginPrompt prompt) {
-            private_->zen_prompt_id = prompt.requestId;
+    auto prompted = [this](wealthtracker::connectors::ZenPluginPrompt prompt) {
             zen_plugin_prompt_ = prompt.message;
             zen_plugin_prompt_secret_ = true;
             sync_status_ =
                 QStringLiteral("Плагин ждёт одноразовый ответ");
             emit zenPluginChanged();
             emit syncStatusChanged();
-        },
-        [this, batchKey, stateKey, safePreferences, pluginId,
+        };
+    auto completed = [this, batchKey, stateKey, safePreferences, pluginId,
          displayName](NormalizedBatch batch, QJsonObject newState) {
-            auto encoded =
-                QJsonDocument(newState).toJson(
-                    QJsonDocument::Compact);
-            const auto stored =
-                private_->credentials->put(stateKey, encoded);
-            encoded.fill('\0');
-            bool oldStateRemoved = true;
-            if (stored
-                && !private_->configured_zen_state_key.isEmpty()
-                && private_->configured_zen_state_key != stateKey) {
-                oldStateRemoved =
-                    private_->credentials
-                        ->remove(
-                            private_->configured_zen_state_key)
-                        .has_value();
-            }
-            if (stored) {
-                private_->configured_zen_state_key = stateKey;
-            }
+            const auto stateSaved = private_->plugin.saveState(*private_->credentials, stateKey, newState);
+            const bool stored = stateSaved.stored;
+            const bool oldStateRemoved = stateSaved.oldStateRemoved;
 
             const auto accountCount = batch.accounts.size();
             const auto transactionCount =
@@ -2661,7 +2536,7 @@ bool AppController::startZenPlugin(
             QSettings settings;
             settings.setValue(
                 QStringLiteral("zenPlugin/bundlePath"),
-                private_->zen_descriptor->bundlePath);
+                private_->plugin.descriptor()->bundlePath);
             settings.setValue(
                 QStringLiteral("zenPlugin/institution"),
                 displayName);
@@ -2674,10 +2549,10 @@ bool AppController::startZenPlugin(
                 QDateTime::currentDateTimeUtc().toString(
                     Qt::ISODateWithMs));
             zen_plugin_fields_ =
-                zenPluginFieldVariants(*private_->zen_descriptor);
+                zenPluginFieldVariants(*private_->plugin.descriptor());
             zen_plugin_running_ = false;
             zen_plugin_prompt_.clear();
-            private_->zen_prompt_id.clear();
+            private_->plugin.clearPrompt();
             sync_status_ =
                 QStringLiteral("%1: счетов %2 · операций %3")
                     .arg(displayName)
@@ -2694,11 +2569,11 @@ bool AppController::startZenPlugin(
             refreshBankConnections();
             emit zenPluginChanged();
             emit syncStatusChanged();
-        },
-        [this, displayName](const QString& error) {
+        };
+    auto failed = [this, displayName](const QString& error) {
             zen_plugin_running_ = false;
             zen_plugin_prompt_.clear();
-            private_->zen_prompt_id.clear();
+            private_->plugin.clearPrompt();
             sync_status_ =
                 QStringLiteral("%1: %2").arg(displayName, error);
             scheduleZenPluginAutoUpdateAfter(
@@ -2706,17 +2581,16 @@ bool AppController::startZenPlugin(
             refreshBankConnections();
             emit zenPluginChanged();
             emit syncStatusChanged();
-        },
-        this);
+        };
 
     zen_plugin_running_ = true;
     zen_plugin_prompt_.clear();
     sync_status_ =
         QStringLiteral("%1: запускаем локальный плагин…")
             .arg(displayName);
-    if (!private_->zen_runner->start(node, *startMessage)) {
-        startMessage->fill('\0');
-        private_->zen_runner.reset();
+    if (!private_->plugin.start(node, prepared->startMessage, std::move(prompted),
+                                std::move(completed), std::move(failed), this)) {
+        prepared->startMessage.fill('\0');
         zen_plugin_running_ = false;
         sync_status_ =
             QStringLiteral("Не удалось подготовить локальный host плагина");
@@ -2725,7 +2599,7 @@ bool AppController::startZenPlugin(
         emit syncStatusChanged();
         return false;
     }
-    startMessage->fill('\0');
+    prepared->startMessage.fill('\0');
     refreshBankConnections();
     emit zenPluginChanged();
     emit syncStatusChanged();
@@ -2733,7 +2607,7 @@ bool AppController::startZenPlugin(
 }
 
 bool AppController::synchronizeZenPlugin() {
-    if (!private_->zen_descriptor) {
+    if (!private_->plugin.descriptor()) {
         sync_status_ = QStringLiteral("Сначала выберите собранный bundle");
         emit syncStatusChanged();
         return false;
@@ -2741,13 +2615,13 @@ bool AppController::synchronizeZenPlugin() {
     auto preferences = savedZenPluginPreferences().toVariantMap();
     const auto displayName =
         zen_plugin_institution_.trimmed().isEmpty()
-            ? private_->zen_descriptor->pluginId
+            ? private_->plugin.descriptor()->pluginId
             : zen_plugin_institution_;
     return startZenPlugin(displayName, preferences);
 }
 
 void AppController::setZenPluginAutoUpdate(const bool enabled) {
-    if (enabled && !private_->zen_descriptor) {
+    if (enabled && !private_->plugin.descriptor()) {
         sync_status_ =
             QStringLiteral("Сначала выберите и запустите локальный bundle");
         emit syncStatusChanged();
@@ -2774,26 +2648,13 @@ void AppController::setZenPluginAutoUpdate(const bool enabled) {
 }
 
 bool AppController::answerZenPluginPrompt(const QString& value) {
-    if (!private_->zen_runner
-        || private_->zen_prompt_id.isEmpty()) {
-        return false;
-    }
-    auto encoded = value.toUtf8();
-    auto message =
-        wealthtracker::connectors::makeZenPluginInputMessage(
-            private_->zen_prompt_id, encoded);
-    encoded.fill('\0');
-    if (!message) {
-        sync_status_ = message.error().message;
+    const auto accepted = private_->plugin.answer(value);
+    if (!accepted) {
+        sync_status_ = accepted.error();
         emit syncStatusChanged();
         return false;
     }
-    const auto accepted = private_->zen_runner->answer(*message);
-    message->fill('\0');
-    if (!accepted) {
-        return false;
-    }
-    private_->zen_prompt_id.clear();
+    if (!*accepted) return false;
     zen_plugin_prompt_.clear();
     sync_status_ =
         QStringLiteral("Ответ передан локальному плагину");
@@ -2803,12 +2664,10 @@ bool AppController::answerZenPluginPrompt(const QString& value) {
 }
 
 void AppController::cancelZenPlugin() {
-    if (private_->zen_runner) {
-        private_->zen_runner->cancel();
-    }
+    private_->plugin.cancel();
     zen_plugin_running_ = false;
     zen_plugin_prompt_.clear();
-    private_->zen_prompt_id.clear();
+    private_->plugin.clearPrompt();
     sync_status_ = QStringLiteral("Синхронизация плагина отменена");
     refreshBankConnections();
     emit zenPluginChanged();
@@ -2818,22 +2677,11 @@ void AppController::cancelZenPlugin() {
 void AppController::removeZenPlugin() {
     cancelZenPlugin();
     if (private_->credentials) {
-        QSet<QString> stateKeys;
-        if (private_->zen_descriptor) {
-            stateKeys.insert(
-                zenStateCredentialKey(*private_->zen_descriptor));
-        }
-        if (!private_->configured_zen_state_key.isEmpty()) {
-            stateKeys.insert(private_->configured_zen_state_key);
-        }
-        for (const auto& stateKey : stateKeys) {
-            const auto removed =
-                private_->credentials->remove(stateKey);
-            if (!removed) {
-                sync_status_ = removed.error();
-                emit syncStatusChanged();
-                return;
-            }
+        const auto removed = private_->plugin.removeSavedState(*private_->credentials);
+        if (!removed) {
+            sync_status_ = removed.error();
+            emit syncStatusChanged();
+            return;
         }
         for (auto existing =
                  private_->bank_batches.begin();
@@ -2852,8 +2700,7 @@ void AppController::removeZenPlugin() {
     settings.remove(QStringLiteral("zenPlugin"));
     private_->zen_auto_update_timer.stop();
     private_->next_zen_auto_update_at = {};
-    private_->zen_descriptor.reset();
-    private_->configured_zen_state_key.clear();
+    private_->plugin.resetSelection();
     zen_plugin_fields_.clear();
     zen_plugin_id_.clear();
     zen_plugin_bundle_path_.clear();
