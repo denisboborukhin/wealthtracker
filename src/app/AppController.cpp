@@ -39,7 +39,7 @@ import wt.bank_sync;
 import wt.connection_state;
 import wt.balance_history_view;
 import wt.history_store;
-import wt.crypto_wallet;
+import wt.wallet_service;
 import wt.cashback;
 import wt.cashback_sync;
 import wt.cashback_state;
@@ -455,7 +455,8 @@ public:
           alfa(*network),
           tbank_business(*network),
           modulbank(*network),
-          tbank_retail(*network) {}
+          tbank_retail(*network),
+          wallets(*network, history) {}
 
     std::unique_ptr<CredentialBackend> credentials;
     std::unique_ptr<QNetworkAccessManager> network;
@@ -470,13 +471,8 @@ public:
     bool tbank_session_saved = false;
     QHash<QString, QString> bank_institutions;
     HistoryStore history;
-    QHash<QString, QVariantMap> crypto_states;
-    QPointer<CryptoWalletSync> crypto_sync;
-    QStringList crypto_pending;
+    WalletService wallets;
     QTimer crypto_timer;
-    QString crypto_status;
-    bool crypto_running = false;
-    int crypto_failures = 0;
     QHash<QString, QPointer<BankSyncCoordinator>> bank_sync_coordinators;
     QPointer<InvestmentSyncCoordinator> investment_sync;
     std::optional<ZenPluginDescriptor> zen_descriptor;
@@ -885,154 +881,28 @@ void AppController::recordBalanceHistory(const QString& connectorId) {
     emit balanceHistoryChanged();
 }
 
-QVariantList AppController::cryptoWallets() const {
-    QVariantList rows;
-    for (const auto& wallet : private_->history.wallets()) {
-        const auto address = QString::fromStdString(wallet.address);
-        auto row = private_->crypto_states.value(address);
-        row.insert(QStringLiteral("id"), address);
-        row.insert(QStringLiteral("address"), address);
-        row.insert(QStringLiteral("name"), QString::fromStdString(wallet.name));
-        if (!row.contains(QStringLiteral("holdings"))) row.insert(QStringLiteral("holdings"), QVariantList{});
-        if (!row.contains(QStringLiteral("value"))) {
-            row.insert(QStringLiteral("value"), QStringLiteral("—"));
-            row.insert(QStringLiteral("unpricedCount"), 0);
-            for (const auto& capture : private_->history.captures()) {
-                if (capture.connection_id != "ethereum:" + wallet.address) continue;
-                for (const auto& balance : capture.balances) {
-                    if (balance.currency != "USDT") continue;
-                    row.insert(QStringLiteral("value"), usdt_label(balance.amount_minor));
-                    row.insert(QStringLiteral("lastSync"), QDateTime::fromString(QString::fromStdString(capture.captured_at), Qt::ISODateWithMs)
-                        .toLocalTime().toString(QStringLiteral("dd.MM.yyyy HH:mm:ss")));
-                    if (!row.contains(QStringLiteral("status"))) row.insert(QStringLiteral("status"),
-                        QStringLiteral("Оценка из истории. Обновите для получения списка токенов."));
-                }
-            }
-        }
-        rows.push_back(row);
-    }
-    return rows;
-}
-
-QString AppController::cryptoStatus() const { return private_->crypto_status; }
-bool AppController::cryptoSyncRunning() const { return private_->crypto_running; }
+QVariantList AppController::cryptoWallets() const { return private_->wallets.rows(); }
+QString AppController::cryptoStatus() const { return private_->wallets.status(); }
+bool AppController::cryptoSyncRunning() const { return private_->wallets.running(); }
 
 bool AppController::addCryptoWallet(const QString& name, const QString& value) {
-    if (locked_ || demo_mode_ || private_->crypto_running) return false;
-    const auto address = value.trimmed().toLower();
-    const auto label = name.trimmed();
-    if (!valid_ethereum_address(address) || label.isEmpty() || label.toUtf8().size() > 80 || label.contains(QChar::Null)) {
-        private_->crypto_status = QStringLiteral("Укажите короткое название и публичный EVM-адрес: 0x и 40 шестнадцатеричных символов.");
-        emit cryptoWalletsChanged();
-        return false;
-    }
-    if (!private_->history.ready()) {
-        private_->crypto_status = QStringLiteral("Защищённое хранилище недоступно. Кошелёк не сохранён.");
-        emit cryptoWalletsChanged();
-        return false;
-    }
-    if (!private_->history.saveWallet(address, label)) {
-        private_->crypto_status = QStringLiteral("Не удалось сохранить кошелёк.");
-        emit cryptoWalletsChanged();
-        return false;
-    }
-    private_->crypto_status = QStringLiteral("Кошелёк сохранён. Обнаруживаем сети Rabby…");
-    emit cryptoWalletsChanged();
+    if (locked_ || demo_mode_) return false;
+    if (!private_->wallets.add(name, value)) return false;
     refreshCryptoWallets();
     return true;
 }
 
 bool AppController::removeCryptoWallet(const QString& address) {
-    if (locked_ || demo_mode_ || private_->crypto_running || !private_->history.ready()) return false;
-    if (!private_->history.removeWallet(address)) {
-        private_->crypto_status = QStringLiteral("Не удалось удалить подключение кошелька.");
-        emit cryptoWalletsChanged();
-        return false;
-    }
-    private_->crypto_states.remove(address);
-    private_->crypto_status = QStringLiteral("Подключение кошелька удалено. История сохранена.");
-    emit cryptoWalletsChanged();
-    return true;
+    if (locked_ || demo_mode_) return false;
+    return private_->wallets.remove(address);
 }
 
 bool AppController::refreshCryptoWallets() {
-    if (locked_ || demo_mode_ || private_->crypto_running) return false;
-    if (private_->history.wallets().empty()) {
-        private_->crypto_status = QStringLiteral("Добавьте публичный EVM-адрес кошелька.");
-        emit cryptoWalletsChanged();
-        return false;
-    }
-    private_->crypto_pending.clear();
-    for (const auto& wallet : private_->history.wallets()) private_->crypto_pending.push_back(QString::fromStdString(wallet.address));
-    private_->crypto_running = true;
-    private_->crypto_failures = 0;
-    private_->crypto_status = QStringLiteral("Обновляем кошельки в сетях EVM…");
-    emit cryptoWalletsChanged();
-    startNextCryptoWallet();
-    return true;
+    if (locked_ || demo_mode_) return false;
+    return private_->wallets.refresh();
 }
 
-void AppController::stopCryptoRefresh() {
-    if (!private_->crypto_running) return;
-    private_->crypto_pending.clear();
-    if (private_->crypto_sync) {
-        private_->crypto_sync->cancel();
-        private_->crypto_sync->deleteLater();
-        private_->crypto_sync.clear();
-    }
-    private_->crypto_running = false;
-    private_->crypto_status = QStringLiteral("Обновление кошельков остановлено. Предыдущие данные сохранены.");
-    emit cryptoWalletsChanged();
-}
-
-void AppController::startNextCryptoWallet() {
-    if (!private_->crypto_running || private_->crypto_sync) return;
-    if (private_->crypto_pending.isEmpty()) {
-        private_->crypto_running = false;
-        private_->crypto_status = private_->crypto_failures == 0
-            ? QStringLiteral("Кошельки обновлены. Автообновление — каждые 6 часов, пока приложение открыто.")
-            : QStringLiteral("Не удалось обновить кошельков: %1. Предыдущие данные сохранены.").arg(private_->crypto_failures);
-        emit cryptoWalletsChanged();
-        return;
-    }
-    const auto address = private_->crypto_pending.takeFirst();
-    const auto advance = [this] {
-        if (private_->crypto_sync) private_->crypto_sync->deleteLater();
-        private_->crypto_sync.clear();
-        emit cryptoWalletsChanged();
-        QTimer::singleShot(0, this, [this] { startNextCryptoWallet(); });
-    };
-    auto* coordinator = new CryptoWalletSync(*private_->network,
-        [this, address, advance](CryptoPortfolio portfolio) {
-            const auto now = QDateTime::currentDateTimeUtc();
-            auto& state = private_->crypto_states[address];
-            state = {{QStringLiteral("value"), usdt_label(portfolio.usdtMinor)},
-                {QStringLiteral("holdings"), portfolio.holdings}, {QStringLiteral("unpricedCount"), portfolio.unpricedCount},
-                {QStringLiteral("supportedChains"), portfolio.supportedChains}, {QStringLiteral("networks"), portfolio.usedChains},
-                {QStringLiteral("lastSync"), now.toLocalTime().toString(QStringLiteral("dd.MM.yyyy HH:mm:ss"))},
-                {QStringLiteral("status"), QStringLiteral("Оценённая часть активов по данным Rabby.")}};
-            const auto wallet = std::find_if(private_->history.wallets().begin(), private_->history.wallets().end(),
-                [&](const auto& item) { return item.address == address.toStdString(); });
-            if (wallet != private_->history.wallets().end() && private_->history.ready()) {
-                const auto connection = "ethereum:" + wallet->address;
-                const auto institution = "EVM · " + wallet->name;
-                std::vector<storage::HistoryBalance> balances{{wallet->address, wallet->name + " · оценённые активы", "USDT", portfolio.usdtMinor}};
-                const auto capturedAt = now.toString(Qt::ISODateWithMs).toStdString();
-                if (!private_->history.append(connection, institution, capturedAt, std::move(balances))) {
-                    state[QStringLiteral("status")] = QStringLiteral("Оценка обновлена, но историю сохранить не удалось.");
-                    ++private_->crypto_failures;
-                }
-                emit balanceHistoryChanged();
-            }
-            advance();
-        }, [this, address, advance](QString error) {
-            private_->crypto_states[address][QStringLiteral("status")] = std::move(error);
-            ++private_->crypto_failures;
-            advance();
-        }, this);
-    private_->crypto_sync = coordinator;
-    coordinator->start(address);
-}
+void AppController::stopCryptoRefresh() { private_->wallets.stop(); }
 
 QVariantList AppController::balanceHistoryAccounts() const {
     return balance_history_accounts(private_->history.captures());
@@ -1122,6 +992,8 @@ AppController::AppController(std::unique_ptr<CredentialBackend> credentials,
       bank_connections_(this),
       private_(std::make_unique<AppControllerPrivate>(std::move(credentials),
                                                       std::move(network))) {
+    private_->wallets.setNotifications([this] { emit cryptoWalletsChanged(); },
+        [this] { emit balanceHistoryChanged(); });
     initializeCashback();
     initializeBalanceHistory(historyPath);
     const auto defaultPeriod = defaultReportingPeriod(QDate::currentDate());
@@ -1481,7 +1353,7 @@ AppController::AppController(std::unique_ptr<CredentialBackend> credentials,
     resumeRestoration();
     private_->crypto_timer.setInterval(autoUpdateIntervalSeconds * 1000);
     connect(&private_->crypto_timer, &QTimer::timeout, this, [this] {
-        if (!locked_ && !demo_mode_ && !private_->crypto_running &&
+        if (!locked_ && !demo_mode_ && !private_->wallets.running() &&
             !private_->history.wallets().empty()) refreshCryptoWallets();
     });
     private_->crypto_timer.start();
@@ -1505,7 +1377,7 @@ void AppController::restoreRetailConnections() {
 }
 
 AppController::~AppController() {
-    if (private_->crypto_sync) private_->crypto_sync->cancel();
+    private_->wallets.cancelPending();
 }
 
 QAbstractItemModel* AppController::accounts() noexcept { return &accounts_; }

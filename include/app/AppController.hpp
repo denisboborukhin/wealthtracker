@@ -306,7 +306,6 @@ private:
     void startOzonCashback();
     void stopOzonCashback(bool clearData = false);
     bool persistCashback(const QByteArray& data);
-    void startNextCryptoWallet();
     void stopCryptoRefresh();
     void initializeBalanceHistory(const QString& path);
     void recordBalanceHistory(const QString& connectorId);

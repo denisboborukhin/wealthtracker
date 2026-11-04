@@ -162,6 +162,7 @@ target_sources(
         TYPE CXX_MODULES
         FILES
             src/app/reporting.cppm
+            src/app/wallet_service.cppm
             src/app/crypto_wallet.cppm
             src/app/cashback.cppm
             src/app/connection_state.cppm
@@ -293,6 +294,7 @@ if(BUILD_TESTING)
 
     add_executable(app_tests
         tests/app/test_main.cpp
+        tests/app/wallet_service_test.cpp
         tests/app/history_store_test.cpp
         tests/app/connection_state_test.cpp
         tests/app/finance_models_test.cpp
