@@ -25,11 +25,9 @@
 #include <cstdint>
 #include <expected>
 #include <functional>
-#include <limits>
 #include <optional>
 #include <span>
 #include <string>
-#include <tuple>
 #include <utility>
 #include <vector>
 
@@ -48,8 +46,8 @@ import wt.storage;
 import wt.investment_sync;
 import wt.platform;
 import wt.reporting;
+import wt.finance_projection;
 import wt.tbank_login;
-import wt.transfer_matching;
 import wt.vtb_login;
 import wt.ozon_login;
 import wt.zen_plugin_runner;
@@ -234,57 +232,6 @@ QString retailBankInstitution(const QString& connectorId) {
     return match == retailBankDefinitions().cend() ? QString{} : match->institution;
 }
 
-QString formatMinorUnits(const std::int64_t minorUnits) {
-    const bool negative = minorUnits < 0;
-    const auto magnitude = negative
-        ? static_cast<std::uint64_t>(-(minorUnits + 1)) + 1
-        : static_cast<std::uint64_t>(minorUnits);
-    const auto units = static_cast<qlonglong>(magnitude / 100);
-    const auto cents = static_cast<unsigned>(magnitude % 100);
-    auto result =
-        QLocale(QLocale::Russian, QLocale::Russia).toString(units);
-    result.replace(QChar(0x00a0), QLatin1Char(' '));
-    result.replace(QChar(0x202f), QLatin1Char(' '));
-    if (cents != 0) {
-        result += QStringLiteral(",%1").arg(cents, 2, 10, QLatin1Char('0'));
-    }
-    return negative ? QStringLiteral("−%1").arg(result) : result;
-}
-
-QString currencySymbol(const QString& currency) {
-    if (currency == QStringLiteral("RUB")) {
-        return QStringLiteral("₽");
-    }
-    if (currency == QStringLiteral("USD")) {
-        return QStringLiteral("$");
-    }
-    if (currency == QStringLiteral("EUR")) {
-        return QStringLiteral("€");
-    }
-    if (currency == QStringLiteral("CNY")) {
-        return QStringLiteral("¥");
-    }
-    return currency;
-}
-
-QString signedMoney(const Money& money) {
-    const auto sign = money.minorUnits >= 0 ? QStringLiteral("+") : QString{};
-    return QStringLiteral("%1%2 %3")
-        .arg(sign, formatMinorUnits(money.minorUnits),
-             currencySymbol(money.currency));
-}
-
-bool checkedAdd(std::int64_t& total, const std::int64_t value) {
-    if ((value > 0 &&
-         total > std::numeric_limits<std::int64_t>::max() - value) ||
-        (value < 0 &&
-         total < std::numeric_limits<std::int64_t>::min() - value)) {
-        return false;
-    }
-    total += value;
-    return true;
-}
-
 QString connectorAccent(const QString& connectorId) {
     if (connectorId == QStringLiteral("alfa-api") ||
         connectorId == QStringLiteral("alfa-retail")) {
@@ -327,14 +274,6 @@ QString formatSyncDateTime(const QDateTime& value) {
     auto local = value.toLocalTime();
     return QLocale(QLocale::Russian, QLocale::Russia)
         .toString(local, QStringLiteral("d MMMM, HH:mm"));
-}
-
-QString formatTransactionDate(const QDate& value, const QDate& today) {
-    if (value == today) {
-        return QStringLiteral("Сегодня");
-    }
-    return QLocale(QLocale::Russian, QLocale::Russia)
-        .toString(value, QStringLiteral("d MMM yyyy"));
 }
 
 bool canPersistZenPreference(
@@ -2447,224 +2386,28 @@ void AppController::synchronizeBank(const QString& connectorId) {
 }
 
 void AppController::rebuildBankModels() {
-    struct DatedTransaction {
-        TransactionRow row;
-        QDateTime sortTime;
-        QString sortKey;
-    };
-    struct SourceTransaction {
-        QString connectorId;
-        QString institution;
-        const wealthtracker::connectors::NormalizedTransaction* transaction{};
-    };
-
-    QVector<AccountRow> accountRows;
-    QVector<HoldingRow> holdingRows;
-    std::int64_t portfolioValue = 0;
-    bool portfolioValid = true;
-    QVector<OwnedTransaction> ownedTransactions;
-    QVector<SourceTransaction> sourceTransactions;
-    QVector<DatedTransaction> transactionRows;
-    QHash<QString, std::int64_t> categorySpending;
-    std::int64_t rubNetWorth = 0;
-    std::int64_t reportIncome = 0;
-    std::int64_t reportSpending = 0;
-    bool netWorthValid = true;
-    bool incomeValid = true;
-    bool spendingValid = true;
-    bool categoriesValid = true;
-    const auto today = QDate::currentDate();
-    const ReportingPeriod reportingPeriod{reporting_from_, reporting_to_};
-
-    for (auto bank = private_->bank_batches.cbegin(); bank != private_->bank_batches.cend();
-         ++bank) {
+    QHash<QString, ProjectionInstitution> institutions;
+    for (auto bank = private_->bank_batches.cbegin(); bank != private_->bank_batches.cend(); ++bank) {
         const auto configuration = bankConfiguration(bank.key());
-        auto institution =
-            configuration ? configuration->institution : retailBankInstitution(bank.key());
-        if (institution.isEmpty()) {
-            institution = private_->bank_institutions.value(bank.key());
-        }
-        if (institution.isEmpty()) {
-            continue;
-        }
-        QHash<QString, Money> balances;
-        for (const auto& snapshot : bank->balances) {
-            balances.insert(snapshot.accountExternalId, snapshot.balance);
-            if (snapshot.balance.currency == QStringLiteral("RUB")) {
-                netWorthValid &= checkedAdd(rubNetWorth, snapshot.balance.minorUnits);
-                if (bank.key() == QStringLiteral("t-invest")) {
-                    portfolioValid &= checkedAdd(portfolioValue, snapshot.balance.minorUnits);
-                }
-            }
-        }
-        for (const auto& account : bank->accounts) {
-            const auto balance = balances.value(account.externalId, Money{0, account.currency});
-            accountRows.push_back({
-                account.name,
-                institution,
-                account.kind,
-                formatMinorUnits(balance.minorUnits),
-                currencySymbol(balance.currency),
-                connectorAccent(bank.key()),
-            });
-        }
-        for (const auto& position : bank->positions) {
-            holdingRows.push_back({position.ticker.isEmpty() ? QStringLiteral("—") : position.ticker,
-                position.instrumentName.isEmpty() ? QStringLiteral("Инструмент") : position.instrumentName,
-                QStringLiteral("%1 %2").arg(formatMinorUnits(position.currentValue.minorUnits),
-                                            currencySymbol(position.currentValue.currency)),
-                QStringLiteral("—"), QStringLiteral("—"), true,
-                position.currentValue.minorUnits, position.currentValue.currency});
-        }
-        for (const auto& transaction : bank->transactions) {
-            sourceTransactions.push_back({bank.key(), institution, &transaction});
-            ownedTransactions.push_back(
-                {bank.key(), transaction.accountExternalId, transaction.externalId,
-                 transaction.postingDate, transaction.occurredAt, transaction.amount.minorUnits,
-                 transaction.amount.currency,
-                 transaction.kind ==
-                     wealthtracker::connectors::NormalizedTransactionKind::InternalTransfer});
-        }
+        auto institution = configuration ? configuration->institution : retailBankInstitution(bank.key());
+        if (institution.isEmpty()) institution = private_->bank_institutions.value(bank.key());
+        institutions.insert(bank.key(), {institution, connectorAccent(bank.key())});
     }
-
-    const auto transferIndexes = findOwnAccountTransfers(std::span<const OwnedTransaction>{
-        ownedTransactions.constData(), static_cast<std::size_t>(ownedTransactions.size())});
-    for (qsizetype index = 0; index < sourceTransactions.size(); ++index) {
-        const auto& source = sourceTransactions.at(index);
-        const auto& transaction = *source.transaction;
-        if (!reportingPeriod.contains(transaction.postingDate)) {
-            continue;
-        }
-        auto title = transaction.merchant.trimmed();
-        if (title.isEmpty()) {
-            title = transaction.description.trimmed();
-        }
-        if (title.isEmpty()) {
-            title = QStringLiteral("Операция");
-        }
-        auto subtitle = transaction.description.trimmed();
-        if (subtitle.isEmpty() || subtitle == title) {
-            subtitle = source.institution;
-        }
-        const bool internalTransfer = transferIndexes.contains(index);
-        const auto category = internalTransfer ? QStringLiteral("Внутренний перевод")
-                              : transaction.bankCategory.trimmed().isEmpty()
-                                  ? QStringLiteral("Без категории")
-                                  : transaction.bankCategory.trimmed();
-        const auto sortTime = transaction.occurredAt.value_or(
-            QDateTime(transaction.postingDate, QTime(0, 0), QTimeZone::UTC));
-        const auto dateText = formatTransactionDate(transaction.postingDate, today);
-        const auto sortKey = QStringLiteral("%1\n%2\n%3")
-                                 .arg(source.connectorId,
-                                      transaction.accountExternalId,
-                                      transaction.externalId);
-        transactionRows.push_back({
-            {title, subtitle, category, signedMoney(transaction.amount), dateText,
-             transaction.amount.minorUnits >= 0, internalTransfer},
-            sortTime,
-            sortKey,
-        });
-
-        if (transaction.amount.currency != QStringLiteral("RUB") || internalTransfer) {
-            continue;
-        }
-        if (transaction.amount.minorUnits >= 0) {
-            incomeValid &= checkedAdd(reportIncome, transaction.amount.minorUnits);
-            continue;
-        }
-        if (transaction.amount.minorUnits == std::numeric_limits<std::int64_t>::min()) {
-            spendingValid = false;
-            categoriesValid = false;
-            continue;
-        }
-        const auto spending = -transaction.amount.minorUnits;
-        spendingValid &= checkedAdd(reportSpending, spending);
-        auto categoryTotal = categorySpending.value(category);
-        if (checkedAdd(categoryTotal, spending)) {
-            categorySpending.insert(category, categoryTotal);
-        } else {
-            categoriesValid = false;
-        }
-    }
-
-    std::sort(transactionRows.begin(), transactionRows.end(),
-              [](const DatedTransaction& left, const DatedTransaction& right) {
-                  if (left.sortTime != right.sortTime) {
-                      return left.sortTime > right.sortTime;
-                  }
-                  return left.sortKey < right.sortKey;
-              });
-    QVector<TransactionRow> sortedTransactions;
-    sortedTransactions.reserve(transactionRows.size());
-    for (auto& transaction : transactionRows) {
-        sortedTransactions.push_back(std::move(transaction.row));
-    }
-
-    QVector<std::pair<QString, std::int64_t>> sortedCategories;
-    sortedCategories.reserve(categorySpending.size());
-    for (auto category = categorySpending.cbegin(); category != categorySpending.cend();
-         ++category) {
-        sortedCategories.emplace_back(category.key(), category.value());
-    }
-    std::sort(sortedCategories.begin(), sortedCategories.end(),
-              [](const auto& left, const auto& right) {
-                  if (left.second != right.second) {
-                      return left.second > right.second;
-                  }
-                  return left.first < right.first;
-              });
-    static const QStringList categoryColors{QStringLiteral("#2563EB"), QStringLiteral("#7C3AED"),
-                                            QStringLiteral("#059669"), QStringLiteral("#D97706"),
-                                            QStringLiteral("#64748B")};
-    QVector<CategoryRow> categoryRows;
-    if (spendingValid && categoriesValid) {
-        categoryRows.reserve(sortedCategories.size());
-        for (qsizetype index = 0; index < sortedCategories.size(); ++index) {
-            const auto& [name, amount] = sortedCategories.at(index);
-            const auto share = reportSpending > 0
-                                   ? static_cast<double>(amount) /
-                                         static_cast<double>(reportSpending)
-                                   : 0.0;
-            categoryRows.push_back(
-                {name, QStringLiteral("%1 ₽").arg(formatMinorUnits(amount)), share,
-                 categoryColors.at(index % categoryColors.size())});
-        }
-    }
-
-    std::sort(accountRows.begin(), accountRows.end(),
-              [](const AccountRow& left, const AccountRow& right) {
-                  return std::tie(left.institution, left.name, left.type) <
-                         std::tie(right.institution, right.name, right.type);
-              });
-
-    auto savings = reportIncome;
-    const bool savingsValid = incomeValid && spendingValid &&
-                              checkedAdd(savings, -reportSpending);
-
-    accounts_.replace(std::move(accountRows));
-    transactions_.replace(std::move(sortedTransactions));
-    categories_.replace(std::move(categoryRows));
-    holdings_.replace(std::move(holdingRows));
-    live_portfolio_value_ = portfolioValid
-        ? QStringLiteral("%1 ₽").arg(formatMinorUnits(portfolioValue)) : QStringLiteral("—");
-    live_net_worth_ = netWorthValid
-                          ? QStringLiteral("%1 ₽").arg(formatMinorUnits(rubNetWorth))
-                          : QStringLiteral("—");
-    live_report_income_ = incomeValid
-                              ? QStringLiteral("%1 ₽").arg(formatMinorUnits(reportIncome))
-                              : QStringLiteral("—");
-    live_report_spending_ = spendingValid
-                                ? QStringLiteral("%1 ₽").arg(formatMinorUnits(reportSpending))
-                                : QStringLiteral("—");
-    live_savings_ = savingsValid
-                        ? QStringLiteral("%1 ₽").arg(formatMinorUnits(savings))
-                        : QStringLiteral("—");
+    auto projection = projectFinance(private_->bank_batches, institutions,
+        {reporting_from_, reporting_to_}, QDate::currentDate());
+    accounts_.replace(std::move(projection.accounts));
+    transactions_.replace(std::move(projection.transactions));
+    categories_.replace(std::move(projection.categories));
+    holdings_.replace(std::move(projection.holdings));
+    live_portfolio_value_ = std::move(projection.portfolioValue);
+    live_net_worth_ = std::move(projection.netWorth);
+    live_report_income_ = std::move(projection.income);
+    live_report_spending_ = std::move(projection.spending);
+    live_savings_ = std::move(projection.savings);
     const bool demoChanged = demo_mode_;
     demo_mode_ = false;
     emit dashboardChanged();
-    if (demoChanged) {
-        emit demoModeChanged();
-    }
+    if (demoChanged) emit demoModeChanged();
 }
 
 bool AppController::inspectZenPluginBundle(const QUrl& source) {
