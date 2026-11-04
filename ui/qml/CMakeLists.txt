@@ -9,7 +9,11 @@ set_source_files_properties(
 )
 
 qt_add_qml_module(
-    wealthtracker
+    ui
+    STATIC
+    PLUGIN_TARGET ui_plugin
+    CLASS_NAME WealthTrackerPlugin
+    OUTPUT_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/WealthTracker"
     URI WealthTracker
     VERSION 1.0
     RESOURCE_PREFIX /qt/qml
@@ -44,9 +48,13 @@ target_link_libraries(
     wealthtracker
     PRIVATE
         app
+        ui_plugin
         Qt6::QuickControls2
         OpenSSL::SSL
 )
+target_link_libraries(ui PRIVATE Qt6::QuickControls2)
+add_custom_target(wealthtracker_qmllint DEPENDS ui_qmllint)
+
 enable_strict_warnings(wealthtracker)
 enable_sanitizers(wealthtracker)
 

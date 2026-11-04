@@ -5,6 +5,7 @@
 #include <QImage>
 #include <QLockFile>
 #include <QQmlApplicationEngine>
+#include <QtQml/QQmlExtensionPlugin>
 #include <QQuickWindow>
 #include <QQuickStyle>
 #include <QSslSocket>
@@ -14,6 +15,8 @@
 #include <QtWebView/QtWebView>
 
 #include <openssl/ssl.h>
+
+Q_IMPORT_QML_PLUGIN(WealthTrackerPlugin)
 
 int main(int argc, char* argv[]) {
 #ifdef Q_OS_ANDROID

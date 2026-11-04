@@ -324,14 +324,12 @@ if(BUILD_TESTING)
     enable_sanitizers(app_tests)
     catch_discover_tests(app_tests)
 
-    if(APPLE)
-        get_target_property(qmake_executable Qt6::qmake IMPORTED_LOCATION)
-        get_filename_component(qt_bin_dir "${qmake_executable}" DIRECTORY)
-        add_test(NAME connection_pages_ui
-            COMMAND sh "${PROJECT_SOURCE_DIR}/tests/ui/run.sh"
-                "${qt_bin_dir}/qmltestrunner" "${PROJECT_SOURCE_DIR}"
-                "${PROJECT_BINARY_DIR}/ui/qml/WealthTracker")
-    endif()
+    find_package(Qt6 6.11 REQUIRED COMPONENTS QuickTest)
+    qt_add_executable(qml_tests tests/ui/main.cpp)
+    target_link_libraries(qml_tests PRIVATE ui_plugin Qt6::QuickTest Qt6::QuickControls2)
+    add_test(NAME connection_pages_ui
+        COMMAND qml_tests -platform offscreen -input "${PROJECT_SOURCE_DIR}/tests/ui")
+    set_tests_properties(connection_pages_ui PROPERTIES ENVIRONMENT "QT_QUICK_CONTROLS_STYLE=Basic")
 
     if(APPLE)
         add_executable(webview_tests
