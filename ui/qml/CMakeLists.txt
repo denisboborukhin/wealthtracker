@@ -23,6 +23,9 @@ qt_add_qml_module(
         components/MetricCard.qml
         components/BalanceHistoryPanel.qml
         components/RetailConnection.qml
+        components/PluginConnectionEditor.qml
+        components/RetailLoginContent.qml
+        components/MobileRetailLoginContent.qml
         components/BankTokenEditor.qml
         components/ConnectionList.qml
         components/SectionCard.qml

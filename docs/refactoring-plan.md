@@ -235,3 +235,28 @@ Connection activity pass:
   independent; API credential inventory and coordinator lifetimes are retained.
 - Twelve focused native checks pass for activity, scheduling, overlapping refreshes,
   privacy cancellation, rejected commands and saved-data retention.
+
+Connection dialog extraction pass:
+- PluginConnectionEditor owns plugin settings, preferences, prompt and sensitive
+  field clearing. Separate desktop/mobile retail components retain their native
+  WindowContainer bindings and lifetime; no Loader or extra native window is added.
+- ConnectionsPage is now 474 lines. Five new interaction functions exercise
+  preferences, rejected/accepted starts, prompt clearing, status, actions and real
+  QQuickWindow attachment/detachment. Six before/after component renders are
+  pixel-identical at phone/desktop sizes.
+- Android 16 emulator confirms the public VTB phone-entry form is visible inside
+  the refactored dialog and closing it restores Connections. No phone number/code
+  was entered; authenticated bank access remains a separate live check.
+
+Remaining: retirement of bank-specific facade properties after their remaining
+adapters migrate, further replacement of source-string UI contracts with runtime
+checks, and product decisions for unreachable pages/unintegrated subsystems.
+Existing bank adapters, origins, schemas, credential keys and storage formats
+are retained. This progress record does not mark those decisions complete.
+
+Verification for this pass (macOS arm64 / Android 16 emulator, 2026-11-04):
+- Native build, all 282 CTest entries (including compiled QML interaction tests),
+  QML lint, 11 Python script tests and Node syntax check pass.
+- Android APK builds; 16 browser/trust/credential instrumentation tests pass.
+  The final APK installs over the existing emulator app and starts successfully.
+- Authenticated bank access was not exercised during this structural refactor.

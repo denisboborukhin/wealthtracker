@@ -225,3 +225,9 @@ resources directly, without modifying copies of QML source. The existing
 plugin migration before refresh scheduling. It preserves source state until a
 replacement secret is stored. The facade applies the result after coordinator
 initialization and before restoring balances and queuing background refreshes.
+
+`PluginConnectionEditor.qml` owns preference fields, prompt input and sensitive
+field clearing. `RetailLoginContent.qml` and `MobileRetailLoginContent.qml`
+render desktop and Android login bodies with the existing native window bindings.
+The page retains dialog lifetime and bank command routing; coordinators retain
+WebView ownership and deferred cleanup.

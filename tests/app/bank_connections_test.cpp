@@ -397,13 +397,20 @@ TEST_CASE("T-Bank login UI embeds a coordinator-owned native WebView") {
     QFile page(QStringLiteral(
         WEALTHTRACKER_SOURCE_DIR "/ui/qml/pages/ConnectionsPage.qml"));
     REQUIRE(page.open(QIODevice::ReadOnly));
-    const auto source = page.readAll();
+    const auto pageSource = page.readAll();
+    QFile desktop(QStringLiteral(
+        WEALTHTRACKER_SOURCE_DIR "/ui/qml/components/RetailLoginContent.qml"));
+    QFile mobile(QStringLiteral(
+        WEALTHTRACKER_SOURCE_DIR "/ui/qml/components/MobileRetailLoginContent.qml"));
+    REQUIRE(desktop.open(QIODevice::ReadOnly));
+    REQUIRE(mobile.open(QIODevice::ReadOnly));
+    const auto source = pageSource + desktop.readAll() + mobile.readAll();
     CHECK(source.contains(QByteArrayLiteral("selectedRetail.beginLogin()")));
     CHECK(source.contains(QByteArrayLiteral("WindowContainer {")));
     CHECK(source.contains(QByteArrayLiteral(
         "selectedRetail.webView")));
     CHECK(source.contains(QByteArrayLiteral(
-        "? connectionDialog.retailWebView : null")));
+        "? content.webView : null")));
     CHECK_FALSE(source.contains(QByteArrayLiteral("sessionid")));
     CHECK_FALSE(source.contains(QByteArrayLiteral("runJavaScript(")));
     CHECK_FALSE(source.contains(QByteArrayLiteral("отдельном Chrome")));
