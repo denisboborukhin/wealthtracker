@@ -35,16 +35,6 @@ TEST_CASE("dashboard keeps populated summaries inside responsive surfaces") {
     CHECK(source.contains(QByteArrayLiteral(
         "Layout.preferredHeight: page.recentOperationsPreferredHeight")));
     CHECK_FALSE(source.contains(QByteArrayLiteral("id: categoryRepeater")));
-    CHECK(source.contains(QByteArrayLiteral("id: reportingFromPicker")));
-    CHECK(source.contains(QByteArrayLiteral("id: reportingToPicker")));
-    CHECK(source.contains(QByteArrayLiteral("DatePickerField")));
-    CHECK_FALSE(source.contains(QByteArrayLiteral("id: reportingFromField")));
-    CHECK_FALSE(source.contains(QByteArrayLiteral("id: reportingToField")));
-    CHECK_FALSE(source.contains(QByteArrayLiteral("text: qsTr(\"Применить\")")));
-    CHECK(source.contains(QByteArrayLiteral("applyReportingFrom")));
-    CHECK(source.contains(QByteArrayLiteral("applyReportingTo")));
-    CHECK(source.contains(QByteArrayLiteral("setReportingPeriod")));
-    CHECK(source.contains(QByteArrayLiteral("resetReportingPeriod")));
     CHECK(source.contains(QByteArrayLiteral("value: page.app.savings")));
     CHECK_FALSE(source.contains(QByteArrayLiteral("savingsRate")));
     CHECK(source.contains(QByteArrayLiteral(
@@ -57,17 +47,6 @@ TEST_CASE("dashboard keeps populated summaries inside responsive surfaces") {
     CHECK(window.contains(QByteArrayLiteral("right: parent.right")));
     CHECK(window.contains(QByteArrayLiteral("delegate: Button")));
     CHECK_FALSE(window.contains(QByteArrayLiteral("MouseArea {\n                            anchors.fill: parent")));
-
-    const auto datePicker = readQml("components/DatePickerField.qml");
-    CHECK(datePicker.contains(QByteArrayLiteral("MonthGrid")));
-    CHECK(datePicker.contains(QByteArrayLiteral("DayOfWeekRow")));
-    CHECK(datePicker.contains(QByteArrayLiteral("Popup")));
-    CHECK(datePicker.contains(QByteArrayLiteral("height: 322")));
-    CHECK(datePicker.contains(QByteArrayLiteral("popupType: Popup.Item")));
-    CHECK(datePicker.contains(QByteArrayLiteral("margins: 12")));
-    CHECK(datePicker.contains(QByteArrayLiteral("parent: field")));
-    CHECK_FALSE(datePicker.contains(QByteArrayLiteral("mapToItem")));
-    CHECK(datePicker.contains(QByteArrayLiteral("signal dateSelected")));
 }
 
 TEST_CASE("privacy screen describes its scope and limitations") {

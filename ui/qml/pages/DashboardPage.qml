@@ -114,6 +114,7 @@ Flickable {
                     }
                     DatePickerField {
                         id: reportingFromPicker
+                        objectName: "reportingFromPicker"
                         Layout.fillWidth: page.width <= 760
                         value: page.app.reportingFrom
                         accessibleName: qsTr("Начало периода")
@@ -130,6 +131,7 @@ Flickable {
                     }
                     DatePickerField {
                         id: reportingToPicker
+                        objectName: "reportingToPicker"
                         Layout.fillWidth: page.width <= 760
                         value: page.app.reportingTo
                         accessibleName: qsTr("Конец периода")
@@ -140,6 +142,7 @@ Flickable {
                     }
                     ActionButton {
                         Layout.columnSpan: page.width > 760 ? 1 : 2
+                        objectName: "resetReportingPeriod"
                         text: qsTr("Последний месяц")
                         enabled: !page.app.demoMode
                         onClicked: page.app.resetReportingPeriod()

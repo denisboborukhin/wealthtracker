@@ -260,3 +260,21 @@ Verification for this pass (macOS arm64 / Android 16 emulator, 2026-11-04):
 - Android APK builds; 16 browser/trust/credential instrumentation tests pass.
   The final APK installs over the existing emulator app and starts successfully.
 - Authenticated bank access was not exercised during this structural refactor.
+
+
+Calendar interaction-test pass:
+- Replaced the calendar/reporting-period portion of source-string UI contracts
+  with compiled QML interaction tests. Remaining dashboard layout and privacy
+  source checks are retained for later replacement; no CTest entry was removed.
+- Seven behavior cases cover real day clicks, month/year navigation, leap-day
+  validation, popup containment on 320/400-pixel phone and desktop viewports,
+  Escape/disable closure, owner-controlled values, crossed reporting bounds,
+  period reset and demo guards.
+- Production QML changes add object names for stable lookup only. Day delegates
+  are looked up in the popup content after native reparenting; clicks wait for
+  rendering so layout changes cannot redirect the click to another date.
+- The open calendar's before/after 400x800 renders are pixel-identical. Bank
+  adapters, public facade commands, credentials and storage formats are unchanged.
+- Verification: native build, all 282 CTest entries (including the seven new QML
+  cases), QML lint and Android APK build pass. Android authentication/runtime
+  instrumentation was not rerun for this selector/test-only change.

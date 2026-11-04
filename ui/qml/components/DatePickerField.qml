@@ -134,6 +134,7 @@ Button {
 
     Popup {
         id: calendarPopup
+        objectName: "calendarPopup"
         parent: field
         width: 306
         height: 322
@@ -165,6 +166,7 @@ Button {
 
                 Button {
                     id: previousMonthButton
+                    objectName: "previousMonthButton"
                     Layout.preferredWidth: 32
                     Layout.preferredHeight: 32
                     flat: true
@@ -191,6 +193,7 @@ Button {
 
                 Button {
                     id: nextMonthButton
+                    objectName: "nextMonthButton"
                     Layout.preferredWidth: 32
                     Layout.preferredHeight: 32
                     flat: true
@@ -235,6 +238,7 @@ Button {
 
                 delegate: Rectangle {
                     required property var model
+                    objectName: "calendarDay_" + Qt.formatDate(model.date, "dd.MM.yyyy")
                     width: (monthGrid.availableWidth - monthGrid.spacing * 6) / 7
                     height: 32
                     radius: 6
