@@ -34,6 +34,7 @@ import wt.connectors;
 import wt.alfa_login;
 import wt.bank_sync;
 import wt.connection_state;
+import wt.connection_restore;
 import wt.balance_history_view;
 import wt.history_store;
 import wt.wallet_service;
@@ -908,6 +909,68 @@ AppController::AppController(std::unique_ptr<CredentialBackend> credentials,
     const auto defaultPeriod = defaultReportingPeriod(QDate::currentDate());
     reporting_from_ = defaultPeriod.from;
     reporting_to_ = defaultPeriod.to;
+    initializeRetailCoordinators();
+    QVector<ConnectionCredential> connectionCredentials;
+    for (const auto& connectorId : supportedConnectorIds()) {
+        const auto configuration = bankConfiguration(connectorId);
+        connectionCredentials.push_back({connectorId, configuration->credentialKey});
+    }
+    QSettings settings;
+    auto restored = restoreConnections(private_->credentials.get(), settings, connectionCredentials);
+    connected_bank_ids_ = std::move(restored.apiConnectionIds);
+    investment_connected_ = connected_bank_ids_.contains(QStringLiteral("t-invest"));
+    tbank_connected_ = restored.tbankConnected;
+    private_->tbank_session_saved = restored.tbankSessionSaved;
+    alfa_connected_ = restored.alfaConnected;
+    vtb_connected_ = restored.vtbConnected;
+    ozon_connected_ = restored.ozonConnected;
+    if (restored.plugin) {
+        private_->plugin.select(std::move(*restored.plugin));
+        private_->plugin.setConfiguredStateKey(
+            pluginStateCredentialKey(*private_->plugin.descriptor()));
+        zen_plugin_id_ = private_->plugin.descriptor()->pluginId;
+        zen_plugin_bundle_path_ = private_->plugin.descriptor()->bundlePath;
+        zen_plugin_institution_ = std::move(restored.pluginInstitution);
+        zen_plugin_fields_ = zenPluginFieldVariants(*private_->plugin.descriptor());
+    }
+    initializeRefreshTimers();
+    refreshZenPluginAutoUpdateSchedule();
+    refreshTBankAutoUpdateSchedule();
+    refreshAlfaAutoUpdateSchedule();
+    refreshVtbAutoUpdateSchedule();
+    refreshOzonAutoUpdateSchedule();
+    restoreSavedBalances();
+    refreshBankConnections();
+    import_status_ = QStringLiteral("Нет импортированных выписок");
+    sync_status_ = QStringLiteral("Нет синхронизированных подключений");
+    if (tbank_connected_) private_->pending_retail_restores.push_back(QStringLiteral("tbank"));
+    if (alfa_connected_) private_->pending_retail_restores.push_back(QStringLiteral("alfa"));
+    if (vtb_connected_) private_->pending_retail_restores.push_back(QStringLiteral("vtb"));
+    if (ozon_connected_) private_->pending_retail_restores.push_back(QStringLiteral("ozon"));
+    const auto resumeRestoration = [this] {
+        if (!private_->pending_retail_restores.isEmpty()) {
+            QTimer::singleShot(0, this, &AppController::restoreRetailConnections);
+        }
+    };
+    connect(this, &AppController::tbankConnectionChanged, this, resumeRestoration);
+    connect(this, &AppController::alfaConnectionChanged, this, resumeRestoration);
+    connect(this, &AppController::vtbConnectionChanged, this, resumeRestoration);
+    connect(this, &AppController::ozonConnectionChanged, this, resumeRestoration);
+    connect(this, &AppController::zenPluginChanged, this, resumeRestoration);
+    connect(this, &AppController::lockedChanged, this, resumeRestoration);
+    resumeRestoration();
+    private_->crypto_timer.setInterval(autoUpdateIntervalSeconds * 1000);
+    connect(&private_->crypto_timer, &QTimer::timeout, this, [this] {
+        if (!locked_ && !demo_mode_ && !private_->wallets.running() &&
+            !private_->history.wallets().empty()) refreshCryptoWallets();
+    });
+    private_->crypto_timer.start();
+    if (!private_->history.wallets().empty()) {
+        QTimer::singleShot(0, this, [this] { refreshCryptoWallets(); });
+    }
+}
+
+void AppController::initializeRetailCoordinators() {
     private_->tbank_login = std::make_unique<TBankLoginCoordinator>(
         [this](QString status) {
             tbank_login_status_ = std::move(status);
@@ -1073,104 +1136,9 @@ AppController::AppController(std::unique_ptr<CredentialBackend> credentials,
             emit ozonConnectionChanged();
         },
         this);
-    if (private_->credentials && private_->credentials->supported()) {
-        for (const auto& connectorId : supportedConnectorIds()) {
-            const auto configuration = bankConfiguration(connectorId);
-            auto secret =
-                private_->credentials->get(configuration->credentialKey);
-            if (secret && *secret) {
-                connected_bank_ids_.insert(connectorId);
-                (**secret).fill('\0');
-            }
-        }
-        investment_connected_ =
-            connected_bank_ids_.contains(QStringLiteral("t-invest"));
+}
 
-        auto retailSession = private_->credentials->get(
-            QString::fromLatin1(tbankRetailCredentialKey));
-        if (retailSession && *retailSession) {
-            auto session = std::move(**retailSession);
-            tbank_connected_ =
-                wealthtracker::connectors::isValidTBankRetailSessionId(
-                    std::string_view{
-                        session.constData(),
-                        static_cast<std::size_t>(session.size())});
-            private_->tbank_session_saved = tbank_connected_;
-            session.fill('\0');
-            if (!tbank_connected_) {
-                (void)private_->credentials->remove(
-                    QString::fromLatin1(tbankRetailCredentialKey));
-            }
-        }
-    }
-
-    QSettings settings;
-    alfa_connected_ = settings.value(QStringLiteral("alfa/connected"), false).toBool();
-    vtb_connected_ = settings.value(QStringLiteral("vtb/connected"), false).toBool();
-    ozon_connected_ = settings.value(QStringLiteral("ozon/connected"), false).toBool();
-    const auto configuredBundle =
-        settings.value(QStringLiteral("zenPlugin/bundlePath"))
-            .toString();
-    if (!configuredBundle.isEmpty()) {
-        auto descriptor =
-            wealthtracker::connectors::inspectZenPluginBundle(
-                configuredBundle);
-        if (descriptor
-            && descriptor->pluginId == QString::fromLatin1(tbankRetailPluginId)) {
-            bool migrationComplete = false;
-            if (private_->credentials && private_->credentials->supported()) {
-                const auto legacyStateKey = pluginStateCredentialKey(*descriptor);
-                auto legacyState = private_->credentials->get(legacyStateKey);
-                if (legacyState && *legacyState) {
-                    auto encoded = std::move(**legacyState);
-                    if (encoded.size() <= 1024 * 1024) {
-                        const auto document = QJsonDocument::fromJson(encoded);
-                        auto session = document.object()
-                                           .value(QStringLiteral("pluginData"))
-                                           .toObject()
-                                           .value(QStringLiteral("sessionId"))
-                                           .toString()
-                                           .toLatin1();
-                        if (wealthtracker::connectors::isValidTBankRetailSessionId(
-                                std::string_view{
-                                    session.constData(),
-                                    static_cast<std::size_t>(session.size())})) {
-                            const auto migrated = private_->credentials->put(
-                                QString::fromLatin1(tbankRetailCredentialKey), session);
-                            tbank_connected_ = migrated.has_value();
-                            migrationComplete = migrated.has_value();
-                        }
-                        session.fill('\0');
-                    }
-                    encoded.fill('\0');
-                }
-                if (migrationComplete) (void)private_->credentials->remove(legacyStateKey);
-            }
-            if (migrationComplete) {
-                const auto legacyLastSync = settings.value(
-                    QStringLiteral("zenPlugin/lastSyncAt"));
-                if (legacyLastSync.isValid()) {
-                    settings.setValue(QStringLiteral("tbank/lastSyncAt"),
-                                      legacyLastSync);
-                }
-                settings.setValue(
-                    QStringLiteral("tbank/autoUpdate"),
-                    settings.value(QStringLiteral("zenPlugin/autoUpdate"), true));
-                settings.remove(QStringLiteral("zenPlugin"));
-            }
-        } else if (descriptor) {
-            private_->plugin.select(std::move(*descriptor));
-            private_->plugin.setConfiguredStateKey(
-                pluginStateCredentialKey(*private_->plugin.descriptor()));
-            zen_plugin_id_ = private_->plugin.descriptor()->pluginId;
-            zen_plugin_bundle_path_ = private_->plugin.descriptor()->bundlePath;
-            zen_plugin_institution_ = settings
-                .value(QStringLiteral("zenPlugin/institution"), zen_plugin_id_)
-                .toString();
-            zen_plugin_fields_ =
-                zenPluginFieldVariants(*private_->plugin.descriptor());
-        }
-    }
+void AppController::initializeRefreshTimers() {
     private_->zen_auto_update_timer.setSingleShot(true);
     connect(&private_->zen_auto_update_timer, &QTimer::timeout, this,
             [this] {
@@ -1235,40 +1203,6 @@ AppController::AppController(std::unique_ptr<CredentialBackend> credentials,
                     }
                 }
             });
-    refreshZenPluginAutoUpdateSchedule();
-    refreshTBankAutoUpdateSchedule();
-    refreshAlfaAutoUpdateSchedule();
-    refreshVtbAutoUpdateSchedule();
-    refreshOzonAutoUpdateSchedule();
-    restoreSavedBalances();
-    refreshBankConnections();
-    import_status_ = QStringLiteral("Нет импортированных выписок");
-    sync_status_ = QStringLiteral("Нет синхронизированных подключений");
-    if (tbank_connected_) private_->pending_retail_restores.push_back(QStringLiteral("tbank"));
-    if (alfa_connected_) private_->pending_retail_restores.push_back(QStringLiteral("alfa"));
-    if (vtb_connected_) private_->pending_retail_restores.push_back(QStringLiteral("vtb"));
-    if (ozon_connected_) private_->pending_retail_restores.push_back(QStringLiteral("ozon"));
-    const auto resumeRestoration = [this] {
-        if (!private_->pending_retail_restores.isEmpty()) {
-            QTimer::singleShot(0, this, &AppController::restoreRetailConnections);
-        }
-    };
-    connect(this, &AppController::tbankConnectionChanged, this, resumeRestoration);
-    connect(this, &AppController::alfaConnectionChanged, this, resumeRestoration);
-    connect(this, &AppController::vtbConnectionChanged, this, resumeRestoration);
-    connect(this, &AppController::ozonConnectionChanged, this, resumeRestoration);
-    connect(this, &AppController::zenPluginChanged, this, resumeRestoration);
-    connect(this, &AppController::lockedChanged, this, resumeRestoration);
-    resumeRestoration();
-    private_->crypto_timer.setInterval(autoUpdateIntervalSeconds * 1000);
-    connect(&private_->crypto_timer, &QTimer::timeout, this, [this] {
-        if (!locked_ && !demo_mode_ && !private_->wallets.running() &&
-            !private_->history.wallets().empty()) refreshCryptoWallets();
-    });
-    private_->crypto_timer.start();
-    if (!private_->history.wallets().empty()) {
-        QTimer::singleShot(0, this, [this] { refreshCryptoWallets(); });
-    }
 }
 
 void AppController::restoreRetailConnections() {

@@ -221,3 +221,10 @@ Wallet/plugin/projection pass:
 Remaining work includes consolidating controller activity projections, extracting
 plugin/login UI content and making initialization/migration wiring smaller. Product
 scope decisions for unreachable pages and unintegrated libraries remain separate.
+
+Startup restoration pass:
+- Connection restoration now owns credential/settings reads and legacy migration,
+  returning saved facts to the facade. Coordinator and timer wiring are named
+  initialization steps; their order and callbacks remain unchanged.
+- Twelve focused restoration/migration tests pass, including unavailable backends,
+  malformed/oversized state, failed replacement writes and successful retry.

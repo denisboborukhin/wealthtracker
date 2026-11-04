@@ -295,6 +295,8 @@ signals:
 
 private:
     void initializeCashback();
+    void initializeRetailCoordinators();
+    void initializeRefreshTimers();
     void persistBankCashback(const QString& bank, bool remove = false);
     void restoreSavedBalances();
     void startVtbCashback();
