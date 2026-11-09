@@ -20,6 +20,7 @@ qt_add_qml_module(
     QML_FILES
         Main.qml
         Theme.qml
+        components/PrivacyScreen.qml
         components/MetricCard.qml
         components/BalanceHistoryPanel.qml
         components/RetailConnection.qml

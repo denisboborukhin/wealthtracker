@@ -278,3 +278,19 @@ Calendar interaction-test pass:
 - Verification: native build, all 282 CTest entries (including the seven new QML
   cases), QML lint and Android APK build pass. Android authentication/runtime
   instrumentation was not rerun for this selector/test-only change.
+
+
+Privacy-screen extraction pass (2026-11-09):
+- Moved the existing privacy overlay from Main.qml into PrivacyScreen.qml, keeping
+  its layout, opacity, focus, input interception and stacking order. Main retains
+  the connection to the controller unlock command; settings retain lock routing.
+- Six compiled QML cases replace behavioral source-string checks for all-button
+  pointer interception, keyboard interception, keyboard/pointer return, repeat
+  activation, card containment and settings commands at phone/desktop sizes.
+  User-facing privacy explanations still have their existing text checks.
+- Original and extracted 320x800 / 1100x850 renders are pixel-identical. No
+  credential, storage, bank-adapter or synchronization behavior is changed.
+- Verification: native build, all 282 CTest entries and QML lint pass. Android
+  APK builds and installs over the emulator app; settings -> privacy -> settings
+  works on Android 16 and a background navigation tap stays blocked. Bank login
+  and trust instrumentation were not rerun for this UI-only extraction.

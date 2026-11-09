@@ -51,7 +51,7 @@ TEST_CASE("dashboard keeps populated summaries inside responsive surfaces") {
 
 TEST_CASE("privacy screen describes its scope and limitations") {
     const auto settings = readQml(QStringLiteral("pages/SettingsPage.qml"));
-    const auto window = readQml(QStringLiteral("Main.qml"));
+    const auto privacy = readQml(QStringLiteral("components/PrivacyScreen.qml"));
 
     CHECK(settings.contains(QByteArrayLiteral("Экран приватности")));
     CHECK(settings.contains(QByteArrayLiteral("Для возврата пароль не нужен")));
@@ -60,12 +60,8 @@ TEST_CASE("privacy screen describes its scope and limitations") {
     CHECK_FALSE(settings.contains(
         QByteArrayLiteral("Скрыть финансовые данные")));
 
-    CHECK(window.contains(QByteArrayLiteral("Экран приватности включён")));
-    CHECK(window.contains(QByteArrayLiteral("пароль не требуется")));
-    CHECK(window.contains(QByteArrayLiteral("color: Theme.background")));
-    CHECK(window.contains(QByteArrayLiteral("id: privacyScreen")));
-    CHECK(window.contains(QByteArrayLiteral("acceptedButtons: Qt.AllButtons")));
-    CHECK(window.contains(QByteArrayLiteral("returnToDataButton.forceActiveFocus()")));
+    CHECK(privacy.contains(QByteArrayLiteral("Экран приватности включён")));
+    CHECK(privacy.contains(QByteArrayLiteral("пароль не требуется")));
 
     const auto transactions =
         readQml(QStringLiteral("pages/TransactionsPage.qml"));

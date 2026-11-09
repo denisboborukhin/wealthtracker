@@ -231,3 +231,10 @@ field clearing. `RetailLoginContent.qml` and `MobileRetailLoginContent.qml`
 render desktop and Android login bodies with the existing native window bindings.
 The page retains dialog lifetime and bank command routing; coordinators retain
 WebView ownership and deferred cleanup.
+
+`PrivacyScreen.qml` owns the opaque privacy overlay, focus and input interception.
+It emits a return request to Main, which calls the existing controller unlock
+command. Settings still invoke the existing lock command; cancellation of bank
+and wallet work remains the controller's responsibility. Compiled QML tests cover
+pointer/keyboard isolation and the settings-to-overlay interaction on phone and
+desktop sizes.

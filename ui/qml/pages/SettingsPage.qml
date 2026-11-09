@@ -114,6 +114,7 @@ Flickable {
                 }
                 ActionButton {
                     Layout.fillWidth: page.width < 600
+                    objectName: "hidePrivateData"
                     text: qsTr("Скрыть данные")
                     onClicked: page.app.lock()
                 }
