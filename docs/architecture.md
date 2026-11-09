@@ -244,3 +244,19 @@ selected index. Main retains page construction and uses the navigation's content
 offsets for StackLayout margins. Its existing currentPage alias still supports
 native startup page selection. The privacy overlay remains above both navigation
 and page content.
+
+## Remaining cleanup and product decisions
+
+The main service and UI extractions are implemented; the original refactoring
+plan is retained in Git history. The following work remains open:
+
+- Migrate remaining bank-specific facade properties and command/lifecycle
+  adapters where their contracts match. Preserve distinct authentication,
+  cancellation and rejected-command behavior while removing duplication.
+- Replace remaining behavioral source-string UI checks with interaction and
+  geometry tests, including the dashboard layout checks.
+- Decide whether to expose or retire the unreachable Accounts, Transactions,
+  Categories and Imports pages. Separately decide whether to integrate or retire
+  the unintegrated ledger/import and categorization/XIRR libraries. Retain active
+  models, exact financial arithmetic and storage compatibility until those
+  decisions are made.
