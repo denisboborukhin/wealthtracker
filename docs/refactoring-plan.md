@@ -294,3 +294,19 @@ Privacy-screen extraction pass (2026-11-09):
   APK builds and installs over the emulator app; settings -> privacy -> settings
   works on Android 16 and a background navigation tap stays blocked. Bank login
   and trust instrumentation were not rerun for this UI-only extraction.
+
+
+Navigation extraction pass (2026-11-09):
+- AppNavigation owns rail/compact controls, route labels and selected index. Main
+  retains all seven page instances and the existing currentPage startup contract;
+  content margins derive from the navigation's actual rail/header dimensions.
+- Compiled QML cases replace navigation source-string layout checks. They exercise
+  all seven desktop actions, pointer/keyboard selection, compact lock guard,
+  programmatic selection and retained selection when changing viewport width.
+- Original and extracted navigation/content-boundary renders are pixel-identical
+  at 400x800 and 1100x850. Bank commands, WebView lifetime and saved data remain
+  outside this extraction.
+- Verification: native build, all 282 CTest entries and QML lint pass. Android
+  APK builds and installs over the emulator app; navigation reaches the actual
+  Settings, Connections and Dashboard pages on Android 16. Bank authentication
+  and trust instrumentation were not rerun for this navigation-only change.

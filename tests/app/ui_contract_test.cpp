@@ -42,11 +42,6 @@ TEST_CASE("dashboard keeps populated summaries inside responsive surfaces") {
     CHECK(source.contains(QByteArrayLiteral(
         "columns: page.width > 860 ? 2 : 1")));
 
-    const auto window = readQml("Main.qml");
-    CHECK(window.contains(QByteArrayLiteral("left: navigationRail.right")));
-    CHECK(window.contains(QByteArrayLiteral("right: parent.right")));
-    CHECK(window.contains(QByteArrayLiteral("delegate: Button")));
-    CHECK_FALSE(window.contains(QByteArrayLiteral("MouseArea {\n                            anchors.fill: parent")));
 }
 
 TEST_CASE("privacy screen describes its scope and limitations") {

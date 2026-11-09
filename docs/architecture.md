@@ -238,3 +238,9 @@ command. Settings still invoke the existing lock command; cancellation of bank
 and wallet work remains the controller's responsibility. Compiled QML tests cover
 pointer/keyboard isolation and the settings-to-overlay interaction on phone and
 desktop sizes.
+
+`AppNavigation.qml` owns the seven navigation labels, rail, compact selector and
+selected index. Main retains page construction and uses the navigation's content
+offsets for StackLayout margins. Its existing currentPage alias still supports
+native startup page selection. The privacy overlay remains above both navigation
+and page content.
