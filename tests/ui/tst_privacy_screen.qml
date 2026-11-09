@@ -80,6 +80,7 @@ TestCase {
         const screen = findChild(fixture, "privacyScreen")
         const button = findChild(screen, "returnToDataButton")
         tryCompare(button, "activeFocus", true)
+        compare(button.background.border.width, 2)
         mouseClick(fixture, 5, 5)
         mouseClick(fixture, 5, 5, Qt.RightButton)
         mouseClick(fixture, 5, 5, Qt.MiddleButton)
@@ -91,6 +92,8 @@ TestCase {
         keyClick(Qt.Key_Space)
         compare(fixture.unlocks, 1)
         verify(!screen.visible)
+        fixture.forceActiveFocus()
+        compare(button.background.border.width, 1)
         mouseClick(fixture, 5, 5)
         compare(fixture.backgroundClicks, 1)
         fixture.locked = true

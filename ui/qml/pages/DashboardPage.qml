@@ -45,6 +45,7 @@ Flickable {
 
     ColumnLayout {
         id: content
+        objectName: "dashboard_content"
         width: parent.width - Theme.pageMargin * 2
         x: Theme.pageMargin
         y: Theme.pageMargin
@@ -67,6 +68,7 @@ Flickable {
                 }
                 Text {
                     Layout.fillWidth: true
+                    objectName: "dashboardSubtitle"
                     text: page.app.demoMode
                           ? qsTr("Пример данных · ") + page.app.reportingPeriodLabel
                           : page.app.hasFinancialData
@@ -85,6 +87,7 @@ Flickable {
 
         SectionCard {
             id: reportingPeriodCard
+            objectName: "dashboard_reportingPeriodCard"
             Layout.fillWidth: true
             Layout.minimumWidth: 0
             implicitHeight: reportingPeriodLayout.implicitHeight + 24
@@ -166,6 +169,7 @@ Flickable {
 
         GridLayout {
             id: metricGrid
+            objectName: "dashboard_metricGrid"
             Layout.fillWidth: true
             columns: page.width > 900 ? 4 : page.width < 600 ? 1 : 2
             columnSpacing: 12
@@ -174,6 +178,7 @@ Flickable {
             MetricCard {
                 Layout.fillWidth: true
                 title: qsTr("Капитал")
+                objectName: "dashboardNetWorth"
                 value: page.app.netWorth
                 hint: page.app.demoMode ? qsTr("+4,2% за месяц")
                                    : page.app.netWorthUpdatedAt
@@ -184,6 +189,7 @@ Flickable {
             MetricCard {
                 Layout.fillWidth: true
                 title: qsTr("Доходы")
+                objectName: "dashboardIncome"
                 value: page.app.reportIncome
                 hint: qsTr("За выбранный период")
                 accent: Theme.positive
@@ -191,6 +197,7 @@ Flickable {
             MetricCard {
                 Layout.fillWidth: true
                 title: qsTr("Расходы")
+                objectName: "dashboardSpending"
                 value: page.app.reportSpending
                 hint: qsTr("За выбранный период")
                 accent: Theme.textMuted
@@ -198,6 +205,7 @@ Flickable {
             MetricCard {
                 Layout.fillWidth: true
                 title: qsTr("Сбережения")
+                objectName: "dashboardSavings"
                 value: page.app.savings
                 hint: qsTr("Доходы минус расходы")
                 accent: Theme.warning
@@ -206,12 +214,14 @@ Flickable {
 
         GridLayout {
             id: summaryGrid
+            objectName: "dashboard_summaryGrid"
             Layout.fillWidth: true
             columns: page.width > 860 ? 2 : 1
             columnSpacing: 12
             rowSpacing: 12
 
             BalanceHistoryPanel {
+                objectName: "dashboardHistory"
                 Layout.fillWidth: true
                 Layout.minimumWidth: 0
                 Layout.preferredHeight: 310
@@ -220,6 +230,7 @@ Flickable {
             }
 
             SectionCard {
+                objectName: "dashboardCategories"
                 Layout.fillWidth: true
                 Layout.minimumWidth: 0
                 Layout.preferredHeight: 270
@@ -259,6 +270,7 @@ Flickable {
 
                         ListView {
                             id: categoryList
+                            objectName: "dashboard_categoryList"
                             anchors.fill: parent
                             visible: count > 0
                             model: page.app.categories
@@ -292,6 +304,7 @@ Flickable {
                                         Text {
                                             Layout.fillWidth: true
                                             Layout.minimumWidth: 0
+                                            objectName: "categoryName"
                                             text: categoryRow.name
                                             color: Theme.text
                                             font.pixelSize: 12
@@ -302,6 +315,7 @@ Flickable {
                                             Layout.preferredWidth: 112
                                             Layout.maximumWidth: 132
                                             horizontalAlignment: Text.AlignRight
+                                            objectName: "categoryAmount"
                                             text: categoryRow.amount
                                             color: Theme.textMuted
                                             font.pixelSize: 12
@@ -312,9 +326,11 @@ Flickable {
                                         Layout.fillWidth: true
                                         Layout.preferredHeight: 4
                                         radius: 2
+                                        objectName: "categoryShareTrack"
                                         color: Theme.surfaceRaised
                                         clip: true
                                         Rectangle {
+                                            objectName: "categoryShareFill"
                                             width: parent.width * Math.max(0, Math.min(1, categoryRow.share))
                                             height: parent.height
                                             radius: 2
@@ -331,6 +347,7 @@ Flickable {
 
         SectionCard {
             id: recentOperationsCard
+            objectName: "dashboard_recentOperationsCard"
             Layout.fillWidth: true
             Layout.minimumWidth: 0
             Layout.minimumHeight: page.recentOperationsMinimumHeight
@@ -379,6 +396,7 @@ Flickable {
 
                     ListView {
                         id: transactionList
+                        objectName: "dashboard_transactionList"
                         anchors.fill: parent
                         model: page.app.transactions
                         clip: true
@@ -408,6 +426,7 @@ Flickable {
                                 Text {
                                     Layout.preferredWidth: 88
                                     Layout.minimumWidth: 72
+                                    objectName: "transaction_date"
                                     text: recentTransaction.date
                                     color: Theme.textMuted
                                     font.pixelSize: 11
@@ -416,6 +435,7 @@ Flickable {
                                 Text {
                                     Layout.fillWidth: true
                                     Layout.minimumWidth: 0
+                                    objectName: "transaction_title"
                                     text: recentTransaction.title
                                     color: Theme.text
                                     font.pixelSize: 12
@@ -426,6 +446,7 @@ Flickable {
                                     Layout.preferredWidth: 160
                                     Layout.minimumWidth: 92
                                     Layout.maximumWidth: 160
+                                    objectName: "transaction_category"
                                     text: recentTransaction.category
                                     color: Theme.textMuted
                                     font.pixelSize: 11
@@ -436,6 +457,7 @@ Flickable {
                                     Layout.minimumWidth: 84
                                     Layout.maximumWidth: 105
                                     horizontalAlignment: Text.AlignRight
+                                    objectName: "transaction_amount"
                                     text: recentTransaction.amount
                                     color: recentTransaction.transfer
                                            ? Theme.textMuted

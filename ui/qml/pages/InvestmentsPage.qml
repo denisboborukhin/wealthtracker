@@ -47,6 +47,7 @@ Flickable {
             }
             ActionButton {
                 Layout.fillWidth: page.width < 600
+                objectName: "investmentSync"
                 text: qsTr("Синхронизировать")
                 primary: true
                 onClicked: page.app.synchronizeInvestments()
@@ -91,6 +92,7 @@ Flickable {
             Text { text: qsTr("Сортировка"); color: Theme.textMuted; font.pixelSize: 12 }
             MinimalComboBox {
                 id: sortField
+                objectName: "investmentSort"
                 Layout.fillWidth: true
                 model: [qsTr("Тикер"), qsTr("Название"), qsTr("Стоимость · по валютам")]
                 Accessible.name: qsTr("Сортировка инвестиций")
@@ -98,6 +100,7 @@ Flickable {
             }
             ActionButton {
                 Layout.fillWidth: page.width < 600
+                objectName: "investmentSortDirection"
                 text: page.sortDescending ? qsTr("По убыванию ↓") : qsTr("По возрастанию ↑")
                 onClicked: { page.sortDescending = !page.sortDescending; page.applySort() }
             }
@@ -129,6 +132,7 @@ Flickable {
 
                 ListView {
                     id: holdingList
+                    objectName: "holdingList"
                     Layout.fillWidth: true
                     Layout.fillHeight: true
                     visible: count > 0
@@ -150,11 +154,11 @@ Flickable {
                             anchors.fill: parent
                             anchors.leftMargin: 18
                             anchors.rightMargin: 18
-                            Text { Layout.fillWidth: page.width < 600; Layout.preferredWidth: 92; elide: Text.ElideRight; text: holdingRow.ticker; textFormat: Text.PlainText; color: Theme.text; font.pixelSize: 12; font.weight: Font.DemiBold }
-                            Text { Layout.fillWidth: true; Layout.minimumWidth: 0; text: holdingRow.name; textFormat: Text.PlainText; color: Theme.text; font.pixelSize: 12; elide: Text.ElideRight }
-                            Text { Layout.preferredWidth: 90; visible: page.width >= 680; horizontalAlignment: Text.AlignRight; text: holdingRow.allocation; color: Theme.textMuted; font.pixelSize: 12 }
-                            Text { Layout.preferredWidth: 100; visible: page.width >= 680; horizontalAlignment: Text.AlignRight; text: holdingRow.performance; color: holdingRow.positive ? Theme.positive : Theme.negative; font.pixelSize: 12 }
-                            Text { Layout.fillWidth: page.width < 600; Layout.preferredWidth: 125; elide: Text.ElideRight; horizontalAlignment: page.width < 600 ? Text.AlignLeft : Text.AlignRight; text: holdingRow.value; color: Theme.text; font.pixelSize: 12; font.weight: Font.Medium }
+                            Text { Layout.fillWidth: page.width < 600; Layout.preferredWidth: 92; elide: Text.ElideRight; objectName: "holding_ticker"; text: holdingRow.ticker; textFormat: Text.PlainText; color: Theme.text; font.pixelSize: 12; font.weight: Font.DemiBold }
+                            Text { Layout.fillWidth: true; Layout.minimumWidth: 0; objectName: "holding_name"; text: holdingRow.name; textFormat: Text.PlainText; color: Theme.text; font.pixelSize: 12; elide: Text.ElideRight }
+                            Text { Layout.preferredWidth: 90; visible: page.width >= 680; horizontalAlignment: Text.AlignRight; objectName: "holding_allocation"; text: holdingRow.allocation; color: Theme.textMuted; font.pixelSize: 12 }
+                            Text { Layout.preferredWidth: 100; visible: page.width >= 680; horizontalAlignment: Text.AlignRight; objectName: "holding_performance"; text: holdingRow.performance; color: holdingRow.positive ? Theme.positive : Theme.negative; font.pixelSize: 12 }
+                            Text { Layout.fillWidth: page.width < 600; Layout.preferredWidth: 125; elide: Text.ElideRight; horizontalAlignment: page.width < 600 ? Text.AlignLeft : Text.AlignRight; objectName: "holding_value"; text: holdingRow.value; color: Theme.text; font.pixelSize: 12; font.weight: Font.Medium }
                         }
                         Rectangle { width: parent.width; height: 1; anchors.bottom: parent.bottom; color: Theme.border }
                     }

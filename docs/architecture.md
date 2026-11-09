@@ -248,10 +248,22 @@ offsets for StackLayout margins. Its existing currentPage alias still supports
 native startup page selection. The privacy overlay remains above both navigation
 and page content.
 
-## Remaining cleanup and product decisions
+## Cleanup and verification coverage
 
-The main service and UI extractions are implemented; the original refactoring
-plan is retained in Git history. The following work remains open:
+The legacy bank-specific QML API, behavioral UI source-string contracts and
+unreachable/unintegrated features identified by the refactoring audit have been
+retired. The original plan and removed source remain in Git history.
 
-- Replace remaining behavioral source-string UI checks with interaction and
-  geometry tests, including the dashboard layout checks.
+Compiled QML interaction/geometry tests cover the populated dashboard and
+investments at 320/640/1100-pixel widths, bounded scrolling, category shares,
+savings/timestamps, sort/sync commands, connection-dialog status isolation,
+certificate help, cancellation and focus. User-facing explanation checks and
+source-level security invariants are retained. Twenty-one tests belonged solely
+to the retired import/analytics capabilities; active money, migration/encryption
+and balance-history tests remain.
+
+The final cleanup passes 260 CTest entries, 11 Python tests, QML lint and Node
+syntax checking. Native and Android dependency graphs exclude the retired
+importer libraries; the APK builds and 16 Android instrumentation tests pass.
+Android 16 rendering of the public VTB login form was checked through the new
+connection API. Authenticated bank access remains a separate live validation.
