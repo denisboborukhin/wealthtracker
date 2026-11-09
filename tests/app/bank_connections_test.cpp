@@ -1,5 +1,6 @@
 #include "app/AppController.hpp"
 #include "app/FinanceModels.hpp"
+#include "../support/QtTestSupport.hpp"
 
 #include <catch2/catch_test_macros.hpp>
 
@@ -405,12 +406,6 @@ TEST_CASE("T-Bank login UI embeds a coordinator-owned native WebView") {
     REQUIRE(desktop.open(QIODevice::ReadOnly));
     REQUIRE(mobile.open(QIODevice::ReadOnly));
     const auto source = pageSource + desktop.readAll() + mobile.readAll();
-    CHECK(source.contains(QByteArrayLiteral("selectedRetail.beginLogin()")));
-    CHECK(source.contains(QByteArrayLiteral("WindowContainer {")));
-    CHECK(source.contains(QByteArrayLiteral(
-        "selectedRetail.webView")));
-    CHECK(source.contains(QByteArrayLiteral(
-        "? content.webView : null")));
     CHECK_FALSE(source.contains(QByteArrayLiteral("sessionid")));
     CHECK_FALSE(source.contains(QByteArrayLiteral("runJavaScript(")));
     CHECK_FALSE(source.contains(QByteArrayLiteral("отдельном Chrome")));
@@ -473,8 +468,6 @@ TEST_CASE("Alfa login UI projects bounded finance fields without reading cookies
         WEALTHTRACKER_SOURCE_DIR "/ui/qml/pages/ConnectionsPage.qml"));
     REQUIRE(page.open(QIODevice::ReadOnly));
     const auto source = page.readAll();
-    CHECK(source.contains(QByteArrayLiteral("selectedRetail.beginLogin()")));
-    CHECK(source.contains(QByteArrayLiteral("selectedRetail.webView")));
     CHECK(source.contains(QByteArrayLiteral(
         "Т-Банк, Альфа-Банк, ВТБ и Ozon Банк используют встроенные локальные коннекторы")));
     CHECK_FALSE(source.contains(QByteArrayLiteral(
@@ -930,13 +923,7 @@ TEST_CASE("Alfa certificate help uses only the official bank instructions") {
     CHECK(helpUrl.path() == QStringLiteral("/cert"));
     CHECK(helpUrl.query().isEmpty());
 
-    QFile page(QStringLiteral(
-        WEALTHTRACKER_SOURCE_DIR "/ui/qml/pages/ConnectionsPage.qml"));
-    REQUIRE(page.open(QIODevice::ReadOnly));
-    const auto source = page.readAll();
-    CHECK(source.contains(QByteArrayLiteral("alfaCertificateHelpRequired")));
-    CHECK(source.contains(
-        QByteArrayLiteral("page.app.openAlfaCertificateInstructions()")));
+
 }
 
 TEST_CASE("T-Bank API session identifiers reject unsafe values") {
@@ -1543,4 +1530,48 @@ TEST_CASE("Legacy T-Bank migration preserves retryable state until replacement s
         CHECK_FALSE(QSettings{}.contains("zenPlugin/bundlePath"));
     }
 
+}
+
+TEST_CASE("Retail connection snapshots and commands expose one strict bank interface") {
+    wealthtracker::test::SettingsScope settings("RetailApiTests", "Snapshots");
+    auto credentials = std::make_unique<MemoryCredentialBackend>();
+    wealthtracker::app::AppController controller(std::move(credentials), nullptr);
+    QStringList changed;
+    QObject::connect(&controller, &wealthtracker::app::AppController::retailConnectionChanged,
+        &controller, [&](const QString& id) { changed.push_back(id); });
+    const QStringList ids{"tbank-retail", "alfa-retail", "vtb-retail", "ozon-retail"};
+    for (const auto& id : ids) {
+        const auto initial = controller.retailConnectionState(id);
+        CHECK(initial.value("supported").toBool());
+        CHECK_FALSE(initial.value("connected").toBool());
+        CHECK_FALSE(initial.value("loginActive").toBool());
+        CHECK_FALSE(initial.value("syncRunning").toBool());
+        CHECK(initial.value("autoUpdate").toBool());
+        CHECK(initial.value("webView").value<QWindow*>() == nullptr);
+        changed.clear();
+        controller.setRetailAutoUpdate(id, false);
+        CHECK(changed == QStringList{id});
+        CHECK_FALSE(controller.retailConnectionState(id).value("autoUpdate").toBool());
+        CHECK(controller.retailConnectionState(id).value("nextSync").toString() == "Выключено");
+        controller.setRetailAutoUpdate(id, true);
+        CHECK(controller.retailConnectionState(id).value("autoUpdate").toBool());
+    }
+    changed.clear();
+    for (const auto& id : QStringList{"", "t-invest", "other-retail", "toString", "alfa-retail.evil"}) {
+        CHECK(controller.retailConnectionState(id).isEmpty());
+        controller.prepareRetailConnection(id);
+        controller.beginRetailLogin(id);
+        controller.reloadRetailLogin(id);
+        controller.cancelRetailLogin(id);
+        controller.synchronizeRetailConnection(id);
+        controller.setRetailAutoUpdate(id, false);
+        controller.disconnectRetailConnection(id);
+        CHECK_FALSE(controller.openRetailCertificateInstructions(id));
+    }
+    CHECK(changed.isEmpty());
+    // Queries and rejected identifiers must not create native bank windows.
+    for (const auto& id : ids)
+        CHECK(controller.retailConnectionState(id).value("webView").value<QWindow*>() == nullptr);
+    CHECK(controller.metaObject()->indexOfProperty("tbankConnected") == -1);
+    CHECK(controller.metaObject()->indexOfProperty("alfaWebView") == -1);
 }

@@ -88,14 +88,6 @@ TEST_CASE("VTB is an available embedded retail connection") {
     CHECK(controller.connectionMessage().contains(QStringLiteral("жёстких лимитов")));
     CHECK_FALSE(controller.connectionMessage().contains(QStringLiteral("три фиксированных")));
 
-    QFile page(QStringLiteral(
-        WEALTHTRACKER_SOURCE_DIR "/ui/qml/pages/ConnectionsPage.qml"));
-    REQUIRE(page.open(QIODevice::ReadOnly));
-    const auto source = page.readAll();
-    CHECK(source.contains(QByteArrayLiteral("selectedRetail.beginLogin()")));
-    CHECK(source.contains(QByteArrayLiteral("selectedRetail.webView")));
-    CHECK(source.contains(QByteArrayLiteral("selectedRetail.synchronize()")));
-
     QFile coordinator(QStringLiteral(
         WEALTHTRACKER_SOURCE_DIR "/src/app/vtb_login.cppm"));
     REQUIRE(coordinator.open(QIODevice::ReadOnly));

@@ -20,6 +20,7 @@
 #include <QtWebView/QWebView>
 
 #include <algorithm>
+#include <array>
 #include <cstddef>
 #include <cstdint>
 #include <expected>
@@ -59,6 +60,19 @@ using wealthtracker::connectors::ExternalAccount;
 using wealthtracker::connectors::Money;
 using wealthtracker::connectors::NormalizedBatch;
 using wealthtracker::connectors::ZenPluginDescriptor;
+
+template <typename Method, typename... Args>
+void dispatchRetail(AppController* controller, const QString& connectorId,
+                    const std::array<Method, 4>& methods, Args... args) {
+    const std::array ids{QStringLiteral("tbank-retail"), QStringLiteral("alfa-retail"),
+                         QStringLiteral("vtb-retail"), QStringLiteral("ozon-retail")};
+    for (std::size_t index = 0; index < ids.size(); ++index) {
+        if (connectorId == ids[index]) {
+            (controller->*methods[index])(args...);
+            return;
+        }
+    }
+}
 
 #ifdef Q_OS_ANDROID
 struct BankWindowDisplay {
@@ -899,6 +913,18 @@ AppController::AppController(std::unique_ptr<CredentialBackend> credentials,
     private_->wallets.setNotifications([this] { emit cryptoWalletsChanged(); },
         [this] { emit balanceHistoryChanged(); });
     initializeCashback();
+    connect(this, &AppController::tbankConnectionChanged, this, [this] {
+        emit retailConnectionChanged(QStringLiteral("tbank-retail"));
+    });
+    connect(this, &AppController::alfaConnectionChanged, this, [this] {
+        emit retailConnectionChanged(QStringLiteral("alfa-retail"));
+    });
+    connect(this, &AppController::vtbConnectionChanged, this, [this] {
+        emit retailConnectionChanged(QStringLiteral("vtb-retail"));
+    });
+    connect(this, &AppController::ozonConnectionChanged, this, [this] {
+        emit retailConnectionChanged(QStringLiteral("ozon-retail"));
+    });
     initializeBalanceHistory(historyPath);
     const auto defaultPeriod = defaultReportingPeriod(QDate::currentDate());
     reporting_from_ = defaultPeriod.from;
@@ -1321,6 +1347,69 @@ QString AppController::zenPluginNextSync() const {
         return QStringLiteral("После первого успешного запуска");
     }
     return formatSyncDateTime(private_->next_zen_auto_update_at);
+}
+
+QVariantMap AppController::retailConnectionState(const QString& connectorId) {
+    const auto snapshot = [](bool connected, bool loginActive, bool syncRunning,
+                             bool autoUpdate, const QString& lastSync, const QString& nextSync,
+                             const QString& status, QWindow* webView, bool certificateHelp = false) {
+        return QVariantMap{{QStringLiteral("supported"), true},
+            {QStringLiteral("connected"), connected}, {QStringLiteral("loginActive"), loginActive},
+            {QStringLiteral("syncRunning"), syncRunning}, {QStringLiteral("autoUpdate"), autoUpdate},
+            {QStringLiteral("lastSync"), lastSync}, {QStringLiteral("nextSync"), nextSync},
+            {QStringLiteral("loginStatus"), status},
+            {QStringLiteral("webView"), QVariant::fromValue(webView)},
+            {QStringLiteral("certificateHelpRequired"), certificateHelp}};
+    };
+    if (connectorId == QStringLiteral("tbank-retail"))
+        return snapshot(tbankConnected(), tbankLoginActive(), tbankSyncRunning(),
+            tbankAutoUpdate(), tbankLastSync(), tbankNextSync(), tbankLoginStatus(),
+            tbankWebView());
+    if (connectorId == QStringLiteral("alfa-retail"))
+        return snapshot(alfaConnected(), alfaLoginActive(), alfaSyncRunning(),
+            alfaAutoUpdate(), alfaLastSync(), alfaNextSync(), alfaLoginStatus(),
+            alfaWebView(), alfaCertificateHelpRequired());
+    if (connectorId == QStringLiteral("vtb-retail"))
+        return snapshot(vtbConnected(), vtbLoginActive(), vtbSyncRunning(),
+            vtbAutoUpdate(), vtbLastSync(), vtbNextSync(), vtbLoginStatus(),
+            vtbWebView());
+    if (connectorId == QStringLiteral("ozon-retail"))
+        return snapshot(ozonConnected(), ozonLoginActive(), ozonSyncRunning(),
+            ozonAutoUpdate(), ozonLastSync(), ozonNextSync(), ozonLoginStatus(),
+            ozonWebView());
+    return {};
+}
+
+void AppController::prepareRetailConnection(const QString& connectorId) {
+    dispatchRetail(this, connectorId, std::array{&AppController::prepareTBankConnection, &AppController::prepareAlfaConnection, &AppController::prepareVtbConnection, &AppController::prepareOzonConnection});
+}
+
+void AppController::beginRetailLogin(const QString& connectorId) {
+    dispatchRetail(this, connectorId, std::array{&AppController::beginTBankLogin, &AppController::beginAlfaLogin, &AppController::beginVtbLogin, &AppController::beginOzonLogin});
+}
+
+void AppController::reloadRetailLogin(const QString& connectorId) {
+    dispatchRetail(this, connectorId, std::array{&AppController::reloadTBankLoginPage, &AppController::reloadAlfaLoginPage, &AppController::reloadVtbLoginPage, &AppController::reloadOzonLoginPage});
+}
+
+void AppController::cancelRetailLogin(const QString& connectorId) {
+    dispatchRetail(this, connectorId, std::array{&AppController::cancelTBankLogin, &AppController::cancelAlfaLogin, &AppController::cancelVtbLogin, &AppController::cancelOzonLogin});
+}
+
+void AppController::synchronizeRetailConnection(const QString& connectorId) {
+    dispatchRetail(this, connectorId, std::array{&AppController::synchronizeTBank, &AppController::synchronizeAlfa, &AppController::synchronizeVtb, &AppController::synchronizeOzon});
+}
+
+void AppController::setRetailAutoUpdate(const QString& connectorId, const bool enabled) {
+    dispatchRetail(this, connectorId, std::array{&AppController::setTBankAutoUpdate, &AppController::setAlfaAutoUpdate, &AppController::setVtbAutoUpdate, &AppController::setOzonAutoUpdate}, enabled);
+}
+
+void AppController::disconnectRetailConnection(const QString& connectorId) {
+    dispatchRetail(this, connectorId, std::array{&AppController::disconnectTBank, &AppController::disconnectAlfa, &AppController::disconnectVtb, &AppController::disconnectOzon});
+}
+
+bool AppController::openRetailCertificateInstructions(const QString& connectorId) {
+    return connectorId == QStringLiteral("alfa-retail") && openAlfaCertificateInstructions();
 }
 
 bool AppController::tbankConnected() const noexcept {

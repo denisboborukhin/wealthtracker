@@ -191,10 +191,15 @@ inventory and coordinator ownership remain separate.
 The shared scheduling policy preserves six-hour refreshes and a ten-second minimum
 retry. Individual coordinators still own their bank's active operations.
 
-The connection list is rendered by `ConnectionList.qml`; `RetailConnection.qml`
-adapts only the four supported retail IDs to existing controller properties and
-commands. Unknown IDs have no retail commands. Native view ownership and deferred
-cleanup remain with the existing login dialog/coordinators.
+The connection list is rendered by `ConnectionList.qml`. `RetailConnection.qml`
+reads a selected bank snapshot through `retailConnectionState(id)` and listens to
+`retailConnectionChanged(id)`, ignoring other banks' updates. Generic retail commands
+route only the four exact supported IDs to their existing native handlers. The
+old per-bank QML properties/invokables are retired; native handlers and signals
+remain for bank-specific lifecycle behavior and regression tests. Snapshot queries
+resolve only the selected bank's retained view. Unknown IDs return no state and
+execute no commands. Native view ownership and deferred cleanup remain with the
+existing login dialog/coordinators.
 
 `HistoryStore` owns the SQLCipher connection, capture collection, saved wallet
 configuration and observation times. The controller uses read-only views and
@@ -248,8 +253,5 @@ and page content.
 The main service and UI extractions are implemented; the original refactoring
 plan is retained in Git history. The following work remains open:
 
-- Migrate remaining bank-specific facade properties and command/lifecycle
-  adapters where their contracts match. Preserve distinct authentication,
-  cancellation and rejected-command behavior while removing duplication.
 - Replace remaining behavioral source-string UI checks with interaction and
   geometry tests, including the dashboard layout checks.

@@ -71,44 +71,6 @@ class AppController final : public QObject {
     Q_PROPERTY(bool zenPluginAutoUpdate READ zenPluginAutoUpdate NOTIFY zenPluginChanged)
     Q_PROPERTY(QString zenPluginLastSync READ zenPluginLastSync NOTIFY zenPluginChanged)
     Q_PROPERTY(QString zenPluginNextSync READ zenPluginNextSync NOTIFY zenPluginChanged)
-    Q_PROPERTY(bool tbankConnected READ tbankConnected NOTIFY tbankConnectionChanged)
-    Q_PROPERTY(bool tbankLoginActive READ tbankLoginActive NOTIFY tbankConnectionChanged)
-    Q_PROPERTY(bool tbankSyncRunning READ tbankSyncRunning NOTIFY tbankConnectionChanged)
-    Q_PROPERTY(bool tbankAutoUpdate READ tbankAutoUpdate NOTIFY tbankConnectionChanged)
-    Q_PROPERTY(QString tbankLastSync READ tbankLastSync NOTIFY tbankConnectionChanged)
-    Q_PROPERTY(QString tbankNextSync READ tbankNextSync NOTIFY tbankConnectionChanged)
-    Q_PROPERTY(QString tbankLoginStatus READ tbankLoginStatus NOTIFY tbankConnectionChanged)
-    Q_PROPERTY(QUrl tbankLoginUrl READ tbankLoginUrl CONSTANT)
-    Q_PROPERTY(QWindow* tbankWebView READ tbankWebView NOTIFY tbankConnectionChanged)
-    Q_PROPERTY(bool alfaConnected READ alfaConnected NOTIFY alfaConnectionChanged)
-    Q_PROPERTY(bool alfaLoginActive READ alfaLoginActive NOTIFY alfaConnectionChanged)
-    Q_PROPERTY(bool alfaSyncRunning READ alfaSyncRunning NOTIFY alfaConnectionChanged)
-    Q_PROPERTY(bool alfaAutoUpdate READ alfaAutoUpdate NOTIFY alfaConnectionChanged)
-    Q_PROPERTY(QString alfaLastSync READ alfaLastSync NOTIFY alfaConnectionChanged)
-    Q_PROPERTY(QString alfaNextSync READ alfaNextSync NOTIFY alfaConnectionChanged)
-    Q_PROPERTY(QString alfaLoginStatus READ alfaLoginStatus NOTIFY alfaConnectionChanged)
-    Q_PROPERTY(bool alfaCertificateHelpRequired READ alfaCertificateHelpRequired
-               NOTIFY alfaConnectionChanged)
-    Q_PROPERTY(QUrl alfaLoginUrl READ alfaLoginUrl CONSTANT)
-    Q_PROPERTY(QWindow* alfaWebView READ alfaWebView NOTIFY alfaConnectionChanged)
-    Q_PROPERTY(bool vtbConnected READ vtbConnected NOTIFY vtbConnectionChanged)
-    Q_PROPERTY(bool vtbLoginActive READ vtbLoginActive NOTIFY vtbConnectionChanged)
-    Q_PROPERTY(bool vtbSyncRunning READ vtbSyncRunning NOTIFY vtbConnectionChanged)
-    Q_PROPERTY(bool vtbAutoUpdate READ vtbAutoUpdate NOTIFY vtbConnectionChanged)
-    Q_PROPERTY(QString vtbLastSync READ vtbLastSync NOTIFY vtbConnectionChanged)
-    Q_PROPERTY(QString vtbNextSync READ vtbNextSync NOTIFY vtbConnectionChanged)
-    Q_PROPERTY(QString vtbLoginStatus READ vtbLoginStatus NOTIFY vtbConnectionChanged)
-    Q_PROPERTY(QUrl vtbLoginUrl READ vtbLoginUrl CONSTANT)
-    Q_PROPERTY(QWindow* vtbWebView READ vtbWebView NOTIFY vtbConnectionChanged)
-    Q_PROPERTY(bool ozonConnected READ ozonConnected NOTIFY ozonConnectionChanged)
-    Q_PROPERTY(bool ozonLoginActive READ ozonLoginActive NOTIFY ozonConnectionChanged)
-    Q_PROPERTY(bool ozonSyncRunning READ ozonSyncRunning NOTIFY ozonConnectionChanged)
-    Q_PROPERTY(bool ozonAutoUpdate READ ozonAutoUpdate NOTIFY ozonConnectionChanged)
-    Q_PROPERTY(QString ozonLastSync READ ozonLastSync NOTIFY ozonConnectionChanged)
-    Q_PROPERTY(QString ozonNextSync READ ozonNextSync NOTIFY ozonConnectionChanged)
-    Q_PROPERTY(QString ozonLoginStatus READ ozonLoginStatus NOTIFY ozonConnectionChanged)
-    Q_PROPERTY(QUrl ozonLoginUrl READ ozonLoginUrl CONSTANT)
-    Q_PROPERTY(QWindow* ozonWebView READ ozonWebView NOTIFY ozonConnectionChanged)
 
 public:
     explicit AppController(QObject* parent = nullptr);
@@ -138,6 +100,16 @@ public:
     Q_INVOKABLE void refreshCashbackBanks();
     Q_INVOKABLE void refreshCashbackBank(const QString& bank);
     [[nodiscard]] QVariantMap connectionStates() const;
+    Q_INVOKABLE QVariantMap retailConnectionState(const QString& connectorId);
+    Q_INVOKABLE void prepareRetailConnection(const QString& connectorId);
+    Q_INVOKABLE void beginRetailLogin(const QString& connectorId);
+    Q_INVOKABLE void reloadRetailLogin(const QString& connectorId);
+    Q_INVOKABLE void cancelRetailLogin(const QString& connectorId);
+    Q_INVOKABLE void synchronizeRetailConnection(const QString& connectorId);
+    Q_INVOKABLE void setRetailAutoUpdate(const QString& connectorId, bool enabled);
+    Q_INVOKABLE void disconnectRetailConnection(const QString& connectorId);
+    Q_INVOKABLE bool openRetailCertificateInstructions(const QString& connectorId);
+
 
     [[nodiscard]] QVariantList balanceHistoryAccounts() const;
     [[nodiscard]] QVariantList balanceHistoryConnections() const;
@@ -241,37 +213,38 @@ public:
     Q_INVOKABLE bool answerZenPluginPrompt(const QString& value);
     Q_INVOKABLE void cancelZenPlugin();
     Q_INVOKABLE void removeZenPlugin();
-    Q_INVOKABLE bool prepareTBankConnection();
-    Q_INVOKABLE void beginTBankLogin();
-    Q_INVOKABLE void reloadTBankLoginPage();
-    Q_INVOKABLE void cancelTBankLogin();
-    Q_INVOKABLE bool synchronizeTBank();
-    Q_INVOKABLE void setTBankAutoUpdate(bool enabled);
-    Q_INVOKABLE void disconnectTBank();
-    Q_INVOKABLE bool prepareAlfaConnection();
-    Q_INVOKABLE void beginAlfaLogin();
-    Q_INVOKABLE void reloadAlfaLoginPage();
-    Q_INVOKABLE bool openAlfaCertificateInstructions();
-    Q_INVOKABLE void cancelAlfaLogin();
-    Q_INVOKABLE bool synchronizeAlfa();
-    Q_INVOKABLE void setAlfaAutoUpdate(bool enabled);
-    Q_INVOKABLE void disconnectAlfa();
-    Q_INVOKABLE bool prepareVtbConnection();
-    Q_INVOKABLE void beginVtbLogin();
-    Q_INVOKABLE void reloadVtbLoginPage();
-    Q_INVOKABLE void cancelVtbLogin();
-    Q_INVOKABLE bool synchronizeVtb();
-    Q_INVOKABLE void setVtbAutoUpdate(bool enabled);
-    Q_INVOKABLE void disconnectVtb();
-    Q_INVOKABLE bool prepareOzonConnection();
-    Q_INVOKABLE void beginOzonLogin();
-    Q_INVOKABLE void reloadOzonLoginPage();
-    Q_INVOKABLE void cancelOzonLogin();
-    Q_INVOKABLE bool synchronizeOzon();
-    Q_INVOKABLE void setOzonAutoUpdate(bool enabled);
-    Q_INVOKABLE void disconnectOzon();
+    bool prepareTBankConnection();
+    void beginTBankLogin();
+    void reloadTBankLoginPage();
+    void cancelTBankLogin();
+    bool synchronizeTBank();
+    void setTBankAutoUpdate(bool enabled);
+    void disconnectTBank();
+    bool prepareAlfaConnection();
+    void beginAlfaLogin();
+    void reloadAlfaLoginPage();
+    bool openAlfaCertificateInstructions();
+    void cancelAlfaLogin();
+    bool synchronizeAlfa();
+    void setAlfaAutoUpdate(bool enabled);
+    void disconnectAlfa();
+    bool prepareVtbConnection();
+    void beginVtbLogin();
+    void reloadVtbLoginPage();
+    void cancelVtbLogin();
+    bool synchronizeVtb();
+    void setVtbAutoUpdate(bool enabled);
+    void disconnectVtb();
+    bool prepareOzonConnection();
+    void beginOzonLogin();
+    void reloadOzonLoginPage();
+    void cancelOzonLogin();
+    bool synchronizeOzon();
+    void setOzonAutoUpdate(bool enabled);
+    void disconnectOzon();
 
 signals:
+    void retailConnectionChanged(const QString& connectorId);
     void connectionStatesChanged();
     void cashbackChanged();
     void cryptoWalletsChanged();

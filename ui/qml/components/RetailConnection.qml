@@ -3,32 +3,45 @@ pragma ComponentBehavior: Bound
 import QtQuick
 
 QtObject {
+    id: adapter
     required property var app
     required property string connectorId
     property bool fallbackConnected: false
+    property var snapshot: ({})
 
-    readonly property var bank: [
-        {id: "tbank-retail", propertyPrefix: "tbank", methodPrefix: "TBank"},
-        {id: "alfa-retail", propertyPrefix: "alfa", methodPrefix: "Alfa"},
-        {id: "vtb-retail", propertyPrefix: "vtb", methodPrefix: "Vtb"},
-        {id: "ozon-retail", propertyPrefix: "ozon", methodPrefix: "Ozon"}
-    ].find(item => item.id === connectorId)
-    readonly property string methodPrefix: bank ? bank.methodPrefix : ""
-    readonly property bool supported: bank !== undefined
-    readonly property bool connected: bank ? app[bank.propertyPrefix + "Connected"] : fallbackConnected
-    readonly property bool loginActive: bank ? app[bank.propertyPrefix + "LoginActive"] : false
-    readonly property bool syncRunning: bank ? app[bank.propertyPrefix + "SyncRunning"] : false
-    readonly property bool autoUpdate: bank ? app[bank.propertyPrefix + "AutoUpdate"] : false
-    readonly property string lastSync: bank ? app[bank.propertyPrefix + "LastSync"] : ""
-    readonly property string nextSync: bank ? app[bank.propertyPrefix + "NextSync"] : ""
-    readonly property string loginStatus: bank ? app[bank.propertyPrefix + "LoginStatus"] : ""
-    readonly property var webView: bank ? app[bank.propertyPrefix + "WebView"] : null
+    function update() {
+        snapshot = app ? app.retailConnectionState(connectorId) : ({})
+    }
+    onAppChanged: update()
+    onConnectorIdChanged: update()
+    Component.onCompleted: update()
+    readonly property Connections updates: Connections {
+        target: adapter.app
+        function onRetailConnectionChanged(connectorId) {
+            if (connectorId === adapter.connectorId) adapter.update()
+        }
+    }
 
-    function prepare() { if (supported) app["prepare" + methodPrefix + "Connection"]() }
-    function beginLogin() { if (supported) app["begin" + methodPrefix + "Login"]() }
-    function reloadLogin() { if (supported) app["reload" + methodPrefix + "LoginPage"]() }
-    function cancelLogin() { if (supported) app["cancel" + methodPrefix + "Login"]() }
-    function synchronize() { if (supported) app["synchronize" + methodPrefix]() }
-    function setAutoUpdate(enabled) { if (supported) app["set" + methodPrefix + "AutoUpdate"](enabled) }
-    function disconnectBank() { if (supported) app["disconnect" + methodPrefix]() }
+    readonly property bool supported: snapshot.supported === true
+    readonly property bool connected: supported ? snapshot.connected : fallbackConnected
+    readonly property bool loginActive: supported ? snapshot.loginActive : false
+    readonly property bool syncRunning: supported ? snapshot.syncRunning : false
+    readonly property bool autoUpdate: supported ? snapshot.autoUpdate : false
+    readonly property string lastSync: supported ? snapshot.lastSync : ""
+    readonly property string nextSync: supported ? snapshot.nextSync : ""
+    readonly property string loginStatus: supported ? snapshot.loginStatus : ""
+    readonly property var webView: supported ? snapshot.webView : null
+    readonly property bool certificateHelpRequired: supported && snapshot.certificateHelpRequired
+
+    function prepare() { if (supported) app.prepareRetailConnection(connectorId) }
+    function beginLogin() { if (supported) app.beginRetailLogin(connectorId) }
+    function reloadLogin() { if (supported) app.reloadRetailLogin(connectorId) }
+    function cancelLogin() { if (supported) app.cancelRetailLogin(connectorId) }
+    function synchronize() { if (supported) app.synchronizeRetailConnection(connectorId) }
+    function setAutoUpdate(enabled) { if (supported) app.setRetailAutoUpdate(connectorId, enabled) }
+    function disconnectBank() { if (supported) app.disconnectRetailConnection(connectorId) }
+    function openCertificateInstructions() {
+        if (supported) return app.openRetailCertificateInstructions(connectorId)
+        return false
+    }
 }

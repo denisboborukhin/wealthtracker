@@ -49,6 +49,7 @@ Item {
 
     Dialog {
         id: connectionDialog
+        objectName: "connectionDialog"
         parent: Overlay.overlay
         modal: true
         focus: true
@@ -103,6 +104,7 @@ Item {
             anchors.fill: parent
             visible: !page.mobileLogin
             id: connectionScroll
+            objectName: "connectionScroll"
             clip: true
             contentWidth: availableWidth
             ScrollBar.horizontal.policy: ScrollBar.AlwaysOff
@@ -238,6 +240,7 @@ Item {
                     }
                     Text {
                         Layout.fillWidth: true
+                        objectName: "connectedRetailStatus"
                         text: connectionDialog.retailLoginStatus
                         color: connectionDialog.retailLoginStatus.toLowerCase().indexOf("не удалось") >= 0
                                || connectionDialog.retailLoginStatus.toLowerCase().indexOf("ошиб") >= 0
@@ -252,6 +255,7 @@ Item {
                     Layout.topMargin: 6
                     Item { Layout.fillWidth: true }
                     ActionButton {
+                        objectName: "closeConnectionDialog"
                         text: qsTr("Закрыть")
                         onClicked: connectionDialog.close()
                     }
@@ -323,9 +327,10 @@ Item {
                     ActionButton {
                         visible: connectionDialog.builtinAlfa
                                  && connectionDialog.retailLoginActive
-                                 && page.app.alfaCertificateHelpRequired
+                                 && selectedRetail.certificateHelpRequired
+                        objectName: "certificateInstructions"
                         text: qsTr("Как установить сертификаты")
-                        onClicked: page.app.openAlfaCertificateInstructions()
+                        onClicked: selectedRetail.openCertificateInstructions()
                     }
                     ActionButton {
                         visible: connectionDialog.builtinRetail
