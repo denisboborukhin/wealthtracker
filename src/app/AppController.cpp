@@ -935,7 +935,6 @@ AppController::AppController(std::unique_ptr<CredentialBackend> credentials,
     refreshOzonAutoUpdateSchedule();
     restoreSavedBalances();
     refreshBankConnections();
-    import_status_ = QStringLiteral("Нет импортированных выписок");
     sync_status_ = QStringLiteral("Нет синхронизированных подключений");
     if (tbankConnected()) private_->pending_retail_restores.push_back(QStringLiteral("tbank"));
     if (alfaConnected()) private_->pending_retail_restores.push_back(QStringLiteral("alfa"));
@@ -1269,7 +1268,6 @@ QString AppController::portfolioValue() const {
     return demo_mode_ ? QStringLiteral("2 318 900 ₽") : live_portfolio_value_;
 }
 
-QString AppController::importStatus() const { return import_status_; }
 QString AppController::syncStatus() const { return sync_status_; }
 bool AppController::locked() const noexcept { return locked_; }
 bool AppController::demoMode() const noexcept { return demo_mode_; }
@@ -1780,10 +1778,8 @@ void AppController::loadDemoData() {
     });
 
 
-    import_status_ = QStringLiteral("Выберите выписку для локального предварительного просмотра");
     sync_status_ = QStringLiteral("Т-Инвестиции: демонстрационные данные");
     emit dashboardChanged();
-    emit importStatusChanged();
     emit syncStatusChanged();
     emit demoModeChanged();
 }
@@ -1825,10 +1821,8 @@ void AppController::resetReportingPeriod() {
 void AppController::clearDemoData() {
     if (!private_->bank_batches.isEmpty()) {
         rebuildBankModels();
-        import_status_ = QStringLiteral("Нет импортированных выписок");
         sync_status_ =
             QStringLiteral("Синхронизированные банковские данные восстановлены");
-        emit importStatusChanged();
         emit syncStatusChanged();
         return;
     }
@@ -1842,10 +1836,8 @@ void AppController::clearDemoData() {
     live_report_income_ = QStringLiteral("0 ₽");
     live_report_spending_ = QStringLiteral("0 ₽");
     live_savings_ = QStringLiteral("0 ₽");
-    import_status_ = QStringLiteral("Нет импортированных выписок");
     sync_status_ = QStringLiteral("Нет синхронизированных подключений");
     emit dashboardChanged();
-    emit importStatusChanged();
     emit syncStatusChanged();
     emit demoModeChanged();
 }
@@ -1915,51 +1907,6 @@ bool AppController::unlock() {
         emit lockedChanged();
     }
     return true;
-}
-
-void AppController::previewImport(const QUrl& source) {
-#ifdef Q_OS_ANDROID
-    const QFileInfo file(source.scheme() == QStringLiteral("content")
-        ? source.toString() : source.toLocalFile());
-#else
-    const QFileInfo file(source.toLocalFile());
-#endif
-    if (!file.exists() || !file.isFile()) {
-        import_status_ = QStringLiteral("Не удалось открыть выбранный файл");
-    } else {
-        using namespace wealthtracker::connectors;
-        const ImportSource import_source{
-            .filePath = file.absoluteFilePath(),
-            .displayName = file.fileName(),
-            .content = {},
-        };
-        const auto connector =
-            selectBestImportConnector(makeBuiltInImportConnectors(), import_source);
-        if (!connector) {
-            import_status_ =
-                QStringLiteral("%1: формат выписки не распознан").arg(file.fileName());
-        } else {
-            ImportOptions options;
-            options.previewRowLimit = 100;
-            const auto preview = connector->preview(import_source, options);
-            if (!preview) {
-                import_status_ =
-                    QStringLiteral("%1: %2")
-                        .arg(file.fileName(), preview.error().message);
-            } else {
-                import_status_ =
-                    QStringLiteral("%1 · %2 · операций: %3 · предупреждений: %4")
-                        .arg(file.fileName(),
-                             connector->manifest().displayName)
-                        .arg(preview->sample.transactions.size())
-                        .arg(preview->sample.warnings.size());
-                if (preview->requiresConfirmation) {
-                    import_status_ += QStringLiteral(" · требуется проверка");
-                }
-            }
-        }
-    }
-    emit importStatusChanged();
 }
 
 bool AppController::saveInvestmentToken(const QString& token) {

@@ -37,14 +37,10 @@ qt_add_qml_module(
         components/MinimalComboBox.qml
         components/MinimalSwitch.qml
         pages/DashboardPage.qml
-        pages/AccountsPage.qml
         pages/HistoryPage.qml
-        pages/TransactionsPage.qml
-        pages/ImportsPage.qml
         pages/InvestmentsPage.qml
         pages/CryptoPage.qml
         pages/CashbackPage.qml
-        pages/CategoriesPage.qml
         pages/ConnectionsPage.qml
         pages/SettingsPage.qml
 )

@@ -58,13 +58,6 @@ TEST_CASE("privacy screen describes its scope and limitations") {
     CHECK(privacy.contains(QByteArrayLiteral("Экран приватности включён")));
     CHECK(privacy.contains(QByteArrayLiteral("пароль не требуется")));
 
-    const auto transactions =
-        readQml(QStringLiteral("pages/TransactionsPage.qml"));
-    CHECK_FALSE(transactions.contains(QByteArrayLiteral("Поиск операций")));
-
-    const auto imports = readQml(QStringLiteral("pages/ImportsPage.qml"));
-    CHECK(imports.contains(QByteArrayLiteral("Предварительный просмотр без сохранения")));
-
     const auto connections =
         readQml(QStringLiteral("pages/ConnectionsPage.qml"));
     CHECK(connections.contains(QByteArrayLiteral("ScrollView {")));

@@ -22,7 +22,6 @@ class WealthTrackerRecipe(ConanFile):
         "sqlcipher/*:crypto_library": "openssl",
         "sqlcipher/*:temporary_store": "default_memory",
         "libsodium/*:shared": False,
-        "xlsxio/*:shared": False,
         "boost/*:header_only": True,
         "catch2/*:with_main": True,
     }
@@ -31,7 +30,6 @@ class WealthTrackerRecipe(ConanFile):
         self.requires("sqlcipher/4.16.0")
         self.requires("openssl/3.6.3")
         self.requires("libsodium/1.0.20")
-        self.requires("xlsxio/0.2.34")
         self.requires("boost/1.88.0")
         self.test_requires("catch2/3.9.1")
 

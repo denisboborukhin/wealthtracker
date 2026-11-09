@@ -26,8 +26,6 @@ session expires.
   with own-account transfers excluded from totals.
 - Balance history: saved observations, date filters, selected banks and wallets,
   and opening/closing totals and changes for each currency.
-- Statement checking: local parsing with operation and warning counts;
-  selected files do not add records to the financial models.
 - Privacy screen: hides financial views and cancels active work.
 
 Retail connections and T-Invest supply balances without transaction history.

@@ -55,7 +55,6 @@ class AppController final : public QObject {
     Q_PROPERTY(QString reportingPeriodError READ reportingPeriodError
                NOTIFY reportingPeriodChanged)
     Q_PROPERTY(QString portfolioValue READ portfolioValue NOTIFY dashboardChanged)
-    Q_PROPERTY(QString importStatus READ importStatus NOTIFY importStatusChanged)
     Q_PROPERTY(QString syncStatus READ syncStatus NOTIFY syncStatusChanged)
     Q_PROPERTY(bool locked READ locked NOTIFY lockedChanged)
     Q_PROPERTY(bool demoMode READ demoMode NOTIFY demoModeChanged)
@@ -167,7 +166,6 @@ public:
     [[nodiscard]] QString reportingPeriodLabel() const;
     [[nodiscard]] QString reportingPeriodError() const;
     [[nodiscard]] QString portfolioValue() const;
-    [[nodiscard]] QString importStatus() const;
     [[nodiscard]] QString syncStatus() const;
     [[nodiscard]] bool locked() const noexcept;
     [[nodiscard]] bool demoMode() const noexcept;
@@ -228,7 +226,6 @@ public:
     Q_INVOKABLE void resetReportingPeriod();
     Q_INVOKABLE void lock();
     Q_INVOKABLE bool unlock();
-    Q_INVOKABLE void previewImport(const QUrl& source);
     Q_INVOKABLE bool saveInvestmentToken(const QString& token);
     Q_INVOKABLE void removeInvestmentToken();
     Q_INVOKABLE void synchronizeInvestments();
@@ -281,7 +278,6 @@ signals:
     void balanceHistoryChanged();
     void dashboardChanged();
     void reportingPeriodChanged();
-    void importStatusChanged();
     void syncStatusChanged();
     void lockedChanged();
     void demoModeChanged();
@@ -317,7 +313,6 @@ private:
     CategoryModel categories_;
     HoldingModel holdings_;
     ConnectionModel bank_connections_;
-    QString import_status_;
     QString sync_status_;
     QString connection_message_;
     QVariantList zen_plugin_fields_;

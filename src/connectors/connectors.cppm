@@ -5,7 +5,6 @@ extern "C++" {
 #include <QByteArray>
 #include <QDate>
 #include <QDateTime>
-#include <QFileInfo>
 #include <QHash>
 #include <QJsonArray>
 #include <QJsonObject>
@@ -21,7 +20,6 @@ extern "C++" {
 
 #include <cstdint>
 #include <expected>
-#include <memory>
 #include <optional>
 #include <string_view>
 }
@@ -32,7 +30,7 @@ export namespace wealthtracker::connectors {
 
 inline constexpr int connector_contract_version = 1;
 
-enum class Capability { FileImport, AccountSync, InvestmentSync, MarketData };
+enum class Capability { AccountSync = 1, InvestmentSync, MarketData };
 enum class ErrorCode {
     InvalidInput,
     UnsupportedFormat,
@@ -170,83 +168,6 @@ public:
     [[nodiscard]] virtual ConnectorManifest manifest() const = 0;
 };
 
-enum class FileFormat { Unknown, Csv, Xlsx, Ofx, Qif, OneC, Pdf };
-
-struct ImportSource {
-    QString filePath;
-    QString displayName;
-    QByteArray content;
-    [[nodiscard]] QString effectiveName() const;
-};
-
-struct ProbeResult {
-    FileFormat format{FileFormat::Unknown};
-    int confidence{0};
-    QString reason;
-    bool requiresReview{false};
-};
-
-struct ColumnMapping {
-    int date{-1};
-    int amount{-1};
-    int debit{-1};
-    int credit{-1};
-    int description{-1};
-    int merchant{-1};
-    int currency{-1};
-    int category{-1};
-    int externalId{-1};
-    int account{-1};
-    int balance{-1};
-};
-
-struct ImportOptions {
-    QString accountExternalId;
-    QString defaultCurrency{"RUB"};
-    std::optional<ColumnMapping> mapping;
-    QChar delimiter;
-    QStringList acceptedDateFormats;
-    bool reverseAmountSign{false};
-    qsizetype previewRowLimit{0};
-};
-
-struct ParsedTable {
-    FileFormat format{FileFormat::Unknown};
-    QStringList columns;
-    QVector<QStringList> rows;
-    ColumnMapping inferredMapping;
-    QVector<ImportWarning> warnings;
-    QByteArray sourceSha256;
-    qsizetype firstDataSourceRow{2};
-};
-
-struct ImportPreview {
-    ProbeResult probe;
-    NormalizedBatch sample;
-    qsizetype parsedRowCount{0};
-    bool requiresConfirmation{false};
-};
-
-class IImportConnector : public IConnector {
-public:
-    ~IImportConnector() override = default;
-    [[nodiscard]] virtual ProbeResult probe(const ImportSource &source) const = 0;
-    [[nodiscard]] virtual ConnectorResult<ParsedTable>
-    parse(const ImportSource &source, const ImportOptions &options) const = 0;
-    [[nodiscard]] virtual ConnectorResult<NormalizedBatch>
-    normalize(const ParsedTable &table, const ImportOptions &options) const = 0;
-    [[nodiscard]] ConnectorResult<ImportPreview>
-    preview(const ImportSource &source, const ImportOptions &options) const;
-};
-
-[[nodiscard]] ConnectorResult<QByteArray>
-readImportSource(const ImportSource &source, qsizetype maximumBytes = 50 * 1024 * 1024);
-[[nodiscard]] std::shared_ptr<IImportConnector> makeGenericImportConnector();
-[[nodiscard]] QVector<std::shared_ptr<IImportConnector>> makeBuiltInImportConnectors();
-[[nodiscard]] std::shared_ptr<IImportConnector>
-selectBestImportConnector(const QVector<std::shared_ptr<IImportConnector>> &connectors,
-                          const ImportSource &source, int minimumConfidence = 25);
-
 struct LiveSyncRequest {
     QString accountExternalId;
     QByteArray cursor;
@@ -327,22 +248,6 @@ makeZenPluginInputMessage(const QString &requestId, const QByteArray &value);
 [[nodiscard]] ConnectorResult<ZenPluginEvent>
 parseZenPluginEvent(const QByteArray &line, const QString &pluginId,
                     const QDateTime &observedAt = QDateTime::currentDateTimeUtc());
-
-enum class RussianBank { Generic, TBank, AlfaBank, Sber, Vtb };
-
-struct BankPreset {
-    RussianBank bank{RussianBank::Generic};
-    QString connectorId;
-    QString institution;
-    QString displayName;
-    QStringList identifyingTokens;
-    QHash<QString, QStringList> columnAliases;
-    bool provisional{true};
-};
-
-[[nodiscard]] BankPreset genericPreset();
-[[nodiscard]] QVector<BankPreset> russianBankPresets();
-[[nodiscard]] std::shared_ptr<IImportConnector> makeBankPresetConnector(const BankPreset &preset);
 
 enum class DuplicateDisposition { NewRecord, ExactDuplicate, AmbiguousMatch };
 
@@ -510,18 +415,3 @@ parseRetailAccounts(const QJsonArray &accounts, const QDateTime &observedAt,
                     RetailBank bank);
 
 } // namespace wealthtracker::connectors
-
-namespace wealthtracker::connectors::detail {
-
-[[nodiscard]] QString decodeStatementText(const QByteArray &bytes);
-[[nodiscard]] FileFormat detectFileFormat(const ImportSource &source, const QByteArray &bytes);
-[[nodiscard]] ColumnMapping inferColumnMapping(const QStringList &columns,
-                                               const BankPreset &preset);
-[[nodiscard]] ConnectorResult<ParsedTable>
-parseStatement(const ImportSource &source, const ImportOptions &options, const BankPreset &preset);
-[[nodiscard]] ConnectorResult<NormalizedBatch>
-normalizeStatement(const ParsedTable &table, const ImportOptions &options,
-                   const BankPreset &preset);
-[[nodiscard]] QString normalizedHeader(QString value);
-
-} // namespace wealthtracker::connectors::detail

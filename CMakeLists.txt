@@ -38,7 +38,6 @@ find_package(
 find_package(sqlcipher REQUIRED CONFIG)
 find_package(OpenSSL REQUIRED CONFIG)
 find_package(libsodium REQUIRED CONFIG)
-find_package(xlsxio REQUIRED CONFIG)
 if(ANDROID)
     include(android/cmake/TLS.cmake)
 endif()
@@ -54,9 +53,6 @@ target_sources(
         FILES
             src/core/decimal.cppm
             src/core/money.cppm
-            src/core/models.cppm
-            src/core/categorization.cppm
-            src/core/analytics.cppm
             src/core/core.cppm
 )
 target_link_libraries(core PUBLIC Boost::headers)
@@ -74,16 +70,12 @@ target_sources(
             src/storage/database.cppm
             src/storage/transaction.cppm
             src/storage/migrations.cppm
-            src/storage/import_session.cppm
-            src/storage/repository.cppm
             src/storage/balance_history.cppm
             src/storage/storage.cppm
     PRIVATE
         src/storage/database.cpp
         src/storage/transaction.cpp
         src/storage/migrations.cpp
-        src/storage/import_session.cpp
-        src/storage/repository.cpp
         src/storage/balance_history.cpp
 )
 target_link_libraries(storage PUBLIC sqlcipher::sqlcipher)
@@ -131,8 +123,6 @@ target_sources(
         FILES
             src/connectors/connectors.cppm
     PRIVATE
-        src/connectors/import.cpp
-        src/connectors/bank_presets.cpp
         src/connectors/zen_plugin.cpp
         src/connectors/deduplication.cpp
         src/connectors/network_policy.cpp
@@ -147,8 +137,6 @@ target_link_libraries(
         Qt6::Core
         Qt6::Network
         Boost::headers
-    PRIVATE
-        xlsxio::xlsxio_read
 )
 set_property(TARGET connectors PROPERTY CXX_SCAN_FOR_MODULES ON)
 enable_strict_warnings(connectors)
@@ -238,8 +226,6 @@ if(BUILD_TESTING)
 
     add_executable(core_tests
         tests/core/money_decimal_test.cpp
-        tests/core/categorization_test.cpp
-        tests/core/analytics_test.cpp
     )
     target_link_libraries(core_tests PRIVATE core Catch2::Catch2WithMain)
     set_property(TARGET core_tests PROPERTY CXX_SCAN_FOR_MODULES ON)
@@ -272,7 +258,6 @@ if(BUILD_TESTING)
 
     add_executable(connectors_tests
         tests/connectors/test_main.cpp
-        tests/connectors/import_test.cpp
         tests/connectors/deduplication_test.cpp
         tests/connectors/network_test.cpp
         tests/connectors/retail_accounts_test.cpp

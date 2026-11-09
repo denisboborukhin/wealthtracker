@@ -150,7 +150,7 @@ Boris Cherny (creator of Claude Code) keeps his team's file around 100 lines. Un
 
 ### Stack
 - Language: C++23 with named modules.
-- Frameworks: Qt 6.11 (Qt Quick/QML, Network, Concurrent, WebView), CMake 3.30+, Ninja; SQLCipher, shared OpenSSL, libsodium, Boost, and xlsxio.
+- Frameworks: Qt 6.11 (Qt Quick/QML, Network, WebView), CMake 3.30+, Ninja; SQLCipher, shared OpenSSL, libsodium, and Boost.
 - Dependencies: Conan 2; `scripts/bootstrap.*` installs the pinned build tools and Qt SDK under `build/`.
 - Runtime: native macOS and Windows desktop apps. Linux can build libraries but has no supported credential backend for live connections.
 

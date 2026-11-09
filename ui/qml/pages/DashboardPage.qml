@@ -71,7 +71,7 @@ Flickable {
                           ? qsTr("Пример данных · ") + page.app.reportingPeriodLabel
                           : page.app.hasFinancialData
                             ? qsTr("Все подключённые счета")
-                            : qsTr("Подключите банк или импортируйте выписку")
+                            : qsTr("Подключите банк, чтобы увидеть данные")
                     color: Theme.textMuted
                     font.pixelSize: 12
                     elide: Text.ElideRight

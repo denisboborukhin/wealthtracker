@@ -7,10 +7,10 @@ platform ABI, and third-party C API boundaries.
 
 | Directory | Implemented components |
 | --- | --- |
-| `src/core` | Money values, categorization, and analytics |
+| `src/core` | Exact decimal and money values |
 | `src/storage` | SQLCipher connections, migrations, and repositories |
 | `src/platform` | Secure buffers, key wrapping, and OS credential storage |
-| `src/connectors` | Statement parsers, bank clients, network policy, normalization, and deduplication |
+| `src/connectors` | Bank clients, network policy, normalization, and deduplication |
 | `src/app` | Controller, synchronization, Ethereum wallet valuation, history projection, reporting, transfer matching, WebViews, plugin runner, and Qt models |
 | `include/app` | Qt `moc` boundary headers |
 | `ui/qml` | Pages and reusable UI components |
@@ -172,12 +172,10 @@ when tracking expands to EVM networks). The last saved subtotal can be shown aft
 quantities and price-availability details require a fresh request. History does
 not restore transaction or holding models after restart.
 
-The statement-checking command selects a parser and reports sample operation
-and warning counts. It does not publish the parsed records to the models.
-
-Ledger import (`ImportSession`, `LedgerRepository`) and core categorization/XIRR
-are implemented library capabilities with tests but no current application callers.
-They are retained pending a product decision on persistent transaction import.
+Unused file-import parsers, ledger import/repository APIs, core categorization/XIRR
+and the unreachable Accounts/Transactions/Categories/Imports pages were retired.
+Their source is retained in Git history. Active financial models, exact money,
+existing database migrations and balance/cashback history remain supported.
 
 ## Extracted presentation and state policies
 
@@ -255,8 +253,3 @@ plan is retained in Git history. The following work remains open:
   cancellation and rejected-command behavior while removing duplication.
 - Replace remaining behavioral source-string UI checks with interaction and
   geometry tests, including the dashboard layout checks.
-- Decide whether to expose or retire the unreachable Accounts, Transactions,
-  Categories and Imports pages. Separately decide whether to integrate or retire
-  the unintegrated ledger/import and categorization/XIRR libraries. Retain active
-  models, exact financial arithmetic and storage compatibility until those
-  decisions are made.
