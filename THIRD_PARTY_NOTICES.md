@@ -12,7 +12,6 @@ dependencies retain their own licenses:
 - libsodium — ISC: <https://github.com/jedisct1/libsodium>
 - Boost — Boost Software License 1.0:
   <https://www.boost.org/users/license.html>
-- xlsxio — MIT: <https://github.com/brechtsanders/xlsxio>
 - Catch2 — Boost Software License 1.0:
   <https://github.com/catchorg/Catch2>
 - AndroidX Core and WebKit (Android builds) — Apache License 2.0:
