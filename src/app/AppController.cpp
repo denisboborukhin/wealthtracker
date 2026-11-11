@@ -2967,23 +2967,38 @@ void AppController::setTBankAutoUpdate(const bool enabled) {
 }
 
 void AppController::disconnectTBank() {
-    private_->activity[QStringLiteral("tbank-retail")].savedSession = false;
-    stopTBankCashback(true);
+    stopTBankCashback();
     if (private_->tbank_sync_coordinator) {
         private_->tbank_sync_coordinator->cancel();
         private_->tbank_sync_coordinator.clear();
     }
     private_->activity[QStringLiteral("tbank-retail")].refreshActive = false;
+    private_->tbank_login->cancel();
+    private_->activity[QStringLiteral("tbank-retail")].loginActive = false;
+    private_->tbank_auto_update_timer.stop();
+    private_->next_tbank_auto_update_at = {};
+    if (private_->credentials) {
+        const auto removed = private_->credentials->remove(
+            QString::fromLatin1(tbankRetailCredentialKey));
+        if (!removed) {
+            tbank_login_status_ = QStringLiteral(
+                "Не удалось удалить сохранённую сессию Т-Банка. Повторите отключение.");
+            sync_status_ = tbank_login_status_;
+            private_->activity[QStringLiteral("tbank-retail")].lastRead = ConnectionReadResult::Failed;
+            refreshBankConnections();
+            emit syncStatusChanged();
+            emit tbankConnectionChanged();
+            return;
+        }
+    }
+    private_->activity[QStringLiteral("tbank-retail")].savedSession = false;
+    stopTBankCashback(true);
     private_->activity[QStringLiteral("tbank-retail")].pendingSessionValidation = false;
     private_->activity[QStringLiteral("tbank-retail")].connected = false;
     private_->activity[QStringLiteral("tbank-retail")].loginActive = false;
     private_->tbank_login->disconnectBank();
     private_->tbank_auto_update_timer.stop();
     private_->next_tbank_auto_update_at = {};
-    if (private_->credentials) {
-        (void)private_->credentials->remove(
-            QString::fromLatin1(tbankRetailCredentialKey));
-    }
     QSettings{}.remove(QStringLiteral("tbank"));
     private_->bank_batches.remove(QStringLiteral("tbank-retail"));
     private_->activity.resetRead(QStringLiteral("tbank-retail"));

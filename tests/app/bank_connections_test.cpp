@@ -75,6 +75,7 @@ public:
 
     std::expected<void, QString> remove(const QString& key) override {
         ++removalCount;
+        if (failRemovals) return std::unexpected(QStringLiteral("Fixture removal failed"));
         values.remove(key);
         return {};
     }
@@ -82,6 +83,7 @@ public:
     QHash<QString, QByteArray> values;
     bool available = true;
     bool failWrites = false;
+    bool failRemovals = false;
     int writeCount = 0;
     int removalCount = 0;
 };
@@ -1574,4 +1576,33 @@ TEST_CASE("Retail connection snapshots and commands expose one strict bank inter
         CHECK(controller.retailConnectionState(id).value("webView").value<QWindow*>() == nullptr);
     CHECK(controller.metaObject()->indexOfProperty("tbankConnected") == -1);
     CHECK(controller.metaObject()->indexOfProperty("alfaWebView") == -1);
+}
+
+TEST_CASE("T-Bank disconnect reports durable deletion failure and permits retry") {
+    wealthtracker::test::SettingsScope settings("DisconnectTests", "FailureRetry");
+    QHash<QString, QByteArray> saved;
+    {
+        auto credentials = std::make_unique<MemoryCredentialBackend>();
+        auto* backend = credentials.get();
+        backend->values["tbank-retail-session"] = "synthetic-session-123456";
+        backend->failRemovals = true;
+        wealthtracker::app::AppController controller(std::move(credentials), nullptr);
+        controller.disconnectTBank();
+        CHECK(backend->values.contains("tbank-retail-session"));
+        CHECK(controller.tbankConnected());
+        CHECK(controller.tbankLoginStatus().contains(QStringLiteral("Повторите отключение")));
+        CHECK(controller.connectionStates().value("tbank-retail").toMap().value("state") == "error");
+        CHECK_FALSE(controller.tbankSyncRunning());
+        saved = backend->values;
+    }
+    auto credentials = std::make_unique<MemoryCredentialBackend>();
+    auto* backend = credentials.get();
+    backend->values = saved;
+    wealthtracker::app::AppController reopened(std::move(credentials), nullptr);
+    CHECK(reopened.tbankConnected());
+    reopened.disconnectTBank();
+    CHECK_FALSE(backend->values.contains("tbank-retail-session"));
+    CHECK_FALSE(reopened.tbankConnected());
+    CHECK(reopened.tbankLoginStatus() == QStringLiteral("Т-Банк отключён"));
+    CHECK(reopened.connectionStates().value("tbank-retail").toMap().value("state") == "disconnected");
 }
