@@ -57,7 +57,7 @@ Flickable {
         GridLayout {
             id: metrics
             Layout.fillWidth: true
-            columns: page.width > 600 ? 3 : 1
+            columns: page.app.demoMode && page.width > 600 ? 3 : 1
             columnSpacing: 12
             MetricCard {
                 Layout.fillWidth: true
@@ -69,7 +69,9 @@ Flickable {
             }
             MetricCard {
                 Layout.fillWidth: true
-                title: qsTr("Дивиденды и купоны")
+                objectName: "investmentDividends"
+                visible: page.app.demoMode
+                title: qsTr("Дивиденды и купоны · демо")
                 value: page.app.demoMode ? "86 420 ₽" : "—"
                 hint: page.app.demoMode ? qsTr("За 12 месяцев")
                                    : qsTr("Нет данных")
@@ -77,7 +79,9 @@ Flickable {
             }
             MetricCard {
                 Layout.fillWidth: true
-                title: "XIRR"
+                objectName: "investmentXirr"
+                visible: page.app.demoMode
+                title: qsTr("XIRR · демо")
                 value: page.app.demoMode ? "17,6%" : "—"
                 hint: page.app.demoMode
                       ? qsTr("Не является налоговым расчётом")

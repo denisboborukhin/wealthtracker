@@ -35,6 +35,7 @@ TestCase {
         holdingRows.clear()
         holdingRows.append({ticker: "TMOS", name: "<b>A very long instrument name with additional details</b>",
             allocation: "25%", performance: "+1,5%", value: "123 456 789 ₽", positive: true})
+        mock.demoMode = false
         mock.synchronizations = 0
     }
 
@@ -103,4 +104,19 @@ TestCase {
         compare(findChild(row, "holding_performance").visible, data.w >= 680)
         verify(list.clip)
     }
+    function test_demoOnlyMetrics() {
+        const investments = page(1100)
+        const dividends = findChild(investments, "investmentDividends")
+        const xirr = findChild(investments, "investmentXirr")
+        verify(!dividends.visible && !xirr.visible)
+        mock.demoMode = true
+        verify(dividends.visible && xirr.visible)
+        verify(dividends.title.indexOf("демо") >= 0)
+        verify(xirr.title.indexOf("демо") >= 0)
+        compare(dividends.value, "86 420 ₽")
+        compare(xirr.value, "17,6%")
+        mock.demoMode = false
+        verify(!dividends.visible && !xirr.visible)
+    }
+
 }
