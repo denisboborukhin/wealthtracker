@@ -24,6 +24,7 @@ TestCase {
         id: mock
         property bool demoMode: false
         property string portfolioValue: "123 456 ₽"
+        property var connectionStates: ({"t-invest": {text: "Т-Инвестиции: данные обновлены"}})
         property string syncStatus: "A long synthetic synchronization status that should stay within the header"
         property var holdings: holdingRows
         property int synchronizations: 0
@@ -37,6 +38,9 @@ TestCase {
             allocation: "25%", performance: "+1,5%", value: "123 456 789 ₽", positive: true})
         mock.demoMode = false
         mock.synchronizations = 0
+        mock.syncStatus = "Обновляем Ozon Банк"
+        mock.connectionStates = ({"t-invest": {text: "Т-Инвестиции: данные обновлены"},
+            "ozon-retail": {text: "Обновляем Ozon Банк"}})
     }
 
     function page(w) {
@@ -104,6 +108,25 @@ TestCase {
         compare(findChild(row, "holding_performance").visible, data.w >= 680)
         verify(list.clip)
     }
+    function test_statusIsScopedToInvestments() {
+        const investments = page(1100)
+        const status = findChild(investments, "investmentStatus")
+        verify(status !== null)
+        compare(status.text, "Т-Инвестиции: данные обновлены")
+        mock.syncStatus = "Альфа-Банк: обновление завершено"
+        mock.connectionStates = ({"t-invest": {text: "Т-Инвестиции: данные обновлены"},
+            "alfa-retail": {text: mock.syncStatus}})
+        compare(status.text, "Т-Инвестиции: данные обновлены")
+        mock.connectionStates = ({"t-invest": {text: "Получаем инвестиционные счета"}})
+        compare(status.text, "Получаем инвестиционные счета")
+        mock.connectionStates = ({})
+        compare(status.text, "")
+        verify(!status.visible)
+        mock.demoMode = true
+        compare(status.text, "Демонстрационные данные")
+        verify(status.visible)
+    }
+
     function test_demoOnlyMetrics() {
         const investments = page(1100)
         const dividends = findChild(investments, "investmentDividends")

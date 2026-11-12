@@ -39,7 +39,10 @@ Flickable {
                 Text { text: qsTr("Инвестиции"); color: Theme.text; font.pixelSize: 26; font.weight: Font.DemiBold }
                 Text {
                     Layout.fillWidth: true
-                    text: page.app.syncStatus
+                    objectName: "investmentStatus"
+                    text: page.app.demoMode ? qsTr("Демонстрационные данные")
+                        : (page.app.connectionStates["t-invest"] || {}).text || ""
+                    visible: text.length > 0
                     color: Theme.textMuted
                     font.pixelSize: 12
                     elide: Text.ElideRight
