@@ -15,7 +15,7 @@ On macOS, the bootstrap script installs pinned CMake, Ninja, Conan, and the
 official Qt SDK under the ignored `build/` directory:
 
 ```sh
-./scripts/bootstrap.sh
+./scripts/bootstrap.sh &&
 . build/tooling/bin/activate
 ```
 
@@ -41,7 +41,7 @@ If no supported Python is found, install a current Python and select it
 explicitly:
 
 ```sh
-brew install python@3.13
+brew install python@3.13 &&
 WT_BOOTSTRAP_PYTHON=/opt/homebrew/opt/python@3.13/bin/python3.13 \
   ./scripts/bootstrap.sh
 ```
@@ -64,11 +64,11 @@ conan install . \
   --profile:host=conan/profiles/macos-arm64 \
   --profile:build=conan/profiles/macos-arm64 \
   --build=missing -s:h build_type=Debug \
-  -of build/macos-debug
-./scripts/configure.sh macos-debug
-cmake --build --preset macos-debug
-ctest --preset macos-debug --output-on-failure
-cmake --build --preset macos-debug --target wealthtracker_qmllint
+  -of build/macos-debug &&
+./scripts/configure.sh macos-debug &&
+cmake --build --preset macos-debug &&
+ctest --preset macos-debug --output-on-failure &&
+cmake --build --preset macos-debug --target wealthtracker_qmllint &&
 node --check scripts/zen_plugin_host.mjs
 ```
 
@@ -90,6 +90,7 @@ TLS runtime installation rules.
 ## Debug build on Windows
 
 ```powershell
+$ErrorActionPreference = "Stop"
 ./scripts/bootstrap.ps1
 & ./build/tooling/Scripts/Activate.ps1
 conan install . `
@@ -98,15 +99,25 @@ conan install . `
   --build=missing -s:h build_type=Debug -s:h compiler.runtime_type=Debug `
   -c tools.env.virtualenv:powershell=powershell.exe `
   -of build/windows-debug
+if ($LASTEXITCODE -ne 0) { throw "Build or verification command failed." }
 . ./build/windows-debug/generators/conanrun.ps1
 $env:PATH = "$(Resolve-Path ./build/qt/6.11.1/msvc2022_64/bin);$env:PATH"
 cmake --preset windows-debug
+if ($LASTEXITCODE -ne 0) { throw "Build or verification command failed." }
 cmake --build --preset windows-debug
+if ($LASTEXITCODE -ne 0) { throw "Build or verification command failed." }
 ctest --preset windows-debug --output-on-failure
+if ($LASTEXITCODE -ne 0) { throw "Build or verification command failed." }
 cmake --build --preset windows-debug --target wealthtracker_qmllint
+if ($LASTEXITCODE -ne 0) { throw "Build or verification command failed." }
 node --check scripts/zen_plugin_host.mjs
+if ($LASTEXITCODE -ne 0) { throw "Build or verification command failed." }
 & ./build/windows-debug/WealthTracker.exe
 ```
+
+The shell examples chain dependent commands with `&&`; PowerShell checks native
+exit codes explicitly. A failed install/build/test stops the pasted sequence
+instead of continuing against stale output.
 
 The Debug host settings override the profiles' Release defaults. Keep the build
 profile in Release for dependency build tools. Activate Conan's runtime
@@ -140,11 +151,11 @@ conan install . \
   --profile:host=conan/profiles/macos-arm64 \
   --profile:build=conan/profiles/macos-arm64 \
   --build=missing -s:h build_type=Release \
-  -of build/macos-release
-./scripts/configure.sh macos-release
-cmake --build --preset macos-release
-ctest --preset macos-release --output-on-failure
-cmake --build --preset macos-release --target wealthtracker_qmllint
+  -of build/macos-release &&
+./scripts/configure.sh macos-release &&
+cmake --build --preset macos-release &&
+ctest --preset macos-release --output-on-failure &&
+cmake --build --preset macos-release --target wealthtracker_qmllint &&
 cmake --build --preset macos-release --target package
 ```
 
@@ -167,3 +178,12 @@ it. The CI workflow builds, tests, lints, and stages the application, but does
 not create, sign, or publish a release package.
 
 No signing, notarization, or release-publishing automation is configured.
+
+## Dependency license verification
+
+CI checks the resolved Conan host dependency graph, including transitive runtime
+dependencies, using `scripts/check_runtime_licenses.py`. GPL/AGPL-only expressions
+are rejected; LGPL is distinguished from GPL, and build-context/test-only tools
+are excluded from this runtime check. Missing or malformed license metadata
+fails for review. Qt is installed outside Conan: this gate does not validate
+Qt module licenses or replace review of the distributed Qt notices/SPDX files.

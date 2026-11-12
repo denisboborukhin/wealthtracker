@@ -31,15 +31,28 @@ This describes implemented controls. Report vulnerabilities using the
 
 ## Credentials and local data
 
-API tokens, the T-Bank API session, reusable plugin state, and the balance-history
-database key use macOS Keychain or Windows Credential Manager. macOS uses a single
-versioned `credential-vault-v1` item under `org.wealthtracker.desktop`, loaded once
-into secure process buffers. Its file-based Keychain access is governed by macOS
-Keychain ACLs; the configured accessibility attribute does not establish a
-data-protection Keychain protection class. Windows keeps its per-entry backend.
-Other platforms return an unsupported-backend error. Temporary credential byte
-arrays are cleared after request construction;
-Qt, browser, and OS copies are outside that clearing operation.
+API tokens, the T-Bank API session and the balance-history database key use the
+platform credential backend. Reusable desktop plugin state uses that same
+backend; local Node-based plugins are unavailable on Android.
+
+| Platform | Credential backend |
+| --- | --- |
+| macOS | Versioned Keychain bundle, cached in secure process buffers |
+| Windows | Per-entry Windows Credential Manager storage |
+| Android | Credential bundle encrypted with AES-GCM in app-private SharedPreferences; key is non-exportable and held by Android Keystore |
+| Other platforms, including Linux | Unsupported credential backend |
+
+On macOS the `credential-vault-v1` item is stored under
+`org.wealthtracker.desktop` and loaded once into secure process buffers. Its
+file-based Keychain access is governed by macOS Keychain ACLs; the configured
+accessibility attribute does not establish a data-protection Keychain protection
+class. Android also uses the bundled credential-store layer; its Java backend
+commits writes and deletions before reporting success.
+Cloud backup and device-transfer extraction are excluded for the Android app.
+Temporary credential byte arrays are cleared after request construction; Qt,
+browser and OS copies are outside that clearing operation. The
+[data-storage matrix](../SECURITY.md#current-boundary) distinguishes encrypted
+credentials/history from unencrypted manual cashback and ordinary settings.
 
 Legacy macOS items migrate lazily: the exact secret bytes are committed to the
 bundle before legacy cleanup. The database key is preserved unchanged. Migration
@@ -91,13 +104,16 @@ does not imply every bank was refreshed together.
 Schema version 4 extends the cashback bank constraint to Ozon with a transactional
 table copy and swap, preserving all earlier snapshots, captures and wallets.
 
-Other synchronized financial data remains in process memory. QSettings stores
+Synchronized transaction and investment holding details remain in process memory.
+QSettings stores
 connection flags, refresh times, and non-sensitive plugin preferences. The privacy screen
 cancels active login, synchronization, and plugin work before covering the UI.
 Unlocking requires no authentication and does not erase the financial models.
 
 Sources: [credential store](../src/platform/credential_store.cpp),
 [credential bundle](../src/platform/credential_vault.cpp),
+[Android credential backend](../src/platform/android_credential_store.cpp),
+[Android Keystore vault](../android/src/org/wealthtracker/android/CredentialVault.java),
 [encrypted database](../src/storage/database.cpp),
 [balance-history repository](../src/storage/balance_history.cpp),
 [controller](../src/app/AppController.cpp).

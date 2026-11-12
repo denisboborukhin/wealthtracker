@@ -52,11 +52,13 @@ Assets without a usable price remain visible and are excluded from the USDT
 subtotal. See [Crypto wallets](docs/crypto-wallets.md) for setup, valuation,
 coverage, and verification limits.
 
-**Кэшбэк** automatically reads confirmed T-Bank, Alfa-Bank, and VTB categories for this month and
+**Кэшбэк** automatically reads confirmed T-Bank, Alfa-Bank, VTB, and Ozon Bank categories for this month and
 next month after balance synchronization. Cashback has its own status and
 refresh time; a failed read preserves the previous result.
 Use **Обновить банк** on a bank's card to refresh only that bank, or **Обновить банки** for all connected banks. Manual entries
-survive restart and remain a fallback when automatic data is unavailable.
+survive restart and remain a fallback when automatic data is unavailable. Manual
+category names, percentages and months are stored in local settings without
+application-level encryption; they contain no bank credentials.
 Automatic cashback snapshots are saved in the encrypted history store and
 restored after restart; failed refreshes preserve their observation times. See
 [Bank connections](docs/bank-connections.md#cashback).
