@@ -26,6 +26,7 @@ Rectangle {
         Text {
             Layout.fillWidth: true
             Layout.minimumWidth: 0
+            textFormat: Text.PlainText
             text: root.title
             color: Theme.textMuted
             font.pixelSize: 12
@@ -35,6 +36,7 @@ Rectangle {
         Text {
             Layout.fillWidth: true
             Layout.minimumWidth: 0
+            textFormat: Text.PlainText
             text: root.value
             color: Theme.text
             font.pixelSize: 22
@@ -45,6 +47,7 @@ Rectangle {
             Layout.fillWidth: true
             Layout.minimumWidth: 0
             visible: root.hint.length > 0
+            textFormat: Text.PlainText
             text: root.hint
             color: root.accent
             font.pixelSize: 11

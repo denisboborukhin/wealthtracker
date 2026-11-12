@@ -15,6 +15,7 @@ ColumnLayout {
     Text {
         Layout.fillWidth: true
         objectName: "retailLoginStatus"
+        textFormat: Text.PlainText
         text: content.status.length > 0
               ? content.status
               : qsTr("Нажмите «Войти», чтобы открыть официальную страницу банка внутри приложения.")

@@ -305,6 +305,7 @@ Flickable {
                                             Layout.fillWidth: true
                                             Layout.minimumWidth: 0
                                             objectName: "categoryName"
+                                            textFormat: Text.PlainText
                                             text: categoryRow.name
                                             color: Theme.text
                                             font.pixelSize: 12
@@ -316,6 +317,7 @@ Flickable {
                                             Layout.maximumWidth: 132
                                             horizontalAlignment: Text.AlignRight
                                             objectName: "categoryAmount"
+                                            textFormat: Text.PlainText
                                             text: categoryRow.amount
                                             color: Theme.textMuted
                                             font.pixelSize: 12
@@ -427,6 +429,7 @@ Flickable {
                                     Layout.preferredWidth: 88
                                     Layout.minimumWidth: 72
                                     objectName: "transaction_date"
+                                    textFormat: Text.PlainText
                                     text: recentTransaction.date
                                     color: Theme.textMuted
                                     font.pixelSize: 11
@@ -436,6 +439,7 @@ Flickable {
                                     Layout.fillWidth: true
                                     Layout.minimumWidth: 0
                                     objectName: "transaction_title"
+                                    textFormat: Text.PlainText
                                     text: recentTransaction.title
                                     color: Theme.text
                                     font.pixelSize: 12
@@ -447,6 +451,7 @@ Flickable {
                                     Layout.minimumWidth: 92
                                     Layout.maximumWidth: 160
                                     objectName: "transaction_category"
+                                    textFormat: Text.PlainText
                                     text: recentTransaction.category
                                     color: Theme.textMuted
                                     font.pixelSize: 11
@@ -458,6 +463,7 @@ Flickable {
                                     Layout.maximumWidth: 105
                                     horizontalAlignment: Text.AlignRight
                                     objectName: "transaction_amount"
+                                    textFormat: Text.PlainText
                                     text: recentTransaction.amount
                                     color: recentTransaction.transfer
                                            ? Theme.textMuted

@@ -151,4 +151,22 @@ TestCase {
         mock.hasFinancialData = false
         compare(findChild(dashboard, "dashboardSubtitle").text, "Подключите банк, чтобы увидеть данные")
     }
+    function test_externalLabelsAreLiteral() {
+        const markup = '<b>Merchant</b><img src="http://127.0.0.1:9/not-loaded">'
+        categoryRows.setProperty(0, "name", markup)
+        transactionRows.setProperty(0, "title", markup)
+        transactionRows.setProperty(0, "category", markup)
+        const dashboard = page(1100)
+        const categories = findChild(dashboard, "dashboard_categoryList")
+        const transactions = findChild(dashboard, "dashboard_transactionList")
+        tryVerify(() => categories.itemAtIndex(0) !== null && transactions.itemAtIndex(0) !== null)
+        const name = findChild(categories.itemAtIndex(0), "categoryName")
+        const title = findChild(transactions.itemAtIndex(0), "transaction_title")
+        const category = findChild(transactions.itemAtIndex(0), "transaction_category")
+        for (let label of [name, title, category]) {
+            compare(label.textFormat, Text.PlainText)
+            compare(label.text, markup)
+        }
+    }
+
 }

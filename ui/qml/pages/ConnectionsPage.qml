@@ -120,6 +120,8 @@ Item {
                 spacing: 8
 
                 Text {
+                    textFormat: Text.PlainText
+                    objectName: "connectionInstitution"
                     text: connectionDialog.institution
                     color: Theme.text
                     font.pixelSize: 20
@@ -127,6 +129,7 @@ Item {
                 }
                 Text {
                     Layout.fillWidth: true
+                    textFormat: Text.PlainText
                     text: connectionDialog.method
                     color: Theme.textMuted
                     font.pixelSize: 12
@@ -153,6 +156,7 @@ Item {
                 Text {
                     Layout.fillWidth: true
                     visible: !connectionDialog.retailLoginActive
+                    textFormat: Text.PlainText
                     text: page.app.connectionMessage
                     color: Theme.textMuted
                     font.pixelSize: 13
@@ -241,6 +245,7 @@ Item {
                     Text {
                         Layout.fillWidth: true
                         objectName: "connectedRetailStatus"
+                        textFormat: Text.PlainText
                         text: connectionDialog.retailLoginStatus
                         color: connectionDialog.retailLoginStatus.toLowerCase().indexOf("не удалось") >= 0
                                || connectionDialog.retailLoginStatus.toLowerCase().indexOf("ошиб") >= 0

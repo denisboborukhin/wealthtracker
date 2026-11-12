@@ -87,6 +87,7 @@ SectionCard {
                         spacing: 3
                         Text {
                             Layout.fillWidth: true
+                            textFormat: Text.PlainText
                             text: connectorRow.institution
                             color: Theme.text
                             font.pixelSize: 14
@@ -95,6 +96,7 @@ SectionCard {
                         }
                         Text {
                             Layout.fillWidth: true
+                            textFormat: Text.PlainText
                             text: connectorRow.method
                             color: Theme.textMuted
                             font.pixelSize: 11
@@ -105,6 +107,7 @@ SectionCard {
                     Text {
                         Layout.preferredWidth: 190
                         visible: list.pageWidth >= 900
+                        textFormat: Text.PlainText
                         text: connectorRow.scope
                         color: Theme.textMuted
                         font.pixelSize: 12

@@ -44,6 +44,7 @@ ColumnLayout {
             Layout.fillWidth: true
             spacing: 2
             Text {
+                textFormat: Text.PlainText
                 text: editor.app.zenPluginId.length > 0
                       ? editor.app.zenPluginId
                       : qsTr("Bundle не выбран")
@@ -53,6 +54,7 @@ ColumnLayout {
             }
             Text {
                 Layout.fillWidth: true
+                textFormat: Text.PlainText
                 text: editor.app.zenPluginBundlePath.length > 0
                       ? editor.app.zenPluginBundlePath
                       : qsTr("Сначала соберите plugin через yarn build <plugin-id>")
@@ -132,6 +134,7 @@ ColumnLayout {
                 spacing: 5
 
                 Text {
+                    textFormat: Text.PlainText
                     text: preferenceField.modelData.label
                           + (preferenceField.modelData.required ? " *" : "")
                     color: Theme.text
@@ -235,6 +238,7 @@ ColumnLayout {
         Text {
             Layout.fillWidth: true
             visible: editor.app.zenPluginPrompt.length > 0
+            textFormat: Text.PlainText
             text: editor.app.zenPluginPrompt
             color: Theme.text
             font.pixelSize: 12

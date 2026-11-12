@@ -17,6 +17,7 @@ ColumnLayout {
         Text {
             Layout.fillWidth: true
             Layout.minimumWidth: 0
+            textFormat: Text.PlainText
             text: content.institution
             color: Theme.text
             font.pixelSize: 18
@@ -32,6 +33,7 @@ ColumnLayout {
     Text {
         Layout.fillWidth: true
         objectName: "retailLoginStatus"
+        textFormat: Text.PlainText
         text: content.status
         color: Theme.textMuted
         font.pixelSize: 12

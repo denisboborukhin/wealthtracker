@@ -110,4 +110,15 @@ TestCase {
         compare(mock.calls[mock.calls.length - 1], ["cancel", "alfa-retail"])
         verify(!mock.states["alfa-retail"].loginActive)
     }
+    function test_institutionNameIsLiteral() {
+        const page = createPage(1100)
+        const markup = '<b>Bank</b><img src="http://127.0.0.1:9/not-loaded">'
+        page.openConnection("vtb-retail", markup, "Synthetic method", "Saved", true, true)
+        openedDialog = findChild(page, "connectionDialog")
+        tryCompare(openedDialog, "opened", true)
+        const institution = findChild(openedDialog, "connectionInstitution")
+        compare(institution.textFormat, Text.PlainText)
+        compare(institution.text, markup)
+    }
+
 }
