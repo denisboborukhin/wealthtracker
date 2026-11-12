@@ -83,6 +83,17 @@ jobs:
           --build=missing
           -of=build/${{ matrix.preset }}
 
+      - name: Resolve runtime license metadata
+        run: >
+          conan graph info .
+          --profile:host=${{ matrix.profile }}
+          --profile:build=${{ matrix.profile }}
+          --format=json
+          --out-file=build/${{ matrix.preset }}/dependency-graph.json
+
+      - name: Check resolved Conan runtime licenses
+        run: python scripts/check_runtime_licenses.py build/${{ matrix.preset }}/dependency-graph.json
+
       - name: Initialize Windows runtime paths
         if: runner.os == 'Windows'
         shell: pwsh
@@ -124,21 +135,6 @@ jobs:
 
       - name: Validate Conan recipe
         run: conan inspect .
-
-      - name: Check forbidden runtime licenses
-        shell: python
-        run: |
-          from pathlib import Path
-          forbidden = ("GPL-", "AGPL-")
-          files = [Path("conanfile.py"), *Path("cmake").glob("**/*")]
-          findings = []
-          for file in files:
-              text = file.read_text(encoding="utf-8")
-              for token in forbidden:
-                  if token in text:
-                      findings.append(f"{file}: contains {token}")
-          if findings:
-              raise SystemExit("\n".join(findings))
 
       - name: Verify task files are ignored
         run: git check-ignore tasks/todo.md tasks/lessons.md
