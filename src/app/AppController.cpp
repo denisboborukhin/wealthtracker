@@ -1161,6 +1161,7 @@ void AppController::initializeRefreshTimers() {
     private_->zen_auto_update_timer.setSingleShot(true);
     connect(&private_->zen_auto_update_timer, &QTimer::timeout, this,
             [this] {
+                if (demo_mode_) return;
                 if (zenPluginAutoUpdate() && private_->plugin.descriptor() &&
                     !zen_plugin_running_) {
                     if (!synchronizeZenPlugin()) {
@@ -1173,6 +1174,7 @@ void AppController::initializeRefreshTimers() {
     private_->tbank_auto_update_timer.setSingleShot(true);
     connect(&private_->tbank_auto_update_timer, &QTimer::timeout, this,
             [this] {
+                if (demo_mode_) return;
                 if (tbankAutoUpdate() && tbankConnected()
                     && !tbankSyncRunning()) {
                     if ((locked_ || tbankLoginActive() || !synchronizeTBank()) &&
@@ -1186,6 +1188,7 @@ void AppController::initializeRefreshTimers() {
     private_->alfa_auto_update_timer.setSingleShot(true);
     connect(&private_->alfa_auto_update_timer, &QTimer::timeout, this,
             [this] {
+                if (demo_mode_) return;
                 if (alfaAutoUpdate() && alfaConnected() &&
                     !alfaSyncRunning()) {
                     if ((locked_ || alfaLoginActive() || !synchronizeAlfa()) &&
@@ -1199,6 +1202,7 @@ void AppController::initializeRefreshTimers() {
     private_->vtb_auto_update_timer.setSingleShot(true);
     connect(&private_->vtb_auto_update_timer, &QTimer::timeout, this,
             [this] {
+                if (demo_mode_) return;
                 if (vtbAutoUpdate() && vtbConnected() &&
                     !vtbSyncRunning()) {
                     if ((locked_ || vtbLoginActive() || !synchronizeVtb()) &&
@@ -1212,6 +1216,7 @@ void AppController::initializeRefreshTimers() {
     private_->ozon_auto_update_timer.setSingleShot(true);
     connect(&private_->ozon_auto_update_timer, &QTimer::timeout, this,
             [this] {
+                if (demo_mode_) return;
                 if (ozonAutoUpdate() && ozonConnected() &&
                     !ozonSyncRunning()) {
                     if ((locked_ || ozonLoginActive() || !synchronizeOzon()) &&
@@ -1225,7 +1230,7 @@ void AppController::initializeRefreshTimers() {
 }
 
 void AppController::restoreRetailConnections() {
-    if (locked_ || zen_plugin_running_ || tbankLoginActive() || alfaLoginActive() ||
+    if (locked_ || demo_mode_ || zen_plugin_running_ || tbankLoginActive() || alfaLoginActive() ||
         vtbLoginActive() || ozonLoginActive()) {
         return;
     }
@@ -1736,7 +1741,7 @@ void AppController::refreshZenPluginAutoUpdateSchedule() {
     private_->zen_auto_update_timer.stop();
     private_->next_zen_auto_update_at = {};
 
-    if (!zenPluginAutoUpdate() || !private_->plugin.descriptor()) {
+    if (demo_mode_ || !zenPluginAutoUpdate() || !private_->plugin.descriptor()) {
         return;
     }
     const auto lastSync =
@@ -1748,7 +1753,7 @@ void AppController::refreshZenPluginAutoUpdateSchedule() {
 }
 
 void AppController::scheduleZenPluginAutoUpdateAfter(const QDateTime& from) {
-    if (!zenPluginAutoUpdate() || !private_->plugin.descriptor()) {
+    if (demo_mode_ || !zenPluginAutoUpdate() || !private_->plugin.descriptor()) {
         return;
     }
 
@@ -1758,55 +1763,91 @@ void AppController::scheduleZenPluginAutoUpdateAfter(const QDateTime& from) {
 
 void AppController::refreshTBankAutoUpdateSchedule() {
     refreshConnectionSchedule(private_->tbank_auto_update_timer, private_->next_tbank_auto_update_at,
-        tbankAutoUpdate() && tbankConnected(),
+        !demo_mode_ && tbankAutoUpdate() && tbankConnected(),
         settingsDateTime(QStringLiteral("tbank/lastSyncAt")));
 }
 
 void AppController::scheduleTBankAutoUpdateAfter(const QDateTime& from) {
     scheduleConnectionRefreshAfter(private_->tbank_auto_update_timer, private_->next_tbank_auto_update_at,
-        tbankAutoUpdate() && tbankConnected(), from);
+        !demo_mode_ && tbankAutoUpdate() && tbankConnected(), from);
 }
 
 void AppController::refreshAlfaAutoUpdateSchedule() {
     refreshConnectionSchedule(private_->alfa_auto_update_timer, private_->next_alfa_auto_update_at,
-        alfaAutoUpdate() && alfaConnected(),
+        !demo_mode_ && alfaAutoUpdate() && alfaConnected(),
         settingsDateTime(QStringLiteral("alfa/lastSyncAt")));
 }
 
 void AppController::scheduleAlfaAutoUpdateAfter(const QDateTime& from) {
     scheduleConnectionRefreshAfter(private_->alfa_auto_update_timer, private_->next_alfa_auto_update_at,
-        alfaAutoUpdate() && alfaConnected(), from);
+        !demo_mode_ && alfaAutoUpdate() && alfaConnected(), from);
 }
 
 void AppController::refreshVtbAutoUpdateSchedule() {
     refreshConnectionSchedule(private_->vtb_auto_update_timer, private_->next_vtb_auto_update_at,
-        vtbAutoUpdate() && vtbConnected(),
+        !demo_mode_ && vtbAutoUpdate() && vtbConnected(),
         settingsDateTime(QStringLiteral("vtb/lastSyncAt")));
 }
 
 void AppController::scheduleVtbAutoUpdateAfter(const QDateTime& from) {
     scheduleConnectionRefreshAfter(private_->vtb_auto_update_timer, private_->next_vtb_auto_update_at,
-        vtbAutoUpdate() && vtbConnected(), from);
+        !demo_mode_ && vtbAutoUpdate() && vtbConnected(), from);
 }
 
 void AppController::refreshOzonAutoUpdateSchedule() {
     refreshConnectionSchedule(private_->ozon_auto_update_timer, private_->next_ozon_auto_update_at,
-        ozonAutoUpdate() && ozonConnected(),
+        !demo_mode_ && ozonAutoUpdate() && ozonConnected(),
         settingsDateTime(QStringLiteral("ozon/lastSyncAt")));
 }
 
 void AppController::scheduleOzonAutoUpdateAfter(const QDateTime& from) {
     scheduleConnectionRefreshAfter(private_->ozon_auto_update_timer, private_->next_ozon_auto_update_at,
-        ozonAutoUpdate() && ozonConnected(), from);
+        !demo_mode_ && ozonAutoUpdate() && ozonConnected(), from);
 }
 
 void AppController::loadDemoData() {
+    if (demo_mode_) return;
+    demo_mode_ = true;
+    private_->zen_auto_update_timer.stop();
+    private_->tbank_auto_update_timer.stop();
+    private_->alfa_auto_update_timer.stop();
+    private_->vtb_auto_update_timer.stop();
+    private_->ozon_auto_update_timer.stop();
+    for (const auto& bank : {QStringLiteral("tbank"), QStringLiteral("alfa"),
+                             QStringLiteral("vtb"), QStringLiteral("ozon")}) {
+        const auto activity = private_->activity.value(bank + QStringLiteral("-retail"));
+        if (activity.connected && activity.refreshActive &&
+            !private_->pending_retail_restores.contains(bank))
+            private_->pending_retail_restores.push_back(bank);
+    }
+    cancelTBankLogin();
+    cancelAlfaLogin();
+    cancelVtbLogin();
+    cancelOzonLogin();
+    if (zen_plugin_running_) cancelZenPlugin();
+    if (private_->investment_sync) {
+        private_->investment_sync->cancel();
+        private_->investment_sync.clear();
+    }
+    for (auto coordinator : private_->bank_sync_coordinators)
+        if (coordinator) coordinator->cancel();
+    private_->bank_sync_coordinators.clear();
+    if (private_->tbank_sync_coordinator) {
+        private_->tbank_sync_coordinator->cancel();
+        private_->tbank_sync_coordinator.clear();
+    }
+    private_->alfa_login->cancel();
+    private_->vtb_login->cancel();
+    private_->ozon_login->cancel();
+    for (const auto& id : {QStringLiteral("tbank-retail"), QStringLiteral("alfa-retail"),
+                           QStringLiteral("vtb-retail"), QStringLiteral("ozon-retail")})
+        private_->activity[id].refreshActive = false;
+    refreshBankConnections();
     stopAlfaCashback();
     stopOzonCashback();
     stopTBankCashback();
     stopVtbCashback();
     stopCryptoRefresh();
-    demo_mode_ = true;
     const auto today = QDate::currentDate();
     const auto demoDate = [this](const int daysBeforeEnd) {
         return std::max(reporting_from_, reporting_to_.addDays(-daysBeforeEnd));
@@ -1908,11 +1949,20 @@ void AppController::resetReportingPeriod() {
 }
 
 void AppController::clearDemoData() {
+    const bool wasDemo = demo_mode_;
+    demo_mode_ = false;
+    refreshZenPluginAutoUpdateSchedule();
+    refreshTBankAutoUpdateSchedule();
+    refreshAlfaAutoUpdateSchedule();
+    refreshVtbAutoUpdateSchedule();
+    refreshOzonAutoUpdateSchedule();
+    QTimer::singleShot(0, this, &AppController::restoreRetailConnections);
     if (!private_->bank_batches.isEmpty()) {
         rebuildBankModels();
         sync_status_ =
             QStringLiteral("Синхронизированные банковские данные восстановлены");
         emit syncStatusChanged();
+        if (wasDemo) emit demoModeChanged();
         return;
     }
     demo_mode_ = false;
@@ -2116,6 +2166,7 @@ void AppController::removeBankToken(const QString& connectorId) {
 }
 
 void AppController::synchronizeInvestments() {
+    if (demo_mode_) return;
     if (locked_) {
         sync_status_ = QStringLiteral("Сначала отключите экран приватности");
         emit syncStatusChanged();
@@ -2168,6 +2219,7 @@ void AppController::synchronizeInvestments() {
 }
 
 void AppController::synchronizeBank(const QString& connectorId) {
+    if (demo_mode_) return;
     if (connectorId == QStringLiteral("t-invest")) {
         synchronizeInvestments();
         return;
@@ -2317,6 +2369,7 @@ void AppController::synchronizeBank(const QString& connectorId) {
 }
 
 void AppController::rebuildBankModels() {
+    if (demo_mode_) return;
     QHash<QString, ProjectionInstitution> institutions;
     for (auto bank = private_->bank_batches.cbegin(); bank != private_->bank_batches.cend(); ++bank) {
         const auto configuration = bankConfiguration(bank.key());
@@ -2335,10 +2388,7 @@ void AppController::rebuildBankModels() {
     live_report_income_ = std::move(projection.income);
     live_report_spending_ = std::move(projection.spending);
     live_savings_ = std::move(projection.savings);
-    const bool demoChanged = demo_mode_;
-    demo_mode_ = false;
     emit dashboardChanged();
-    if (demoChanged) emit demoModeChanged();
 }
 
 bool AppController::inspectZenPluginBundle(const QUrl& source) {
@@ -2414,6 +2464,7 @@ bool AppController::inspectZenPluginBundle(const QUrl& source) {
 
 bool AppController::startZenPlugin(
     const QString& institution, const QVariantMap& preferences) {
+    if (demo_mode_) return false;
     if (zen_plugin_running_ || !private_->plugin.descriptor()) {
         sync_status_ = zen_plugin_running_
             ? QStringLiteral("Плагин уже выполняется")
@@ -2677,6 +2728,7 @@ void AppController::removeZenPlugin() {
 }
 
 bool AppController::prepareTBankConnection() {
+    if (demo_mode_) return false;
     const auto reportFailure = [this](QString message) {
         sync_status_ = std::move(message);
         tbank_login_status_ = sync_status_;
@@ -2807,6 +2859,7 @@ void AppController::acceptTBankSession(QByteArray session) {
 }
 
 bool AppController::synchronizeTBank() {
+    if (demo_mode_) return false;
     using wealthtracker::connectors::ConnectorError;
     using wealthtracker::connectors::ErrorCode;
     using wealthtracker::connectors::TBankRetailClient;
@@ -3013,6 +3066,7 @@ void AppController::disconnectTBank() {
 }
 
 bool AppController::prepareAlfaConnection() {
+    if (demo_mode_) return false;
     const auto reportFailure = [this](QString message) {
         sync_status_ = std::move(message);
         alfa_login_status_ = sync_status_;
@@ -3076,6 +3130,7 @@ void AppController::cancelAlfaLogin() {
 }
 
 bool AppController::synchronizeAlfa() {
+    if (demo_mode_) return false;
     if (alfaSyncRunning() || alfaLoginActive()) {
         sync_status_ = QStringLiteral("Альфа-Банк уже выполняет вход или синхронизацию");
         alfa_login_status_ = sync_status_;
@@ -3140,6 +3195,7 @@ void AppController::disconnectAlfa() {
 }
 
 bool AppController::prepareVtbConnection() {
+    if (demo_mode_) return false;
     const auto reportFailure = [this](QString message) {
         sync_status_ = std::move(message);
         vtb_login_status_ = sync_status_;
@@ -3191,6 +3247,7 @@ void AppController::cancelVtbLogin() {
 }
 
 bool AppController::synchronizeVtb() {
+    if (demo_mode_) return false;
     if (vtbSyncRunning() || vtbLoginActive()) {
         sync_status_ = QStringLiteral("ВТБ уже выполняет вход или синхронизацию");
         vtb_login_status_ = sync_status_;
@@ -3255,6 +3312,7 @@ void AppController::disconnectVtb() {
 }
 
 bool AppController::prepareOzonConnection() {
+    if (demo_mode_) return false;
     const auto reportFailure = [this](QString message) {
         sync_status_ = std::move(message);
         ozon_login_status_ = sync_status_;
@@ -3306,6 +3364,7 @@ void AppController::cancelOzonLogin() {
 }
 
 bool AppController::synchronizeOzon() {
+    if (demo_mode_) return false;
     stopOzonCashback();
     if (ozonSyncRunning() || ozonLoginActive()) {
         sync_status_ = QStringLiteral("Ozon Банк уже выполняет вход или синхронизацию");

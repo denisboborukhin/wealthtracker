@@ -34,24 +34,31 @@ public:
 
 class PendingReply final : public QNetworkReply {
 public:
-    PendingReply(const QNetworkRequest& request, QObject* parent) : QNetworkReply(parent) {
+    PendingReply(const QNetworkRequest& request, int& aborts, QObject* parent) : QNetworkReply(parent), aborts_(aborts) {
         setRequest(request);
         setUrl(request.url());
         open(QIODevice::ReadOnly);
     }
     void abort() override {
+        ++aborts_;
         setError(OperationCanceledError, QStringLiteral("Fixture canceled"));
         setFinished(true);
         emit finished();
     }
 protected:
     qint64 readData(char*, qint64) override { return 0; }
+private:
+    int& aborts_;
 };
 
 class PendingNetwork final : public QNetworkAccessManager {
+public:
+    int requests = 0;
+    int aborts = 0;
 protected:
     QNetworkReply* createRequest(Operation, const QNetworkRequest& request, QIODevice*) override {
-        return new PendingReply(request, this);
+        ++requests;
+        return new PendingReply(request, aborts, this);
     }
 };
 
@@ -289,4 +296,60 @@ TEST_CASE("Manual retail refreshes overlap even when T-Bank starts last") {
     CHECK_FALSE(controller.alfaSyncRunning());
     CHECK_FALSE(controller.vtbSyncRunning());
     CHECK_FALSE(controller.tbankSyncRunning());
+}
+
+TEST_CASE("Demo mode suspends queued retail restoration and cancels active refresh") {
+    SettingsScope settings("DemoIsolationTests", "QueuedAndActive");
+    auto network = std::make_unique<PendingNetwork>();
+    auto* observed = network.get();
+    wealthtracker::app::AppController controller(std::make_unique<StartupCredentials>(), std::move(network), nullptr);
+    controller.loadDemoData();
+    const auto rows = controller.accounts()->rowCount();
+    REQUIRE(controller.demoMode());
+    CHECK_FALSE(waitFor([&] { return controller.tbankSyncRunning(); }, 150));
+    CHECK(observed->requests == 0);
+    controller.clearDemoData();
+    REQUIRE(waitFor([&] { return controller.tbankSyncRunning(); }, 1000));
+    REQUIRE(observed->requests > 0);
+    controller.loadDemoData();
+    CHECK(controller.demoMode());
+    CHECK_FALSE(controller.tbankSyncRunning());
+    CHECK(observed->aborts > 0);
+    CHECK_FALSE(waitFor([&] { return !controller.demoMode(); }, 150));
+    CHECK(controller.accounts()->rowCount() == rows);
+    CHECK(controller.netWorth() == QStringLiteral("4 826 450 ₽"));
+    CHECK_FALSE(controller.prepareTBankConnection());
+    CHECK_FALSE(controller.prepareAlfaConnection());
+    CHECK_FALSE(controller.prepareVtbConnection());
+    CHECK_FALSE(controller.prepareOzonConnection());
+    CHECK_FALSE(controller.synchronizeTBank());
+    CHECK_FALSE(controller.synchronizeAlfa());
+    CHECK_FALSE(controller.synchronizeVtb());
+    CHECK_FALSE(controller.synchronizeOzon());
+    CHECK_FALSE(controller.startZenPlugin("Fixture", {}));
+    const auto requests = observed->requests;
+    controller.synchronizeInvestments();
+    controller.synchronizeBank("alfa-api");
+    CHECK(observed->requests == requests);
+    CHECK(controller.demoMode());
+    controller.clearDemoData();
+    REQUIRE(waitFor([&] { return controller.tbankSyncRunning(); }, 1000));
+    CHECK(observed->requests > requests);
+    controller.lock();
+}
+
+TEST_CASE("Demo mode suspends overdue bank timers and restores their schedule on exit") {
+    SettingsScope settings("DemoIsolationTests", "OverdueTimer");
+    auto network = std::make_unique<PendingNetwork>();
+    auto* observed = network.get();
+    wealthtracker::app::AppController controller(std::make_unique<StartupCredentials>(), std::move(network), nullptr);
+    controller.loadDemoData();
+    QSettings{}.setValue("tbank/lastSyncAt", QDateTime::currentDateTimeUtc().addSecs(-7 * 60 * 60).toString(Qt::ISODateWithMs));
+    controller.setTBankAutoUpdate(true);
+    CHECK_FALSE(waitFor([&] { return controller.tbankSyncRunning() || !controller.demoMode(); }, 10'500));
+    CHECK(observed->requests == 0);
+    controller.clearDemoData();
+    REQUIRE(waitFor([&] { return controller.tbankSyncRunning(); }, 1000));
+    CHECK(observed->requests > 0);
+    controller.lock();
 }
