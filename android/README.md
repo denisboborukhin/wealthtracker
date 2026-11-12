@@ -125,3 +125,31 @@ correct thread, continued timer progress, and discarded results after receiver
 destruction. Only fixed synthetic results and thread flags are logged.
 Account, login, and cashback readers dispatch results through this helper before
 using Qt timers, networking, or application models.
+
+
+## Reproduce Android verification
+
+Use an owned ARM64 Android emulator containing no real bank credentials. Start it
+with the Android SDK tools and wait for boot to finish, then select its exact
+serial from `adb devices`:
+
+```sh
+export JAVA_HOME=/path/to/jdk-21/Contents/Home
+export ANDROID_SDK_ROOT=/path/to/android-sdk
+sh android/verify.sh emulator-5554
+```
+
+The prerequisites and Qt installation are the same as for `android/build.sh`.
+The script rejects physical devices, disconnected devices and incomplete boots.
+It builds the application, runs `assembleDebugAndroidTest` in Qt's generated
+Android project, installs both APKs on the selected emulator, and requires a
+successful nonempty instrumentation result (the current suite has 16 tests).
+It then configures/builds `tests/view_probe` with the pinned Qt Android toolchain,
+installs the separate `org.wealthtracker.android.probe` package, and launches
+`--guarded-callback-probe`. The emulator log is cleared immediately before launch;
+a fixed successful native callback marker must arrive within 30 seconds.
+
+Logs are retained under `build/android-instrumentation.log` and
+`build/android-callback-probe.log`. The script leaves the emulator running and
+retains installed app data; use only a disposable test emulator. These synthetic
+checks verify platform integration, not authenticated bank compatibility.
