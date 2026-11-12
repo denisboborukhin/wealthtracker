@@ -37,8 +37,10 @@ struct OzonFinancialProjection {
       typeof state.startedAt !== 'number' || Date.now() - state.startedAt < 10000) return false
   state.cancelled = true
   state.controller?.abort()
-  globalThis.__wealthtrackerOzonSync = {status:'waiting',cancelled:false,
-    attempt:state.attempt,reasonCode:'OZON-READ',retryAt:Date.now() + 500}
+  const creditCodes = ['OZON-CREDIT-MODULE','OZON-CREDIT-CONTEXT','OZON-CREDIT-READ']
+  const creditPending = creditCodes.includes(state.reasonCode)
+  globalThis.__wealthtrackerOzonSync = {status:creditPending ? 'invalid' : 'waiting',cancelled:false,
+    attempt:state.attempt,reasonCode:creditPending ? state.reasonCode : 'OZON-READ',retryAt:Date.now() + 500}
   return true
 })())JS");
     return script;
@@ -71,12 +73,14 @@ struct OzonFinancialProjection {
       state.retryAt = Date.now() + 500
       return state.status
     }
+    state.reasonCode = 'OZON-MODULE'
     import(selected.url).then(module => {
       if (!active()) return
       const handler = module[selected.exportName]
       if (typeof handler !== 'function' || handler.url !== 'mainPage' ||
           handler.declaration?.operationName !== 'GetMainPage' ||
           handler.declaration?.operationType !== 'query') fail('OZON-MODULE')
+      state.reasonCode = 'OZON-READ'
       return handler.call({}, {signal:state.controller.signal})
     }).then(async response => {
       if (!active()) return
@@ -118,10 +122,13 @@ struct OzonFinancialProjection {
         try {
           // Dashboard widgets are presentation, not a complete product inventory.
           // Always read the verified MKK product, including when its widget is hidden.
+          state.startedAt = Date.now()
+          state.reasonCode = 'OZON-CREDIT-MODULE'
           const credit = await import('https://cdn2.ozone.ru/s3/bozon-fe-credit/release/apps/credit/_app/immutable/chunks/DHsJdLKo.js')
           if (!active()) return
           if (!credit.qu || typeof credit.qu._internal_setSsrStuff !== 'function') fail('OZON-INSTALLMENT')
           // The bank's normal credit mount initializes this service context first.
+          state.reasonCode = 'OZON-CREDIT-CONTEXT'
           const contextUrl = new URL('/apps/credit/_mf/context', location.origin).href
           const contextResponse = await fetch(contextUrl, {method:'GET',credentials:'include',
             mode:'same-origin',redirect:'error',signal:state.controller.signal})
@@ -157,6 +164,7 @@ struct OzonFinancialProjection {
             .getClientHandler('installment/info')
           if (reader.url !== 'installment/info' || reader.declaration?.operationName !== 'InstallmentInfoV4' ||
               reader.declaration?.operationType !== 'query') fail('OZON-INSTALLMENT')
+          state.reasonCode = 'OZON-CREDIT-READ'
           const debtResponse = await reader.call({}, {signal:state.controller.signal})
           if (!active()) return
           if (!debtResponse || typeof debtResponse.isOk !== 'function' || !debtResponse.isOk()) fail('OZON-INSTALLMENT')
@@ -211,7 +219,7 @@ struct OzonFinancialProjection {
     }
     const state = globalThis.__wealthtrackerOzonSync
     if (!state || state.cancelled) return JSON.stringify(result)
-    const codes = ['OZON-ORIGIN','OZON-MODULE','OZON-READ','OZON-SCHEMA','OZON-LIMIT','OZON-ACCESS','OZON-INSTALLMENT','OZON-UNSUPPORTED']
+    const codes = ['OZON-ORIGIN','OZON-MODULE','OZON-READ','OZON-SCHEMA','OZON-LIMIT','OZON-ACCESS','OZON-INSTALLMENT','OZON-UNSUPPORTED','OZON-CREDIT-MODULE','OZON-CREDIT-CONTEXT','OZON-CREDIT-READ']
     result.reasonCode = codes.includes(state.reasonCode) ? state.reasonCode : ''
     if (state.status === 'invalid') { result.stage = 'invalid'; return JSON.stringify(result) }
     if (state.status === 'authentication-required') {
@@ -320,7 +328,9 @@ parse_ozon_financial_projection(const QString& projection, const QDateTime& obse
     const auto reason = object.value(QStringLiteral("reasonCode")).toString();
     static const QSet<QString> reasons{QStringLiteral("OZON-ORIGIN"), QStringLiteral("OZON-MODULE"),
         QStringLiteral("OZON-READ"), QStringLiteral("OZON-SCHEMA"), QStringLiteral("OZON-LIMIT"), QStringLiteral("OZON-ACCESS"),
-        QStringLiteral("OZON-INSTALLMENT"), QStringLiteral("OZON-UNSUPPORTED")};
+        QStringLiteral("OZON-INSTALLMENT"), QStringLiteral("OZON-UNSUPPORTED"),
+        QStringLiteral("OZON-CREDIT-MODULE"), QStringLiteral("OZON-CREDIT-CONTEXT"),
+        QStringLiteral("OZON-CREDIT-READ")};
     const auto accounts = object.value(QStringLiteral("accounts")).toArray();
     if ((!reason.isEmpty() && !reasons.contains(reason)) || accounts.size() > 128 ||
         object.value(QStringLiteral("authenticated")).toBool() != (stage == OzonProjectionStage::Ready)) return invalid();

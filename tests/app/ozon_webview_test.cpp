@@ -135,3 +135,20 @@ TEST_CASE("Ozon login recovers from a read left pending before authentication") 
     CHECK(controller.accounts()->rowCount() == 1);
     CHECK(controller.netWorth() == QStringLiteral("123,45 ₽"));
 }
+
+TEST_CASE("Ozon stops verification when the authenticated installment read stalls") {
+    SettingsScope settings(QStringLiteral("OzonWebViewTests"), QStringLiteral("OzonWebViewTests"));
+    AppController controller(nullptr, nullptr);
+    controller.beginOzonLogin();
+    auto* view = static_cast<QWebView*>(controller.ozonWebView());
+    REQUIRE(view);
+    view->loadHtml(QStringLiteral(R"HTML(<html><script>
+      globalThis.__wealthtrackerOzonSync = {status:'running',cancelled:false,
+        startedAt:Date.now()-11000,attempt:1,reasonCode:'OZON-CREDIT-READ',
+        controller:{abort:function(){}}};
+    </script>Synthetic authenticated dashboard</html>)HTML"), controller.ozonLoginUrl());
+    REQUIRE(waitUntil([&] { return !controller.ozonLoginActive(); }));
+    CHECK_FALSE(controller.ozonConnected());
+    CHECK(controller.accounts()->rowCount() == 0);
+    CHECK(controller.ozonLoginStatus().contains(QStringLiteral("OZON-CREDIT-READ")));
+}

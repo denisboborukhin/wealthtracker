@@ -288,8 +288,10 @@ private:
         }
         if (projection->stage == OzonProjectionStage::Waiting) {
             if (!waiting_observed_ || projection->reasonCode != waiting_reason_) {
-                reportStatus(projection->reasonCode == QStringLiteral("OZON-READ")
-                    ? QStringLiteral("Запрос Ozon Банка не завершился. Повторяем проверку доступа (OZON-READ)…")
+                reportStatus(projection->reasonCode.startsWith(QStringLiteral("OZON-CREDIT-"))
+                    ? QStringLiteral("Проверяем рассрочку Ozon Банка (%1)…").arg(projection->reasonCode)
+                    : projection->reasonCode == QStringLiteral("OZON-READ")
+                    ? QStringLiteral("Проверяем ответ счетов Ozon Банка (OZON-READ)…")
                     : projection->reasonCode == QStringLiteral("OZON-MODULE")
                         ? QStringLiteral("Ожидаем модуль счетов Ozon Банка (OZON-MODULE)…")
                         : QStringLiteral("Проверяем доступ к счетам Ozon Банка…"));

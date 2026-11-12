@@ -303,3 +303,90 @@ TEST_CASE("Ozon selects only verified main-page modules and their declared read 
     if (known) CHECK(result["imported"].toString().endsWith(asset));
     else CHECK(result["imported"].toString().isEmpty());
 }
+
+TEST_CASE("Ozon bounds credit reads after validated dashboard access") {
+    using namespace wealthtracker::app;
+    const auto node = QStandardPaths::findExecutable(QStringLiteral("node"));
+    if (node.isEmpty()) SKIP("Node.js is required for the async dashboard reader fixture");
+    QString phase;
+    QString reason;
+    SECTION("Credit module import stalls") { phase = "module"; reason = "OZON-CREDIT-MODULE"; }
+    SECTION("Credit context request stalls") { phase = "context"; reason = "OZON-CREDIT-CONTEXT"; }
+    SECTION("Credit context body stalls") { phase = "body"; reason = "OZON-CREDIT-CONTEXT"; }
+    SECTION("Credit inventory read stalls") { phase = "read"; reason = "OZON-CREDIT-READ"; }
+    SECTION("Credit inventory succeeds") {}
+    const auto setup = QStringLiteral(R"JS(
+      const phase = '%1'; let now = 1000; Date.now = () => now;
+      const location = {origin:'https://finance.ozon.ru',pathname:'/lk'};
+      const document = {scripts:[]};
+      const mainUrl = 'https://cdn2.ozone.ru/s3/bozon-fe-main/release/apps/main/_app/immutable/chunks/BKxA_2Oi.js';
+      const performance = {getEntriesByType:() => [{name:mainUrl}]};
+      let release; const pending = new Promise(resolve => {release = resolve});
+      let mainCalls = 0, contextCalls = 0, creditCalls = 0, contextReady = false;
+      const handler = () => {mainCalls++;return Promise.resolve({isOk:() => true,
+        value:{mainPage:{widgets:[{type:'MAIN_ACCOUNT',version:1,status:'READY',
+          data:{__typename:'MainAccountData',balanceCents:12345}}]}}})};
+      handler.url = 'mainPage'; handler.declaration = {operationName:'GetMainPage',operationType:'query'};
+      const debtResponse = {isOk:() => true,value:{me:{client:{installment:{userInfo:{debt:{cents:500}}}}}}};
+      const creditReader = () => {
+        if (!contextReady) throw Error('Missing credit context');
+        creditCalls++; return phase === 'read' ? pending.then(() => debtResponse) : Promise.resolve(debtResponse);
+      };
+      creditReader.url = 'installment/info';
+      creditReader.declaration = {operationName:'InstallmentInfoV4',operationType:'query'};
+      const creditModule = {qu:{_internal_setSsrStuff:() => {contextReady = true}},
+        Cs:{create:() => ({getClientHandler:() => creditReader})}};
+      const __import = url => url === mainUrl ? Promise.resolve({Mi:handler})
+        : phase === 'module' ? pending.then(() => creditModule) : Promise.resolve(creditModule);
+      const fetch = url => {
+        contextCalls++; let sent = false;
+        const response = {ok:true,redirected:false,url,body:{getReader:() => ({
+          read:() => {
+            if (phase === 'body') return pending.then(() => ({done:true}));
+            if (sent) return Promise.resolve({done:true});
+            sent = true; return Promise.resolve({done:false,value:new TextEncoder().encode('{}')});
+          },releaseLock:() => {},cancel:() => Promise.resolve()
+        })}};
+        return phase === 'context' ? pending.then(() => response) : Promise.resolve(response);
+      };
+    )JS").arg(phase);
+    auto script = ozon_sync_start_script();
+    script.replace(QStringLiteral("import("), QStringLiteral("__import("));
+    const auto inspect = QStringLiteral(R"JS(
+      ;setImmediate(() => {
+        const before = {status:__wealthtrackerOzonSync.status,reason:__wealthtrackerOzonSync.reasonCode};
+        now += 11000;
+        const expired = %1;
+        release();
+        setImmediate(() => process.stdout.write(JSON.stringify({before,expired,mainCalls,contextCalls,
+          creditCalls,projection:JSON.parse(%2)})));
+      });
+    )JS").arg(ozon_expire_pending_read_script(), ozon_financial_projection_script());
+    QProcess process;
+    process.start(node, {QStringLiteral("-e"), setup + script + inspect});
+    REQUIRE(process.waitForFinished(5000));
+    INFO(process.readAllStandardError().toStdString());
+    REQUIRE(process.exitCode() == 0);
+    const auto result = QJsonDocument::fromJson(process.readAllStandardOutput()).object();
+    CHECK(result["mainCalls"].toInt() == 1);
+    const auto projection = result["projection"].toObject();
+    if (phase.isEmpty()) {
+        CHECK(result["contextCalls"].toInt() == 1);
+        CHECK(result["creditCalls"].toInt() == 1);
+        CHECK_FALSE(result["expired"].toBool());
+        const auto parsed = parse_ozon_financial_projection(
+            QString::fromUtf8(QJsonDocument(projection).toJson()), observedAt);
+        REQUIRE(parsed);
+        REQUIRE(parsed->stage == OzonProjectionStage::Ready);
+        REQUIRE(parsed->batch);
+        REQUIRE(parsed->batch->accounts.size() == 2);
+        CHECK(parsed->batch->balances.back().balance.minorUnits == -500);
+    } else {
+        CHECK(result["before"].toObject()["status"].toString() == "running");
+        CHECK(result["before"].toObject()["reason"].toString() == reason);
+        CHECK(result["expired"].toBool());
+        CHECK(projection["stage"].toString() == "invalid");
+        CHECK(projection["reasonCode"].toString() == reason);
+        CHECK(projection["accounts"].toArray().isEmpty());
+    }
+}
