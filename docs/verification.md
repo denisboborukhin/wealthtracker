@@ -20,3 +20,36 @@ See [Android verification instructions](../android/README.md#reproduce-android-v
 versions, `androidName` supplies Android display version and artifact name, and
 `androidCode` is the monotonic Android upgrade code. Package IDs, signing keys,
 credential keys and local data paths remain stable across refactoring.
+
+## GitLab source checks
+
+[`.gitlab-ci.yml`](../.gitlab-ci.yml) runs portable script/recipe checks, a
+redacted Gitleaks scan of all fetched Git history, and an OSV scan of
+`conan.lock`. The scan jobs fail on findings or scanner errors. They need a
+Linux container runner and network access to the pinned scanner images and
+public dependency databases; no bank credentials or signing keys are required.
+These jobs do not compile Qt, run native tests, or validate an Android package.
+Run the platform checks above before a release. The first hosted pipeline must
+be checked after creating the GitLab project; local YAML validation does not
+prove runner availability or image execution on that server.
+
+OSV coverage for Conan packages is incomplete. An empty scan is not proof that
+a dependency has no known vulnerabilities: review upstream Qt, OpenSSL and
+libsodium advisories as well. Qt is installed separately and is not in the
+Conan lockfile.
+
+Publishing repository source and publishing installable binaries are separate
+steps. Before public binary distribution, verify non-debug release signing,
+applicable platform signing/notarization, and that the staged package contains
+the actual dependency license/copyright texts and required Qt materials.
+The current Android command deliberately builds a debug-signed APK for personal
+installation; it is not a production-release workflow.
+
+The currently pinned Qt 6.11.1 SDK requires upstream security updates before a
+public binary release. In particular, review the
+[Qt Network NTLM advisory](https://www.qt.io/blog/security-advisory-cve-2026-105946)
+and the [HTTP response handling advisory](https://lists.qt-project.org/pipermail/announce/2026-November/000684.html).
+Updating OpenSSL alone does not patch Qt Network. Updating the Qt SDK also
+requires refreshing the verified archive manifests and validating native and
+Android builds; do not bypass archive verification or claim the existing APKs
+contain the updated dependencies.

@@ -110,6 +110,7 @@ For a directly installable ARM64 Android APK, see [Android packaging](android/RE
 | [Architecture](docs/architecture.md) | Code ownership and runtime data flow |
 | [Security design](docs/security-design.md) | Credential handling, network controls, and privacy |
 | [Building](docs/building.md) | Build, verification, and packaging commands |
+| [Verification](docs/verification.md) | Platform checks, GitLab source checks, and release limits |
 | [Contributing](CONTRIBUTING.md) | Development and submission rules |
 | [Security policy](SECURITY.md) | Vulnerability reporting |
 | [Agent instructions](AGENTS.md) | Coding-agent instructions |

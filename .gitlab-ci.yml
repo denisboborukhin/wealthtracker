@@ -1,0 +1,41 @@
+# Portable source checks. Native builds still require macOS/Windows runners.
+workflow:
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
+    - if: '$CI_COMMIT_BRANCH && $CI_OPEN_MERGE_REQUESTS'
+      when: never
+    - if: '$CI_COMMIT_BRANCH || $CI_COMMIT_TAG'
+
+stages:
+  - verify
+
+source-checks:
+  stage: verify
+  image: python:3.12-slim-bookworm@sha256:935c3c5b12357a7e10caa9c1e6ca5692344d97cf229832ef584be2cec9fc03df
+  before_script:
+    - apt-get update && apt-get install -y --no-install-recommends git nodejs
+    - python -m pip install conan==2.19.1
+  script:
+    - conan inspect .
+    - git check-ignore tasks/todo.md tasks/lessons.md android/.local/user/debug.keystore android/output/test.apk
+    - sh -n scripts/bootstrap.sh scripts/configure.sh scripts/verify.sh android/build.sh android/verify.sh
+    - node --check scripts/zen_plugin_host.mjs
+    - python -m unittest discover -s tests/scripts -v
+
+secret-scan:
+  stage: verify
+  image:
+    name: ghcr.io/gitleaks/gitleaks:v8.30.1@sha256:c00b6bd0aeb3071cbcb79009cb16a60dd9e0a7c60e2be9ab65d25e6bc8abbb7f
+    entrypoint: [""]
+  variables:
+    GIT_DEPTH: "0"
+  script:
+    - gitleaks git --redact --no-banner --log-opts="--all" .
+
+dependency-scan:
+  stage: verify
+  image:
+    name: ghcr.io/google/osv-scanner:v2.7.1@sha256:a70ffffc2bfd33482953e5d6b64c6fcdb30239717a07b0f0d3ab2859ce3e4cde
+    entrypoint: [""]
+  script:
+    - /osv-scanner scan source --lockfile=conan.lock

@@ -4,7 +4,12 @@ Security fixes target the current `0.1` technical-preview line.
 
 ## Reporting a vulnerability
 
-Contact a maintainer privately with a redacted description. Do not attach
+On the GitLab project hosting this repository, create a new issue and select
+**Turn on confidentiality** before submitting it. Include a redacted description
+and reproduction steps, and verify that the issue is marked confidential.
+See [GitLab's confidential issue instructions](https://docs.gitlab.com/user/project/issues/confidential_issues/).
+If issues are disabled or confidentiality is unavailable, do not post the report
+publicly; agree on a private channel with a maintainer first. Do not attach
 credentials, session identifiers, bank statements, databases, or personal
 financial data to a public issue. Agree on a secure channel before sharing
 sensitive reproduction material.

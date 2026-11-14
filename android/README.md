@@ -24,12 +24,14 @@ cache under `build/conan-android`, preserving desktop packages. OpenSSL staging
 changes only ELF dynamic library names to Android's `_3.so` convention; it does
 not change crypto code or TLS validation. Gradle verifies its distribution hash.
 
-Output:
+Output uses `androidName` from [`version.json`](../version.json):
 
-```text
-android/output/wealthtracker-0.1.10-debug.apk
-android/output/wealthtracker-0.1.10-debug.apk.sha256
+```sh
+android_version=$(python -c 'import json; print(json.load(open("version.json"))["androidName"])')
+apk="android/output/wealthtracker-${android_version}-debug.apk"
 ```
+
+The build produces `$apk` and its `$apk.sha256` checksum file.
 
 The package ID is `org.wealthtracker.android`. Keep
 `android/.local/user/debug.keystore` backed up and private: future updates must
@@ -42,7 +44,8 @@ Copy the APK to your phone, open it in Files, and permit installation from that
 source. Or authorize USB debugging on your phone and run:
 
 ```sh
-"$ANDROID_SDK_ROOT/platform-tools/adb" install -r android/output/wealthtracker-0.1.10-debug.apk
+android_version=$(python -c 'import json; print(json.load(open("version.json"))["androidName"])')
+"$ANDROID_SDK_ROOT/platform-tools/adb" install -r "android/output/wealthtracker-${android_version}-debug.apk"
 ```
 
 Install future versions over this app rather than uninstalling; uninstalling
