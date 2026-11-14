@@ -28,8 +28,8 @@ class WealthTrackerRecipe(ConanFile):
 
     def requirements(self):
         self.requires("sqlcipher/4.16.0")
-        self.requires("openssl/3.6.3")
-        self.requires("libsodium/1.0.20")
+        self.requires("openssl/3.6.5")
+        self.requires("libsodium/1.0.22")
         self.requires("boost/1.88.0")
         self.test_requires("catch2/3.9.1")
 

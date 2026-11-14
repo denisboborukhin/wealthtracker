@@ -136,7 +136,7 @@ the preset argument. Sanitizers are off by default.
 
 ## TLS runtime
 
-OpenSSL 3.6.3 is a direct, lockfile-pinned shared dependency. The executable
+OpenSSL 3.6.5 is a direct, lockfile-pinned shared dependency. The executable
 initializes and selects Qt's OpenSSL backend, so installation does not depend
 on Homebrew or Qt's native Secure Transport backend. The package must include
 both OpenSSL libraries and Qt's OpenSSL TLS plugin. Certificate and hostname
