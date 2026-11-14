@@ -145,8 +145,11 @@ struct BalanceHistoryFilter {
     if (filter.from.isValid() && filter.to.isValid() && filter.from > filter.to)
         return failure(QStringLiteral("Начало периода должно быть не позже окончания."));
     const bool daily = filter.daily && accountId.isEmpty();
-    const auto finalDay = daily && (!filter.to.isValid() || filter.to > QDate::currentDate())
-        ? QDate::currentDate() : filter.to;
+    const auto finalDay = daily && !filter.to.isValid() ? QDate::currentDate() : filter.to;
+    if (daily) {
+        if (filter.from.isValid()) result[QStringLiteral("firstDate")] = filter.from.toString(QStringLiteral("dd.MM.yyyy"));
+        if (filter.to.isValid()) result[QStringLiteral("lastDate")] = filter.to.toString(QStringLiteral("dd.MM.yyyy"));
+    }
     const auto rangeStart = filter.from.isValid()
         ? filter.from.startOfDay().toMSecsSinceEpoch() : std::numeric_limits<qint64>::min();
     const auto rangeEnd = finalDay.isValid()
@@ -241,7 +244,7 @@ struct BalanceHistoryFilter {
     if (daily) {
         const auto firstDay = QDateTime::fromMSecsSinceEpoch(samples.front().time).date();
         if (firstDay > finalDay) return result;
-        if (firstDay.daysTo(finalDay) >= 36600)
+        if ((filter.from.isValid() ? filter.from : firstDay).daysTo(finalDay) >= 36600)
             return failure(QStringLiteral("Выберите период не более 36 600 дней."));
         std::vector<Sample> days;
         std::size_t index = 0;
@@ -258,8 +261,8 @@ struct BalanceHistoryFilter {
     }
     const auto [minimum, maximum] = std::minmax_element(samples.begin(), samples.end(),
         [](const Sample& left, const Sample& right) { return left.amount < right.amount; });
-    const auto start = samples.front().time;
-    const auto end = samples.back().time;
+    const auto start = daily && filter.from.isValid() ? rangeStart : samples.front().time;
+    const auto end = daily ? finalDay.startOfDay().toMSecsSinceEpoch() : samples.back().time;
     QVariantList points;
     for (const auto& sample : samples) {
         const auto x = end == start ? 0.5 :

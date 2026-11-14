@@ -456,22 +456,74 @@ TEST_CASE("Daily history uses carried baselines and counts real same-time observ
     CHECK(noUpdates.value("points").toList().size() == 2);
 }
 
-TEST_CASE("Daily history stops at today and rejects unbounded calendar expansion") {
+TEST_CASE("Daily history defaults to today respects explicit end dates and bounds calendar expansion") {
     const auto today = QDate::currentDate();
     const auto stamp = [](const QDate& day) { return day.startOfDay().toUTC().toString(Qt::ISODateWithMs).toStdString(); };
     const std::vector<BalanceCapture> captures{
-        capture(1, "a", stamp(today.addDays(-2)), {{"1", "A", "RUB", 100}}),
-        capture(2, "a", stamp(today.addDays(1)), {{"1", "Future", "RUB", 999}})};
+        capture(1, "a", stamp(today.addDays(-2)), {{"1", "A", "RUB", 100}})};
     const auto unbounded = balance_history_chart(captures, {}, "RUB", {false, {}, {}, {}, true});
     const auto future = balance_history_chart(captures, {}, "RUB", {false, {}, {}, today.addDays(10), true});
     CHECK(unbounded.value("points").toList().size() == 3);
     CHECK(unbounded.value("lastDate").toString() == today.toString("dd.MM.yyyy"));
     CHECK(unbounded.value("lastValue").toString() == "1.00 RUB");
     CHECK(unbounded.value("observationCount").toInt() == 1);
-    CHECK(unbounded.value("points") == future.value("points"));
+    CHECK(future.value("points").toList().size() == 13);
+    CHECK(future.value("lastDate").toString() == today.addDays(10).toString("dd.MM.yyyy"));
+    CHECK(future.value("lastValue").toString() == "1.00 RUB");
+    CHECK(future.value("observationCount").toInt() == 1);
+    CHECK(future.value("points").toList().back().toMap().value("carried").toBool());
     const auto excessive = balance_history_chart(
         {capture(1, "a", stamp(today.addDays(-36600)), {{"1", "A", "RUB", 100}})},
         {}, "RUB", {false, {}, {}, {}, true});
     CHECK_FALSE(excessive.value("error").toString().isEmpty());
     CHECK(excessive.value("points").toList().isEmpty());
+}
+
+TEST_CASE("Daily history preserves configured boundaries and carries the previous connection balance") {
+    const auto stamp = [](const QDate& day) {
+        return day.startOfDay().addSecs(3600).toUTC().toString(Qt::ISODateWithMs).toStdString();
+    };
+    const auto from = QDate::currentDate().addDays(-1);
+    const auto to = from.addDays(5);
+    const std::vector<BalanceCapture> captures{
+        capture(1, "a", stamp(from.addDays(-2)), {{"1", "A", "RUB", 10000}}),
+        capture(2, "b", stamp(from.addDays(-1)), {{"1", "B", "RUB", -2000}})};
+    const auto result = balance_history_chart(captures, {}, "RUB", {false, {}, from, to, true});
+    CHECK(result.value("error").toString().isEmpty());
+    CHECK(result.value("firstDate").toString() == from.toString("dd.MM.yyyy"));
+    CHECK(result.value("lastDate").toString() == to.toString("dd.MM.yyyy"));
+    CHECK(result.value("openingValue").toString() == "80.00 RUB");
+    CHECK(result.value("lastValue").toString() == "80.00 RUB");
+    CHECK(result.value("observationCount").toInt() == 0);
+    CHECK(result.value("baselineCarried").toBool());
+    const auto points = result.value("points").toList();
+    REQUIRE(points.size() == 6);
+    CHECK(points.front().toMap().value("x").toDouble() == 0.0);
+    CHECK(points.back().toMap().value("x").toDouble() == 1.0);
+    for (const auto& point : points) {
+        CHECK(point.toMap().value("label").toString() == "80.00 RUB");
+        CHECK(point.toMap().value("carried").toBool());
+        CHECK(point.toMap().value("timestamp").toString().startsWith(from.addDays(-1).toString("dd.MM.yyyy")));
+    }
+    REQUIRE(result.value("series").toList().size() == 2);
+}
+
+TEST_CASE("Daily history leaves unknown opening dates empty within the configured range") {
+    const QDate from(2026, 1, 1), to(2026, 1, 5);
+    const auto stamp = from.addDays(2).startOfDay().addSecs(3600).toUTC().toString(Qt::ISODateWithMs).toStdString();
+    const std::vector<BalanceCapture> captures{
+        capture(1, "a", stamp, {{"1", "A", "RUB", 100}})};
+    const auto result = balance_history_chart(captures, {}, "RUB", {false, {}, from, to, true});
+    CHECK(result.value("firstDate").toString() == "01.01.2026");
+    CHECK(result.value("lastDate").toString() == "05.01.2026");
+    CHECK(result.value("openingUnknown").toBool());
+    const auto points = result.value("points").toList();
+    REQUIRE(points.size() == 3);
+    CHECK(points.front().toMap().value("dateLabel").toString() == "03.01.2026");
+    CHECK(points.front().toMap().value("x").toDouble() == 0.5);
+    CHECK_FALSE(points.front().toMap().value("baseline").toBool());
+    const auto empty = balance_history_chart(captures, {}, "RUB", {false, {}, from, from.addDays(1), true});
+    CHECK(empty.value("points").toList().isEmpty());
+    CHECK(empty.value("firstDate").toString() == "01.01.2026");
+    CHECK(empty.value("lastDate").toString() == "02.01.2026");
 }
