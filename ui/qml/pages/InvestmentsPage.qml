@@ -47,6 +47,13 @@ Flickable {
                     font.pixelSize: 12
                     elide: Text.ElideRight
                 }
+                Text {
+                    Layout.fillWidth: true
+                    text: qsTr("Инвестиционные подключения настраиваются на странице «Подключения».")
+                    color: Theme.textMuted
+                    font.pixelSize: 12
+                    wrapMode: Text.WordWrap
+                }
             }
             ActionButton {
                 Layout.fillWidth: page.width < 600
