@@ -37,6 +37,42 @@ QString bigAmountLabel(const BigAmount& amount, const QString& currency) {
         .arg(QString::fromStdString(whole.str())).arg(fraction.convert_to<unsigned>(), 2, 10, QLatin1Char('0')).arg(currency);
 }
 
+QVariantList axisTicks(const BigAmount& minimum, const BigAmount& maximum,
+                       const double flatPosition) {
+    QVariantList ticks;
+    const BigAmount span = maximum - minimum;
+    const auto append = [&](const BigAmount& amount, const bool edge) {
+        const BigAmount offset = amount - minimum;
+        auto label = bigAmountLabel(amount, {}).trimmed();
+        if (amount % 100 == 0) label.chop(3);
+        const auto decimal = label.indexOf(QLatin1Char('.'));
+        const auto integerEnd = decimal < 0 ? label.size() : decimal;
+        const auto signWidth = amount < 0 ? 1 : 0;
+        for (auto index = integerEnd - 3; index > signWidth; index -= 3)
+            label.insert(index, QChar(0x202f));
+        ticks.append(QVariantMap{
+            {QStringLiteral("label"), label},
+            {QStringLiteral("y"), span == 0 ? flatPosition : offset.convert_to<double>() / span.convert_to<double>()},
+            {QStringLiteral("zero"), amount == 0},
+            {QStringLiteral("edge"), edge}});
+    };
+    append(minimum, true);
+    if (span == 0) return ticks;
+
+    // Choose a 1, 2 or 5 multiple of a power of ten in integer minor units.
+    const BigAmount target = (span + 4) / 5;
+    BigAmount step = 1;
+    while (step * 10 <= target) step *= 10;
+    if (target > step * 5) step *= 10;
+    else if (target > step * 2) step *= 5;
+    else if (target > step) step *= 2;
+    BigAmount tick = (minimum / step) * step;
+    if (tick <= minimum) tick += step;
+    for (; tick < maximum; tick += step) append(tick, false);
+    append(maximum, true);
+    return ticks;
+}
+
 QString accountKey(const storage::BalanceCapture& capture, const storage::HistoryBalance& balance) {
     return QString::fromUtf8(QJsonDocument(QJsonArray{
         QString::fromStdString(capture.connection_id), QString::fromStdString(balance.account_id),
@@ -300,6 +336,8 @@ struct BalanceHistoryFilter {
         return axisSpan == 0 ? 0.0 : offset.convert_to<double>() / axisSpan.convert_to<double>();
     };
     result[QStringLiteral("compositionZeroY")] = coordinate(BigAmount{0});
+    result[QStringLiteral("compositionTicks")] = axisTicks(axisMinimum, axisMaximum, 0.0);
+    result[QStringLiteral("valueTicks")] = axisTicks(BigAmount{minimum->amount}, BigAmount{maximum->amount}, 0.5);
     result[QStringLiteral("shareBasis")] = negativeBalance ? QStringLiteral("absolute") : QStringLiteral("total");
     if (negativeBalance) result[QStringLiteral("compositionNote")] = QStringLiteral(
         "Положительные остатки показаны выше нуля, отрицательные — ниже. Доли рассчитаны по сумме модулей остатков подключений.");

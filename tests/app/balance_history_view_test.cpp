@@ -527,3 +527,31 @@ TEST_CASE("Daily history leaves unknown opening dates empty within the configure
     CHECK(empty.value("firstDate").toString() == "01.01.2026");
     CHECK(empty.value("lastDate").toString() == "02.01.2026");
 }
+
+TEST_CASE("History chart axis uses round steps and exact signed labels") {
+    const auto result = chart({
+        capture(1, "debt", "2026-11-01T12:00:00Z", {{"1", "Debt", "RUB", -2000000}}),
+        capture(2, "assets", "2026-11-01T12:00:00Z", {{"1", "Cash", "RUB", 8000000}}),
+        capture(3, "assets", "2026-11-02T12:00:00Z", {{"1", "Cash", "RUB", 6000000}})
+    });
+    const auto ticks = result.value("compositionTicks").toList();
+    REQUIRE(ticks.size() == 6);
+    CHECK(ticks.front().toMap().value("label") == QStringLiteral("−20\u202f000"));
+    CHECK(ticks.back().toMap().value("label") == QStringLiteral("80\u202f000"));
+    CHECK(ticks[1].toMap().value("zero").toBool());
+    CHECK(ticks[1].toMap().value("y").toDouble() == Catch::Approx(0.2));
+    for (qsizetype i = 1; i < ticks.size(); ++i) {
+        const auto previous = ticks[i - 1].toMap().value("y").toDouble();
+        CHECK(ticks[i].toMap().value("y").toDouble() - previous == Catch::Approx(0.2));
+    }
+    const auto totals = result.value("valueTicks").toList();
+    REQUIRE(totals.size() == 5);
+    CHECK(totals.front().toMap().value("label") == QStringLiteral("40\u202f000"));
+    CHECK(totals.back().toMap().value("label") == QStringLiteral("60\u202f000"));
+
+    const auto flat = chart({capture(1, "a", "2026-11-01T12:00:00Z", {{"1", "Cash", "RUB", 1}})});
+    const auto flatTicks = flat.value("valueTicks").toList();
+    REQUIRE(flatTicks.size() == 1);
+    CHECK(flatTicks.front().toMap().value("label") == QStringLiteral("0.01"));
+    CHECK(flatTicks.front().toMap().value("y").toDouble() == 0.5);
+}

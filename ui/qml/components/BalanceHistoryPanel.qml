@@ -9,7 +9,6 @@ SectionCard {
     required property var app
     property bool allowAccountSelection: true
     property bool showControls: true
-    property bool showValue: true
     property var connectionIds: []
     property bool restrictConnections: false
     property string fromDate: ""
@@ -24,8 +23,11 @@ SectionCard {
     property bool ready: false
     readonly property var points: chartData.points || []
     readonly property var series: chartData.series || []
-    readonly property bool composition: selectedAccountId.length === 0
-                                        && chartData.compositionAvailable === true && series.length > 0
+    readonly property bool hasComposition: selectedAccountId.length === 0
+                                           && chartData.compositionAvailable === true && series.length > 0
+    readonly property bool composition: hasComposition && scaleSelector.currentIndex === 0
+    readonly property var ticks: (composition ? chartData.compositionTicks : chartData.valueTicks) || []
+    readonly property var displayedPoint: plot.activePoint || (points.length ? points[points.length - 1] : null)
     readonly property bool compact: height < 360
     readonly property string errorText: chartData.error || app.balanceHistoryError || ""
     readonly property bool hasFilters: restrictConnections || fromDate.length > 0 || toDate.length > 0
@@ -78,7 +80,7 @@ SectionCard {
                                                        fromDate, toDate, selectedAccountId.length === 0)
                                : app.balanceHistoryChart(selectedAccountId, selectedCurrency)
         plot.hoveredIndex = -1
-        plot.hoveredSeriesIndex = -1
+        plot.selectedIndex = -1
     }
 
     Component.onCompleted: {
@@ -142,34 +144,40 @@ SectionCard {
                 panel.reload()
             }
         }
-        Text {
+        RowLayout {
             Layout.fillWidth: true
-            visible: panel.showValue && panel.points.length > 0
-            text: panel.chartData.lastValue || ""
-            color: Theme.text
-            font.pixelSize: panel.compact ? 18 : 22
-            font.weight: Font.DemiBold
-            elide: Text.ElideRight
-        }
-        Text {
-            Layout.fillWidth: true
-            visible: !panel.compact
-            text: panel.composition
-                  ? qsTr("Цвет — банк или EVM-кошелёк; линия — общий остаток")
-                  : panel.selectedAccountId.length === 0
-                    ? qsTr("Сумма последних известных остатков · без пересчёта валют")
-                    : qsTr("Остаток на момент успешной синхронизации")
-            color: Theme.textMuted
-            font.pixelSize: 11
-            wrapMode: Text.WordWrap
-        }
-        Text {
-            Layout.fillWidth: true
-            visible: panel.selectedAccountId.length === 0 && (panel.chartData.compositionNote || "").length > 0
-            text: panel.chartData.compositionNote || ""
-            color: Theme.textMuted
-            font.pixelSize: 11
-            wrapMode: Text.WordWrap
+            visible: panel.displayedPoint !== null
+            spacing: 8
+            ColumnLayout {
+                Layout.fillWidth: true
+                Layout.minimumWidth: 0
+                spacing: 2
+                Text {
+                    Layout.fillWidth: true
+                    objectName: "chartSelectedDate"
+                    text: panel.displayedPoint ? panel.displayedPoint.dateLabel : ""
+                    color: Theme.textMuted
+                    font.pixelSize: 11
+                }
+                Text {
+                    Layout.fillWidth: true
+                    objectName: "chartSelectedBalance"
+                    text: panel.displayedPoint ? panel.displayedPoint.label : ""
+                    color: Theme.text
+                    font.pixelSize: panel.compact ? 18 : 22
+                    font.weight: Font.DemiBold
+                    elide: Text.ElideRight
+                }
+            }
+            MinimalComboBox {
+                id: scaleSelector
+                objectName: "chartScale"
+                visible: panel.hasComposition
+                Layout.preferredWidth: 102
+                implicitHeight: 34
+                model: [qsTr("Состав"), qsTr("Итого")]
+                Accessible.name: qsTr("Шкала графика")
+            }
         }
 
         Item {
@@ -199,42 +207,21 @@ SectionCard {
                 visible: panel.points.length > 0
                 spacing: 10
                 Item {
-                    Layout.preferredWidth: Math.min(110, Math.max(minimumLabel.implicitWidth,
-                                                               maximumLabel.implicitWidth))
+                    id: scaleLabels
+                    Layout.preferredWidth: Math.min(72, Math.max(46, panel.width * 0.18))
                     Layout.fillHeight: true
-                    Text {
-                        id: maximumLabel
-                        width: parent.width
-                        y: !panel.composition && panel.chartData.minimumLabel === panel.chartData.maximumLabel
-                           ? (parent.height - height) / 2 : 0
-                        text: panel.composition ? panel.chartData.compositionMaximumLabel
-                                                : panel.chartData.maximumLabel || ""
-                        color: Theme.textMuted
-                        font.pixelSize: 10
-                        elide: Text.ElideRight
-                    }
-                    Text {
-                        id: minimumLabel
-                        width: parent.width
-                        anchors.bottom: parent.bottom
-                        visible: panel.composition || panel.chartData.minimumLabel !== panel.chartData.maximumLabel
-                        text: panel.composition ? panel.chartData.compositionMinimumLabel
-                                                : panel.chartData.minimumLabel || ""
-                        color: Theme.textMuted
-                        font.pixelSize: 10
-                        elide: Text.ElideRight
-                    }
-                    Text {
-                        width: parent.width
-                        visible: panel.composition && panel.chartData.compositionZeroY > 0
-                                 && panel.chartData.compositionZeroY < 1
-                                 && panel.chartData.compositionMinimumLabel !== panel.chartData.compositionMaximumLabel
-                        y: visible ? Math.max(0, Math.min(parent.height - height,
-                            parent.height - plot.padding - panel.chartData.compositionZeroY * (parent.height - plot.padding * 2) - height / 2)) : 0
-                        text: "0.00 " + panel.selectedCurrency
-                        color: Theme.textMuted
-                        font.pixelSize: 10
-                        elide: Text.ElideRight
+                    Repeater {
+                        model: plot.labelTicks
+                        delegate: Text {
+                            required property var modelData
+                            width: scaleLabels.width
+                            y: plot.ordinate(modelData.y) - height / 2
+                            text: modelData.label
+                            color: modelData.zero ? Theme.text : Theme.textMuted
+                            font.pixelSize: 10
+                            horizontalAlignment: Text.AlignRight
+                            elide: Text.ElideLeft
+                        }
                     }
                 }
 
@@ -242,29 +229,57 @@ SectionCard {
                     id: plot
                     Layout.fillWidth: true
                     Layout.fillHeight: true
+                    objectName: "balanceHistoryPlot"
+                    activeFocusOnTab: true
                     property int hoveredIndex: -1
-                    property int hoveredSeriesIndex: -1
+                    property int selectedIndex: -1
                     readonly property var values: panel.points
                     readonly property var bands: panel.series
-                    readonly property var hoveredSeries: hoveredSeriesIndex >= 0 ? bands[hoveredSeriesIndex] : null
-                    readonly property var hoveredTotal: hoveredIndex < 0 || hoveredIndex >= values.length ? null : values[hoveredIndex]
-                    readonly property var hoveredPoint: hoveredTotal
-                        ? hoveredSeries ? bandPoint(hoveredSeries, hoveredTotal.x) : hoveredTotal : null
-                    readonly property var hoveredAccounts: {
-                        let rows = []
-                        if (panel.composition && hoveredTotal) {
-                            for (let index = 0; index < bands.length; ++index) {
-                                const point = bandPoint(bands[index], hoveredTotal.x)
-                                if (point) rows.push({label: bands[index].label, colorIndex: bands[index].colorIndex,
-                                                      value: point.label, share: point.shareLabel})
-                            }
+                    readonly property int activeIndex: hoveredIndex >= 0 ? hoveredIndex : selectedIndex
+                    readonly property var activePoint: values[activeIndex] || null
+                    readonly property real padding: 8
+                    readonly property var labelTicks: {
+                        let placed = []
+                        const ticks = panel.ticks
+                        // Keep zero and the range bounds before adding intermediate labels.
+                        for (const tick of [...ticks.filter(t => t.zero), ...ticks.filter(t => t.edge && !t.zero),
+                                            ...ticks.filter(t => !t.edge && !t.zero)]) {
+                            if (placed.every(t => Math.abs(tick.y - t.y) * (height - padding * 2) >= 15))
+                                placed.push(tick)
                         }
-                        return rows
+                        return placed
                     }
-                    readonly property real padding: 5
 
                     function pointX(point) { return padding + point.x * (width - padding * 2) }
                     function ordinate(value) { return height - padding - value * (height - padding * 2) }
+                    function nearestIndex(x) {
+                        if (!values.length) return -1
+                        if (panel.chartData.openingUnknown && values[0].x > 0
+                                && x < pointX(values[0]) - padding) return -1
+                        let low = 0
+                        let high = values.length
+                        while (low < high) {
+                            const middle = Math.floor((low + high) / 2)
+                            if (pointX(values[middle]) < x) low = middle + 1
+                            else high = middle
+                        }
+                        if (low >= values.length) return values.length - 1
+                        if (low > 0 && x - pointX(values[low - 1]) <= pointX(values[low]) - x) return low - 1
+                        return low
+                    }
+                    function selectAt(x) {
+                        hoveredIndex = -1
+                        selectedIndex = nearestIndex(x)
+                    }
+                    function selectAdjacent(offset) {
+                        if (!values.length) return
+                        const index = activeIndex < 0 ? values.length - 1 : activeIndex
+                        hoveredIndex = -1
+                        selectedIndex = Math.max(0, Math.min(values.length - 1, index + offset))
+                    }
+                    Keys.onLeftPressed: selectAdjacent(-1)
+                    Keys.onRightPressed: selectAdjacent(1)
+
                     function bandPoint(band, x) {
                         let low = 0
                         let high = band.points.length
@@ -285,15 +300,16 @@ SectionCard {
                         return top
                     }
                     function pointY(point) {
-                        return ordinate(panel.composition
-                                        ? point.upper !== undefined ? (point.lower + point.upper) / 2 : totalHeight(point)
-                                        : point.y)
+                        return ordinate(panel.composition ? totalHeight(point) : point.y)
                     }
 
                     onValuesChanged: requestPaint()
                     onBandsChanged: requestPaint()
-                    onHoveredIndexChanged: requestPaint()
-                    onHoveredSeriesIndexChanged: requestPaint()
+                    onLabelTicksChanged: requestPaint()
+                    Connections {
+                        target: panel
+                        function onCompositionChanged() { plot.requestPaint() }
+                    }
                     onWidthChanged: requestPaint()
                     onHeightChanged: requestPaint()
 
@@ -301,22 +317,13 @@ SectionCard {
                         const context = getContext("2d")
                         context.reset()
                         if (values.length === 0) return
-                        context.strokeStyle = Theme.border
-                        context.lineWidth = 1
-                        for (let row = 0; row < 3; ++row) {
-                            const y = padding + row * (height - padding * 2) / 2
-                            context.beginPath()
-                            context.moveTo(padding, y)
-                            context.lineTo(width - padding, y)
-                            context.stroke()
-                        }
                         if (panel.composition) {
                             for (let index = 0; index < bands.length; ++index) {
                                 const band = bands[index]
                                 const samples = band.points
                                 if (samples.length === 0) continue
                                 context.fillStyle = panel.seriesColor(band.colorIndex)
-                                context.globalAlpha = index === hoveredSeriesIndex ? 1 : 0.82
+                                context.globalAlpha = 0.78
                                 if (samples.length === 1) {
                                     const barWidth = values.length === 1 ? Math.min(72, width / 3) : 3
                                     context.fillRect(pointX(samples[0]) - barWidth / 2, ordinate(samples[0].upper),
@@ -338,161 +345,83 @@ SectionCard {
                                 context.fill()
                             }
                             context.globalAlpha = 1
-                            if (panel.chartData.compositionZeroY !== undefined) {
-                                const zero = ordinate(panel.chartData.compositionZeroY)
-                                context.beginPath()
-                                context.moveTo(padding, zero)
-                                context.lineTo(width - padding, zero)
-                                context.lineWidth = 1
-                                context.strokeStyle = Theme.borderStrong
-                                context.stroke()
-                            }
                         }
+                        context.lineWidth = 1
+                        for (const tick of labelTicks) {
+                            const y = ordinate(tick.y)
+                            context.strokeStyle = tick.zero ? Theme.borderStrong : Theme.border
+                            context.globalAlpha = panel.composition && !tick.zero ? 0.55 : 1
+                            context.beginPath()
+                            context.moveTo(padding, y)
+                            context.lineTo(width - padding, y)
+                            context.stroke()
+                        }
+                        context.globalAlpha = 1
                         context.beginPath()
                         for (let index = 0; index < values.length; ++index) {
                             const x = pointX(values[index])
-                            const y = panel.composition ? ordinate(totalHeight(values[index])) : pointY(values[index])
+                            const y = pointY(values[index])
                             if (index === 0) context.moveTo(x, y)
                             else {
-                                if (panel.composition)
-                                    context.lineTo(x, ordinate(totalHeight(values[index - 1])))
+                                if (panel.selectedAccountId.length === 0)
+                                    context.lineTo(x, pointY(values[index - 1]))
                                 context.lineTo(x, y)
                             }
                         }
                         context.lineWidth = panel.composition ? 1.5 : 2
                         context.strokeStyle = panel.composition ? Theme.text : Theme.primary
                         context.stroke()
-                        if (!panel.composition) {
+                        if (values.length === 1) {
                             context.fillStyle = Theme.primary
-                            for (let index = 0; index < values.length; ++index) {
-                                context.beginPath()
-                                context.arc(pointX(values[index]), pointY(values[index]), index === hoveredIndex ? 4 : 2.5, 0, Math.PI * 2)
-                                context.fill()
-                            }
-                        }
-                        if (hoveredPoint) {
                             context.beginPath()
-                            context.moveTo(pointX(hoveredPoint), padding)
-                            context.lineTo(pointX(hoveredPoint), height - padding)
-                            context.strokeStyle = Theme.textMuted
-                            context.lineWidth = 1
-                            context.stroke()
+                            context.arc(pointX(values[0]), pointY(values[0]), 3, 0, Math.PI * 2)
+                            context.fill()
                         }
-                    }
-
-                    MouseArea {
-                        anchors.fill: parent
-                        hoverEnabled: true
-                        acceptedButtons: Qt.NoButton
-                        onPositionChanged: function(mouse) {
-                            let low = 0
-                            let high = plot.values.length
-                            while (low < high) {
-                                const middle = Math.floor((low + high) / 2)
-                                if (plot.pointX(plot.values[middle]) < mouse.x) low = middle + 1
-                                else high = middle
-                            }
-                            let nearest = low < plot.values.length ? low : plot.values.length - 1
-                            if (low > 0 && (nearest < 0 || Math.abs(mouse.x - plot.pointX(plot.values[low - 1]))
-                                < Math.abs(mouse.x - plot.pointX(plot.values[nearest])))) nearest = low - 1
-                            plot.hoveredIndex = nearest
-                            plot.hoveredSeriesIndex = -1
-                            if (!panel.composition || nearest < 0) return
-                            const share = (plot.height - plot.padding - mouse.y) / (plot.height - plot.padding * 2)
-                            for (let index = 0; index < plot.bands.length; ++index) {
-                                const point = plot.bandPoint(plot.bands[index], plot.values[nearest].x)
-                                if (point && point.upper > point.lower && share >= point.lower && share <= point.upper) {
-                                    plot.hoveredSeriesIndex = index
-                                    break
-                                }
-                            }
-                        }
-                        onExited: { plot.hoveredIndex = -1; plot.hoveredSeriesIndex = -1 }
                     }
 
                     Rectangle {
-                        visible: plot.hoveredPoint !== null
-                        width: Math.min(plot.width, panel.composition ? 440 : 280)
-                        height: Math.min(plot.height, hoverLabels.implicitHeight + 18)
-                        x: plot.hoveredPoint ? Math.max(0, Math.min(plot.width - width,
-                            plot.pointX(plot.hoveredPoint) - width / 2)) : 0
-                        y: plot.hoveredPoint ? Math.max(0, Math.min(plot.height - height,
-                            plot.pointY(plot.hoveredPoint) - height - 10)) : 0
-                        radius: 5
-                        color: Theme.surface
-                        border.color: Theme.borderStrong
-                        ScrollView {
-                            anchors.fill: parent
-                            anchors.margins: 8
-                            contentWidth: availableWidth
-                            clip: true
-                            ColumnLayout {
-                                id: hoverLabels
-                                width: parent.width
-                                spacing: 5
-                                Text {
-                                    Layout.fillWidth: true
-                                    text: plot.hoveredTotal ? plot.hoveredTotal.dateLabel || plot.hoveredTotal.timestamp : ""
-                                    color: Theme.text
-                                    font.pixelSize: 12
-                                    font.weight: Font.Medium
-                                }
-                                Text {
-                                    Layout.fillWidth: true
-                                    text: plot.hoveredTotal ? (panel.composition ? qsTr("Итого: ") : "") + plot.hoveredTotal.label : ""
-                                    color: Theme.text
-                                    font.pixelSize: 12
-                                    wrapMode: Text.WrapAnywhere
-                                }
-                                Text {
-                                    Layout.fillWidth: true
-                                    visible: panel.chartData.shareBasis === "absolute"
-                                    text: qsTr("Доли от суммы модулей остатков")
-                                    color: Theme.textMuted
-                                    font.pixelSize: 10
-                                    wrapMode: Text.WordWrap
-                                }
-                                Repeater {
-                                    model: plot.hoveredAccounts
-                                    delegate: RowLayout {
-                                        id: accountShare
-                                        required property var modelData
-                                        Layout.fillWidth: true
-                                        spacing: 6
-                                        Rectangle {
-                                            Layout.preferredWidth: 8
-                                            Layout.preferredHeight: 8
-                                            radius: 2
-                                            color: panel.seriesColor(accountShare.modelData.colorIndex)
-                                        }
-                                        Text {
-                                            Layout.fillWidth: true
-                                            Layout.minimumWidth: 0
-                                            text: accountShare.modelData.label
-                                            textFormat: Text.PlainText
-                                            color: Theme.textMuted
-                                            font.pixelSize: 10
-                                            wrapMode: Text.WordWrap
-                                        }
-                                        Text {
-                                            Layout.maximumWidth: 180
-                                            text: accountShare.modelData.value + " · " + accountShare.modelData.share
-                                            color: Theme.text
-                                            font.pixelSize: 10
-                                            wrapMode: Text.WrapAnywhere
-                                        }
-                                    }
-                                }
-                                Text {
-                                    Layout.fillWidth: true
-                                    text: plot.hoveredTotal ? (plot.hoveredTotal.carried
-                                          ? qsTr("Без обновлений; сохранены предыдущие остатки. Последняя синхронизация: ")
-                                          : qsTr("Последняя синхронизация: ")) + plot.hoveredTotal.timestamp : ""
-                                    color: Theme.textMuted
-                                    font.pixelSize: 10
-                                    wrapMode: Text.WordWrap
-                                }
-                            }
+                        visible: plot.activePoint !== null
+                        x: plot.activePoint ? plot.pointX(plot.activePoint) - width / 2 : 0
+                        y: plot.padding
+                        width: 1
+                        height: Math.max(0, plot.height - plot.padding * 2)
+                        color: Theme.textMuted
+                    }
+                    Rectangle {
+                        visible: plot.activePoint !== null
+                        x: plot.activePoint ? plot.pointX(plot.activePoint) - width / 2 : 0
+                        y: plot.activePoint ? plot.pointY(plot.activePoint) - height / 2 : 0
+                        width: 9
+                        height: width
+                        radius: width / 2
+                        color: Theme.primary
+                        border.color: Theme.surface
+                        border.width: 2
+                    }
+
+                    HoverHandler {
+                        acceptedDevices: PointerDevice.Mouse | PointerDevice.TouchPad | PointerDevice.Stylus
+                        cursorShape: Qt.CrossCursor
+                        onPointChanged: if (hovered && !scrub.active) plot.hoveredIndex = plot.nearestIndex(point.position.x)
+                        onHoveredChanged: if (!hovered) plot.hoveredIndex = -1
+                    }
+                    TapHandler {
+                        onTapped: event => {
+                            plot.forceActiveFocus()
+                            plot.selectAt(event.position.x)
+                        }
+                    }
+                    DragHandler {
+                        id: scrub
+                        target: null
+                        yAxis.enabled: false
+                        onActiveChanged: {
+                            if (!active) return
+                            plot.forceActiveFocus()
+                            plot.selectAt(centroid.position.x)
+                        }
+                        onActiveTranslationChanged: {
+                            if (active) plot.selectAt(centroid.position.x)
                         }
                     }
                 }
@@ -501,6 +430,8 @@ SectionCard {
 
         RowLayout {
             Layout.fillWidth: true
+            Layout.leftMargin: scaleLabels.width + 10 + plot.padding
+            Layout.rightMargin: plot.padding
             visible: panel.points.length > 0
             Text {
                 Layout.fillWidth: true
@@ -526,15 +457,19 @@ SectionCard {
             boundsBehavior: Flickable.StopAtBounds
             clip: true
             ScrollBar.vertical: ScrollBar {}
-            Flow {
+            Grid {
                 id: legend
                 width: legendViewport.width
-                spacing: 12
+                columns: width >= 420 ? 2 : 1
+                columnSpacing: 12
+                rowSpacing: 4
                 Repeater {
                     model: panel.series
                     delegate: Row {
                         id: legendEntry
                         required property var modelData
+                        readonly property var sample: panel.displayedPoint
+                            ? plot.bandPoint(modelData, panel.displayedPoint.x) : null
                         spacing: 5
                         Rectangle {
                             width: 8; height: 8; radius: 2
@@ -542,14 +477,15 @@ SectionCard {
                             color: panel.seriesColor(legendEntry.modelData.colorIndex)
                         }
                         Text {
-                            width: Math.min(implicitWidth, 230)
-                            text: legendEntry.modelData.label
+                            width: (legend.width - (legend.columns - 1) * legend.columnSpacing) / legend.columns - 13
+                            text: legendEntry.modelData.label + (legendEntry.sample
+                                  ? " · " + legendEntry.sample.label + " · " + legendEntry.sample.shareLabel : "")
                             textFormat: Text.PlainText
                             color: Theme.textMuted
                             font.pixelSize: 10
                             elide: Text.ElideRight
                             ToolTip.visible: legendHover.hovered
-                            ToolTip.text: legendEntry.modelData.label + " · " + legendEntry.modelData.lastValue
+                            ToolTip.text: text
                             HoverHandler { id: legendHover }
                         }
                     }
@@ -559,13 +495,9 @@ SectionCard {
         Text {
             Layout.fillWidth: true
             visible: panel.points.length > 0
-            text: panel.chartData.baselineCarried && panel.chartData.observationCount === 0
-                  ? qsTr("В этом периоде обновлений нет — показаны последние известные остатки")
-                  : panel.points.length === 1
-                    ? qsTr("Один снимок — динамика появится после следующего обновления")
-                    : panel.selectedAccountId.length === 0
-                      ? qsTr("Снимки: %1 · Подключения: %2").arg(panel.chartData.observationCount).arg(panel.chartData.connectionCount || 0)
-                      : qsTr("Снимки: %1").arg(panel.chartData.observationCount)
+            text: !panel.displayedPoint ? ""
+                  : panel.displayedPoint.carried ? qsTr("Без обновлений · %1").arg(panel.displayedPoint.timestamp)
+                  : qsTr("Последняя синхронизация · %1").arg(panel.displayedPoint.timestamp)
             color: Theme.textMuted
             font.pixelSize: 10
             wrapMode: Text.WordWrap

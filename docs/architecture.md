@@ -155,9 +155,11 @@ day and carries each account forward on days without updates, through the
 selected end date or today. Multiple same-day updates use the latest values.
 The observation counter still counts real captures. Accounts are netted within
 each connection before stacking positive connection balances above zero and
-negative balances below it. A separate line shows the net total. Date tooltips
-list signed connection amounts and percentage shares; when negative balances
-are present, shares use the sum of absolute connection balances. Monetary sums
+negative balances below it. A separate line shows the net total. Dragging or
+tapping selects a day and updates the total above the plot and the amounts and
+shares in the legend. When negative balances are present, shares use the sum
+of absolute connection balances. The vertical scale uses round steps in minor
+units, with separate bounds for the composition and the total. Monetary sums
 and share rounding use exact integer arithmetic. Selecting no connections
 produces no totals. When an
 earlier observation exists, the projection carries it to the start of the

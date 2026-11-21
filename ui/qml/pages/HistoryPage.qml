@@ -236,7 +236,6 @@ Flickable {
             Layout.fillWidth: true
             app: page.app
             showControls: false
-            showValue: false
             allowAccountSelection: false
             connectionIds: page.selectedConnectionIds
             restrictConnections: !page.allConnections
@@ -245,7 +244,9 @@ Flickable {
         }
         Text {
             Layout.fillWidth: true
-            text: qsTr("Цвета показывают банки и EVM-кошельки. Положительные остатки расположены выше нуля, отрицательные — ниже. Наведите курсор на дату, чтобы увидеть суммы и доли подключений. Изменение остатков не является доходностью.")
+            text: qsTr("Проведите по графику, чтобы выбрать день. Изменение остатков не является доходностью.")
+                  + (historyChart.composition && historyChart.chartData.shareBasis === "absolute"
+                     ? qsTr(" Доли рассчитаны по сумме модулей остатков.") : "")
                   + (historyChart.selectedCurrency === "USDT" ? qsTr(" Оценка в USDT включает только активы с доступными котировками.") : "")
             color: Theme.textMuted
             font.pixelSize: 11

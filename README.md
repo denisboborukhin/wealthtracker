@@ -34,12 +34,15 @@ financial totals use RUB; foreign-currency accounts remain visible separately.
 Balance-history totals keep currencies separate without exchange-rate conversion.
 They combine the latest known balances from each connection, which may have
 different observation times. Total history fills each calendar date with the
-latest known balances, and date tooltips show connection amounts and shares. This
-shows recorded balances, not investment returns.
+latest known balances. Drag across the chart to see the date, total, and
+connection amounts and shares. The chart shows recorded balances, not investment
+returns.
 Open **История** for balances grouped by bank or EVM wallet. Positive balances
 stack above zero and negative balances below; shares use absolute connection
 balances when negatives are present. **Настроить** contains source, currency,
 and date selection.
+Use **Состав** for a stacked view with zero and **Итого** to focus the scale
+on changes in the total.
 The **Все источники** checkbox selects or clears every source checkbox.
 The dashboard also shows combined history. A period can carry forward the last observation before
 its start, with its original timestamp. Changing the selected connections can
