@@ -57,10 +57,11 @@ class TBankLoginCoordinator final : public QObject {
     using Completed = std::function<void(QByteArray)>;
     using Failed = std::function<void(QString)>;
 
-    TBankLoginCoordinator(StatusChanged statusChanged, Completed completed, Failed failed,
+    TBankLoginCoordinator(QNetworkAccessManager& network, StatusChanged statusChanged,
+                          Completed completed, Failed failed,
                           QObject* parent)
         : QObject(parent), status_changed_(std::move(statusChanged)),
-          completed_(std::move(completed)), failed_(std::move(failed)) {
+          completed_(std::move(completed)), failed_(std::move(failed)), network_(network) {
         authorization_timer_.setSingleShot(true);
         connect(&authorization_timer_, &QTimer::timeout, this, [this] { pollAuthorization(); });
         request_deadline_.setSingleShot(true);
@@ -96,15 +97,20 @@ class TBankLoginCoordinator final : public QObject {
                                    false);
             connect(web_view_.get(), &QWebView::loadingChanged, this,
                     [this](const QWebViewLoadingInfo& information) {
-                        if (active_ &&
-                            !is_tbank_login_navigation_url(information.url())) {
+                        if (!active_) return;
+                        if (!is_tbank_login_navigation_url(information.url())) {
                             fail(QStringLiteral(
                                 "Т-Банк открыл страницу вне официального домена. "
                                 "Вход остановлен."));
                             return;
                         }
-                        if (active_ &&
-                            information.status() == QWebViewLoadingInfo::LoadStatus::Failed) {
+                        const auto status = information.status();
+                        if (status == QWebViewLoadingInfo::LoadStatus::Started) {
+                            resetPageProbe();
+                        } else if (status == QWebViewLoadingInfo::LoadStatus::Succeeded) {
+                            page_ready_ = is_tbank_login_url(information.url());
+                        } else if (status == QWebViewLoadingInfo::LoadStatus::Failed) {
+                            resetPageProbe();
                             if (information.errorString() == QStringLiteral("Bank page certificate verification failed")) {
                                 reportStatus(QStringLiteral("Android не подтвердил сертификат банка. Защищённое соединение остановлено. Проверьте дату, сеть и доверенные сертификаты устройства."));
                                 return;
@@ -143,6 +149,7 @@ class TBankLoginCoordinator final : public QObject {
         if (!active_ || !web_view_) {
             return;
         }
+        resetPageProbe();
         reportStatus(QStringLiteral("Повторно загружаем официальную страницу Т-Банка…"));
         web_view_->reload();
     }
@@ -196,27 +203,31 @@ class TBankLoginCoordinator final : public QObject {
         }
     }
 
+    void resetPageProbe() {
+        ++page_generation_;
+        page_ready_ = false;
+        probe_pending_ = false;
+    }
+
     void probePage() {
-        if (!active_ || !web_view_ || probe_pending_) {
+        if (!active_ || !web_view_ || !page_ready_ || probe_pending_) {
             return;
         }
         probe_pending_ = true;
-        const auto generation = generation_;
+        const auto pageGeneration = page_generation_;
         const QPointer<TBankLoginCoordinator> guard(this);
         runBankJavaScript(web_view_.get(), this, tbank_session_probe_script(),
-                                 [guard, generation](const QVariant& result) {
+                                 [guard, pageGeneration](const QVariant& result) {
                                      if (!guard) {
                                          return;
                                      }
-                                     if (generation != guard->generation_) {
+                                     if (pageGeneration != guard->page_generation_) {
                                          return;
                                      }
                                      guard->probe_pending_ = false;
-                                     if (!guard->active_ ||
-                                         !result.canConvert<QString>()) {
-                                         return;
-                                     }
-                                     guard->observeProjection(result.toString());
+                                     const auto projection = result.toString();
+                                     if (guard->active_ && !projection.isEmpty())
+                                         guard->observeProjection(projection);
                                  });
     }
 
@@ -328,7 +339,7 @@ class TBankLoginCoordinator final : public QObject {
 
     void stop(const bool invalidateGeneration, const bool cleanupWebView) {
         probe_timer_.stop();
-        probe_pending_ = false;
+        resetPageProbe();
         if (invalidateGeneration) {
             ++generation_;
         }
@@ -360,7 +371,7 @@ class TBankLoginCoordinator final : public QObject {
     StatusChanged status_changed_;
     Completed completed_;
     Failed failed_;
-    QNetworkAccessManager network_;
+    QNetworkAccessManager& network_;
     QPointer<QNetworkReply> authorization_reply_;
     QTimer authorization_timer_;
     QTimer request_deadline_;
@@ -370,6 +381,8 @@ class TBankLoginCoordinator final : public QObject {
     QTimer probe_timer_;
     QByteArray candidate_session_;
     std::uint64_t generation_ = 0;
+    std::uint64_t page_generation_ = 0;
+    bool page_ready_ = false;
     bool probe_pending_ = false;
     bool clearing_browser_data_ = false;
     bool active_ = false;

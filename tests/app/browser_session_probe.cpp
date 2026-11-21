@@ -2,6 +2,7 @@
 
 #include <QGuiApplication>
 #include <QDebug>
+#include <QNetworkAccessManager>
 #include <QTimer>
 #include <QUrl>
 #include <QVariant>
@@ -17,7 +18,8 @@ import wt.connectors;
 
 int runBrowserSessionProbe(QGuiApplication& application, const QString& mode) {
     using namespace wealthtracker::app;
-    TBankLoginCoordinator tbank([](QString) {}, [](QByteArray) {}, [](QString) {}, nullptr);
+    QNetworkAccessManager network;
+    TBankLoginCoordinator tbank(network, [](QString) {}, [](QByteArray) {}, [](QString) {}, nullptr);
     AlfaLoginCoordinator alfa([](QString) {}, [](wealthtracker::connectors::NormalizedBatch) {},
                               [](AlfaLoginFailure) {}, nullptr);
     VtbLoginCoordinator vtb([](QString) {}, [](wealthtracker::connectors::NormalizedBatch) {},

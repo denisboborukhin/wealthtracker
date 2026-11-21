@@ -14,6 +14,7 @@
 #include <QtWebView/QWebView>
 #include <QtWebView/QWebViewLoadingInfo>
 
+#include <algorithm>
 #include <memory>
 
 namespace {
@@ -45,24 +46,81 @@ public:
         setFinished(true);
         emit finished();
     }
+    void complete(QByteArray body) {
+        body_ = std::move(body);
+        setAttribute(QNetworkRequest::HttpStatusCodeAttribute, 200);
+        setFinished(true);
+        emit readyRead();
+        emit finished();
+    }
+    qint64 bytesAvailable() const override {
+        return body_.size() + QNetworkReply::bytesAvailable();
+    }
 protected:
-    qint64 readData(char*, qint64) override { return 0; }
+    qint64 readData(char* data, qint64 maximum) override {
+        if (body_.isEmpty()) return isFinished() ? -1 : 0;
+        const auto count = std::min(maximum, qint64(body_.size()));
+        std::copy_n(body_.constData(), count, data);
+        body_.remove(0, count);
+        return count;
+    }
 private:
     int& aborts_;
+    QByteArray body_;
 };
 
 class PendingNetwork final : public QNetworkAccessManager {
 public:
     int requests = 0;
     int aborts = 0;
+    PendingReply* latest = nullptr;
 protected:
     QNetworkReply* createRequest(Operation, const QNetworkRequest& request, QIODevice*) override {
         ++requests;
-        return new PendingReply(request, aborts, this);
+        latest = new PendingReply(request, aborts, this);
+        return latest;
     }
 };
 
 } // namespace
+
+TEST_CASE("T-Bank loads accounts after T-ID navigation without closing the login window") {
+    SettingsScope settings(QStringLiteral("WealthTrackerSessionTests"), QStringLiteral("RetailRefresh"));
+    auto network = std::make_unique<PendingNetwork>();
+    auto* observed = network.get();
+    wealthtracker::app::AppController controller(std::make_unique<StartupCredentials>(),
+                                                std::move(network), nullptr);
+    controller.beginTBankLogin();
+    REQUIRE(controller.tbankLoginActive());
+    auto* view = static_cast<QWebView*>(controller.tbankWebView());
+    REQUIRE(view);
+    const auto page = QStringLiteral(R"HTML(<html><script>
+      performance.getEntriesByType = () => [{
+        name: 'https://www.tbank.ru/api/common/v1/ping?sessionid=synthetic-login-session'
+      }]
+    </script>Bank navigation fixture</html>)HTML");
+    int loaded = 0;
+    QObject::connect(view, &QWebView::loadingChanged, view, [&](const QWebViewLoadingInfo& info) {
+        if (info.status() == QWebViewLoadingInfo::LoadStatus::Succeeded) ++loaded;
+    });
+    view->loadHtml(page, QUrl(QStringLiteral("https://id.tbank.ru/")));
+    REQUIRE(waitFor([&] { return loaded == 1; }, 3'000));
+    CHECK_FALSE(waitFor([&] { return observed->requests > 0; }, 1'100));
+    view->loadHtml(page, controller.tbankLoginUrl());
+    REQUIRE(waitFor([&] { return loaded == 2 && observed->requests == 1; }, 3'000));
+    CHECK(controller.tbankLoginActive());
+    REQUIRE(observed->latest->url().path() == QStringLiteral("/api/common/v1/ping"));
+    observed->latest->complete(QByteArrayLiteral(R"({"resultCode":"OK","payload":{"accessLevel":"CLIENT"}})"));
+    REQUIRE(waitFor([&] { return observed->requests == 2 && controller.tbankSyncRunning(); }, 3'000));
+    REQUIRE(observed->latest->url().path() == QStringLiteral("/api/common/v1/accounts_light_ib"));
+    observed->latest->complete(QByteArrayLiteral(
+        R"({"resultCode":"OK","payload":[{"id":"fixture-account","name":"Account","accountType":"Debit",)"
+        R"("moneyAmount":{"value":"123.45","currency":{"name":"RUB"}}}]})"));
+    CHECK_FALSE(controller.tbankLoginActive());
+    CHECK_FALSE(controller.tbankSyncRunning());
+    CHECK(controller.tbankConnected());
+    CHECK(controller.accounts()->rowCount() == 1);
+}
 
 TEST_CASE("Retail refresh retries after a busy or locked timer deadline") {
     bool privacyScreen = false;

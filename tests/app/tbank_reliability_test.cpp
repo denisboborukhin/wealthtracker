@@ -46,6 +46,7 @@ TEST_CASE("T-Bank session discovery retains the most recently observed sessions"
     QJSEngine engine;
     const auto setup = engine.evaluate(QStringLiteral(R"JS(
         var globalThis = this
+        var location = {origin: 'https://www.tbank.ru'}
         globalThis.URL = function(name) {
             return { protocol: 'https:', hostname: 'www.tbank.ru', port: '',
                      username: '', password: '', pathname: '/api/common/v1/ping',

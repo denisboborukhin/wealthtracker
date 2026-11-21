@@ -25,6 +25,7 @@ export namespace wealthtracker::app {
 
 [[nodiscard]] const QString& tbank_session_probe_script() {
     static const QString script = QStringLiteral(R"JS((() => {
+  if (location.origin !== 'https://www.tbank.ru') return '[]'
   const sessions = new Set()
   for (const entry of performance.getEntriesByType('resource')) {
     try {

@@ -991,6 +991,7 @@ AppController::AppController(std::unique_ptr<CredentialBackend> credentials,
 
 void AppController::initializeRetailCoordinators() {
     private_->tbank_login = std::make_unique<TBankLoginCoordinator>(
+        *private_->network,
         [this](QString status) {
             tbank_login_status_ = std::move(status);
             emit tbankConnectionChanged();
