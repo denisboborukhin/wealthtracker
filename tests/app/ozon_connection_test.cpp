@@ -275,7 +275,8 @@ TEST_CASE("Ozon selects only verified main-page modules and their declared read 
     QString asset = QStringLiteral("BKxA_2Oi.js");
     QString exportName = QStringLiteral("Mi");
     bool known = true;
-    SECTION("Current module") { asset = "De9NCFy0.js"; exportName = "Ai"; }
+    SECTION("Current shared module") { asset = "shared.DvRJOBbj.js"; exportName = "_r"; }
+    SECTION("Previous shared module") { asset = "De9NCFy0.js"; exportName = "Ai"; }
     SECTION("Earlier verified module") {}
     SECTION("Previous verified module") { asset = "B6d1cMwe.js"; exportName = "ki"; }
     SECTION("Unknown module is never imported") { asset = "unknown.js"; known = false; }
@@ -320,7 +321,7 @@ TEST_CASE("Ozon bounds credit reads after validated dashboard access") {
       const phase = '%1'; let now = 1000; Date.now = () => now;
       const location = {origin:'https://finance.ozon.ru',pathname:'/lk'};
       const document = {scripts:[]};
-      const mainUrl = 'https://cdn2.ozone.ru/s3/bozon-fe-main/release/apps/main/_app/immutable/chunks/De9NCFy0.js';
+      const mainUrl = 'https://cdn2.ozone.ru/s3/bozon-fe-main/release/apps/main/_app/immutable/chunks/shared.DvRJOBbj.js';
       const performance = {getEntriesByType:() => [{name:mainUrl}]};
       let release; const pending = new Promise(resolve => {release = resolve});
       let mainCalls = 0, contextCalls = 0, creditCalls = 0, contextReady = false;
@@ -337,7 +338,7 @@ TEST_CASE("Ozon bounds credit reads after validated dashboard access") {
       creditReader.declaration = {operationName:'InstallmentInfoV4',operationType:'query'};
       const creditModule = {qu:{_internal_setSsrStuff:() => {contextReady = true}},
         Cs:{create:() => ({getClientHandler:() => creditReader})}};
-      const __import = url => url === mainUrl ? Promise.resolve({Ai:handler})
+      const __import = url => url === mainUrl ? Promise.resolve({_r:handler})
         : phase === 'module' ? pending.then(() => creditModule) : Promise.resolve(creditModule);
       const fetch = url => {
         contextCalls++; let sent = false;

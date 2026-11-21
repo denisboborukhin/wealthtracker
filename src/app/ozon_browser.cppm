@@ -64,7 +64,8 @@ struct OzonFinancialProjection {
     // Import only the exact software asset already loaded by the bank dashboard.
     const assets = performance.getEntriesByType('resource').map(e => e.name)
     for (const script of document.scripts) if (script.src) assets.push(script.src)
-    const readers = [{url:prefix + 'De9NCFy0.js',exportName:'Ai'},
+    const readers = [{url:prefix + 'shared.DvRJOBbj.js',exportName:'_r'},
+      {url:prefix + 'De9NCFy0.js',exportName:'Ai'},
       {url:prefix + 'BKxA_2Oi.js',exportName:'Mi'},
       {url:prefix + 'B6d1cMwe.js',exportName:'ki'}]
     const selected = readers.find(reader => assets.includes(reader.url))
