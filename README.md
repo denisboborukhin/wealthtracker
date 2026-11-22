@@ -1,0 +1,126 @@
+# WealthTracker
+
+A C++23 and Qt Quick desktop application for viewing bank accounts, balances,
+operations, cash-flow reports, investment holdings, and public Ethereum wallets locally.
+
+The app starts empty on first launch. Demonstration data can be enabled in Settings.
+Balance observations from successful connections and refreshes are saved in an
+encrypted local database and remain available after restart or disconnect.
+Validated retail balances and automatic cashback are restored from the encrypted
+history store. Transaction and investment holding details require a fresh synchronization.
+Connection settings and credentials are stored separately. On macOS, retail browser data
+is retained across launches; a bank can still require reauthentication when its
+session expires.
+
+## Current functionality
+
+- Retail T-Bank, Alfa-Bank, and VTB: embedded bank login, accounts, and balances.
+- Ozon Bank: embedded login, main RUB balance, savings, MKK installment debt and selected cashback categories.
+- Alfa-Bank B2C API, T-Bank Business, and Modulbank: token-based account and
+  transaction synchronization.
+- T-Invest: token-based account, portfolio balance, and position synchronization.
+- EVM wallets: native coins and tokens across Rabby-indexed networks, valued
+  in USDT. Public-address tracking requires no registration or API key.
+- External ZenPlugins bundles: local execution through an optional Node.js host.
+- Cash-flow reports: date-filtered income, spending, savings, and categories,
+  with confirmed own-account transfers excluded from totals.
+- Balance history: saved observations, date filters, selected banks and wallets,
+  and opening/closing totals and changes for each currency.
+- Privacy screen: hides financial views and cancels active work.
+
+Retail connections and T-Invest supply balances without transaction history.
+Cash-flow reports use operations supplied by the other connectors. Aggregate
+financial totals use RUB; foreign-currency accounts remain visible separately.
+Balance-history totals keep currencies separate without exchange-rate conversion.
+They combine the latest known balances from each connection, which may have
+different observation times. Total history fills each calendar date with the
+latest known balances. Drag across the chart to see the date, total, and
+connection amounts and shares. The chart shows recorded balances, not investment
+returns.
+Open **История** for balances grouped by bank or EVM wallet. Positive balances
+stack above zero and negative balances below; shares use absolute connection
+balances when negatives are present. **Настроить** contains source, currency,
+and date selection.
+Use **Состав** for a stacked view with zero and **Итого** to focus the scale
+on changes in the total.
+The **Все источники** checkbox selects or clears every source checkbox.
+The dashboard also shows combined history. A period can carry forward the last observation before
+its start, with its original timestamp. Changing the selected connections can
+change the total. Recording starts with successful refreshes in this version;
+earlier balances are not reconstructed.
+
+**Криптокошельки** watches public addresses without wallet keys or seed phrases.
+Refresh runs at startup, every six hours while the app is running, or manually.
+Assets without a usable price remain visible and are excluded from the USDT
+subtotal. See [Crypto wallets](docs/crypto-wallets.md) for setup, valuation,
+coverage, and verification limits.
+
+**Кэшбэк** automatically reads confirmed T-Bank, Alfa-Bank, VTB, and Ozon Bank categories for this month and
+next month after balance synchronization. Cashback has its own status and
+refresh time; a failed read preserves the previous result.
+Use **Обновить банк** on a bank's card to refresh only that bank, or **Обновить банки** for all connected banks. Manual entries
+survive restart and remain a fallback when automatic data is unavailable. Manual
+category names, percentages and months are stored in local settings without
+application-level encryption; they contain no bank credentials.
+Automatic cashback snapshots are saved in the encrypted history store and
+restored after restart; failed refreshes preserve their observation times. See
+[Bank connections](docs/bank-connections.md#cashback).
+
+**Подключения** distinguishes saved sessions awaiting verification, ongoing refreshes,
+validated data, failed reads with a saved session, and disconnected banks.
+Indicators remain visible on phone screens. **Инвестиции** supports sorting by ticker,
+name, or exact current value in either direction; value sorting groups currencies separately.
+
+macOS credentials consolidate into one Keychain item and are read once per
+launch. The first migration may still request access to the old entries; macOS
+can also ask again after a debug rebuild.
+
+Bank integrations are implemented, but automated tests do not establish current
+compatibility with a bank's live service. See [Bank connections](docs/bank-connections.md)
+for setup and refresh behavior. External plugins run with the current user's
+file and network permissions; review their source before running them.
+
+## Build and run
+
+On macOS arm64, install the Xcode Command Line Tools and Homebrew LLVM 22,
+then run from the repository root:
+
+```sh
+./scripts/bootstrap.sh &&
+. build/tooling/bin/activate &&
+conan install . --profile:host=conan/profiles/macos-arm64 \
+  --profile:build=conan/profiles/macos-arm64 \
+  --build=missing -s:h build_type=Debug -of build/macos-debug &&
+WEALTHTRACKER_LLVM_ROOT="$(brew --prefix llvm@22)" ./scripts/configure.sh macos-debug &&
+cmake --build --preset macos-debug &&
+open build/macos-debug/WealthTracker.app
+```
+
+The sequence stops if a step fails. Bootstrap must finish installing both the
+build tools and Qt before configuration can succeed.
+
+See [Building](docs/building.md) for Windows instructions, tests, and installable
+packages. Node.js 18 or newer is needed only for external plugins and the host's
+syntax check.
+
+For a directly installable ARM64 Android APK, see [Android packaging](android/README.md).
+
+## Documentation
+
+| Document | Contents |
+| --- | --- |
+| [Bank connections](docs/bank-connections.md) | Available integrations and setup |
+| [Crypto wallets](docs/crypto-wallets.md) | Keyless EVM tracking, coverage, valuation, and history |
+| [Architecture](docs/architecture.md) | Code ownership and runtime data flow |
+| [Security design](docs/security-design.md) | Credential handling, network controls, and privacy |
+| [Building](docs/building.md) | Build, verification, and packaging commands |
+| [Verification](docs/verification.md) | Platform checks, hosted CI, and release limits |
+| [Contributing](CONTRIBUTING.md) | Development and submission rules |
+| [Security policy](SECURITY.md) | Vulnerability reporting |
+| [Agent instructions](AGENTS.md) | Coding-agent instructions |
+| [Third-party notices](THIRD_PARTY_NOTICES.md) | Dependency licenses and provenance |
+
+## License
+
+[MIT](LICENSE). Dependencies retain their own licenses; see
+[Third-party notices](THIRD_PARTY_NOTICES.md).

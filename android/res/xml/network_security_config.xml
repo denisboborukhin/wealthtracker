@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="utf-8"?>
+<network-security-config>
+    <base-config cleartextTrafficPermitted="false">
+        <trust-anchors>
+            <certificates src="system" />
+        </trust-anchors>
+    </base-config>
+    <domain-config cleartextTrafficPermitted="false">
+        <domain>www.tbank.ru</domain>
+        <domain>id.tbank.ru</domain>
+        <domain>id.tinkoff.ru</domain>
+        <domain>web.alfabank.ru</domain>
+        <domain>private.auth.alfabank.ru</domain>
+        <domain>online.vtb.ru</domain>
+        <domain>s1.vtb.ru</domain>
+        <domain>s2.vtb.ru</domain>
+        <domain>h2.vtb.ru</domain>
+        <domain>sso-app4.vtb.ru</domain>
+        <domain>sso-ib.vtb.ru</domain>
+        <domain>cert.vtb.ru</domain>
+        <domain>cdn.tbank.ru</domain>
+        <trust-anchors>
+            <certificates src="system" />
+            <certificates src="@raw/russian_trusted_root_ca" />
+        </trust-anchors>
+    </domain-config>
+</network-security-config>

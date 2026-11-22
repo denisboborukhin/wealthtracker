@@ -1,0 +1,52 @@
+# Local planning and agent notes
+/tasks/
+/temp/
+
+# CMake / Conan build output
+/build/
+/cmake-build-*/
+/out/
+/generators/
+CMakeUserPresets.json
+
+# Conan local state
+/.conan/
+
+# IDEs and editors
+.idea/
+.vscode/
+*.user
+*.user.*
+*.swp
+__pycache__/
+.DS_Store
+
+# Compilation databases and generated files
+compile_commands.json
+*.qm
+*.qrc.depends
+
+# Local Android signing identity
+/android/.local/
+/android/output/
+
+# Runtime data and secrets
+*.db
+*.db-shm
+*.db-wal
+*.sqlite
+*.sqlite3
+*.wealthtracker
+*.log
+.env
+.env.*
+
+# Packages
+*.dmg
+*.pkg
+*.msi
+*.app/
+*.apk
+*.aab
+*.keystore
+*.jks

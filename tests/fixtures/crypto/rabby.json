@@ -1,0 +1,407 @@
+{
+  "chains": [
+    {
+      "id": "ink",
+      "name": "Ink",
+      "native_token_id": "ink"
+    },
+    {
+      "id": "lens",
+      "name": "Lens",
+      "native_token_id": "lens"
+    },
+    {
+      "id": "ethlink",
+      "name": "Etherlink",
+      "native_token_id": "ethlink"
+    },
+    {
+      "id": "xdai",
+      "name": "Gnosis Chain",
+      "native_token_id": "xdai"
+    },
+    {
+      "id": "kava",
+      "name": "Kava",
+      "native_token_id": "kava"
+    },
+    {
+      "id": "matic",
+      "name": "Polygon",
+      "native_token_id": "matic"
+    },
+    {
+      "id": "hood",
+      "name": "Robinhood",
+      "native_token_id": "hood"
+    },
+    {
+      "id": "btr",
+      "name": "Bitlayer",
+      "native_token_id": "btr"
+    },
+    {
+      "id": "avax",
+      "name": "Avalanche",
+      "native_token_id": "avax"
+    },
+    {
+      "id": "b2",
+      "name": "B²",
+      "native_token_id": "b2"
+    },
+    {
+      "id": "plasma",
+      "name": "Plasma",
+      "native_token_id": "plasma"
+    },
+    {
+      "id": "arb",
+      "name": "Arbitrum",
+      "native_token_id": "arb"
+    },
+    {
+      "id": "core",
+      "name": "CORE",
+      "native_token_id": "core"
+    },
+    {
+      "id": "base",
+      "name": "Base",
+      "native_token_id": "base"
+    },
+    {
+      "id": "plume",
+      "name": "Plume",
+      "native_token_id": "plume"
+    },
+    {
+      "id": "ron",
+      "name": "Ronin",
+      "native_token_id": "ron"
+    },
+    {
+      "id": "bob",
+      "name": "BOB",
+      "native_token_id": "bob"
+    },
+    {
+      "id": "sonic",
+      "name": "Sonic",
+      "native_token_id": "sonic"
+    },
+    {
+      "id": "uni",
+      "name": "Unichain",
+      "native_token_id": "uni"
+    },
+    {
+      "id": "wemix",
+      "name": "WEMIX",
+      "native_token_id": "wemix"
+    },
+    {
+      "id": "fuse",
+      "name": "Fuse",
+      "native_token_id": "fuse"
+    },
+    {
+      "id": "sophon",
+      "name": "Sophon",
+      "native_token_id": "sophon"
+    },
+    {
+      "id": "bsc",
+      "name": "BNB Chain",
+      "native_token_id": "bsc"
+    },
+    {
+      "id": "kite",
+      "name": "KiteAI",
+      "native_token_id": "kite"
+    },
+    {
+      "id": "hemi",
+      "name": "Hemi",
+      "native_token_id": "hemi"
+    },
+    {
+      "id": "world",
+      "name": "World Chain",
+      "native_token_id": "world"
+    },
+    {
+      "id": "xdc",
+      "name": "XDC",
+      "native_token_id": "xdc"
+    },
+    {
+      "id": "zeta",
+      "name": "ZetaChain",
+      "native_token_id": "zeta"
+    },
+    {
+      "id": "chiliz",
+      "name": "Chiliz",
+      "native_token_id": "chiliz"
+    },
+    {
+      "id": "metis",
+      "name": "Metis",
+      "native_token_id": "metis"
+    },
+    {
+      "id": "mnt",
+      "name": "Mantle",
+      "native_token_id": "mnt"
+    },
+    {
+      "id": "morph",
+      "name": "Morph",
+      "native_token_id": "morph"
+    },
+    {
+      "id": "citrea",
+      "name": "Citrea",
+      "native_token_id": "citrea"
+    },
+    {
+      "id": "rsk",
+      "name": "Rootstock",
+      "native_token_id": "rsk"
+    },
+    {
+      "id": "megaeth",
+      "name": "MegaETH",
+      "native_token_id": "megaeth"
+    },
+    {
+      "id": "frax",
+      "name": "Fraxtal",
+      "native_token_id": "frax"
+    },
+    {
+      "id": "op",
+      "name": "OP",
+      "native_token_id": "op"
+    },
+    {
+      "id": "g0",
+      "name": "0G",
+      "native_token_id": "g0"
+    },
+    {
+      "id": "manta",
+      "name": "Manta Pacific",
+      "native_token_id": "manta"
+    },
+    {
+      "id": "cro",
+      "name": "Cronos",
+      "native_token_id": "cro"
+    },
+    {
+      "id": "lisk",
+      "name": "Lisk",
+      "native_token_id": "lisk"
+    },
+    {
+      "id": "sei",
+      "name": "Sei",
+      "native_token_id": "sei"
+    },
+    {
+      "id": "zircuit",
+      "name": "Zircuit",
+      "native_token_id": "zircuit"
+    },
+    {
+      "id": "celo",
+      "name": "Celo",
+      "native_token_id": "celo"
+    },
+    {
+      "id": "klay",
+      "name": "Kaia",
+      "native_token_id": "klay"
+    },
+    {
+      "id": "flr",
+      "name": "Flare",
+      "native_token_id": "flr"
+    },
+    {
+      "id": "zora",
+      "name": "Zora",
+      "native_token_id": "zora"
+    },
+    {
+      "id": "ape",
+      "name": "ApeChain",
+      "native_token_id": "ape"
+    },
+    {
+      "id": "katana",
+      "name": "Katana",
+      "native_token_id": "katana"
+    },
+    {
+      "id": "stable",
+      "name": "Stable",
+      "native_token_id": "stable"
+    },
+    {
+      "id": "cfx",
+      "name": "Conflux",
+      "native_token_id": "cfx"
+    },
+    {
+      "id": "story",
+      "name": "DATA Network",
+      "native_token_id": "story"
+    },
+    {
+      "id": "eth",
+      "name": "Ethereum",
+      "native_token_id": "eth"
+    },
+    {
+      "id": "opbnb",
+      "name": "opBNB",
+      "native_token_id": "opbnb"
+    },
+    {
+      "id": "tempo",
+      "name": "Tempo",
+      "native_token_id": "tempo"
+    },
+    {
+      "id": "arc",
+      "name": "Arc",
+      "native_token_id": "arc"
+    },
+    {
+      "id": "itze",
+      "name": "Immutable zkEVM",
+      "native_token_id": "itze"
+    },
+    {
+      "id": "abs",
+      "name": "Abstract",
+      "native_token_id": "abs"
+    },
+    {
+      "id": "mode",
+      "name": "Mode",
+      "native_token_id": "mode"
+    },
+    {
+      "id": "xlayer",
+      "name": "X Layer",
+      "native_token_id": "xlayer"
+    },
+    {
+      "id": "cyber",
+      "name": "Cyber",
+      "native_token_id": "cyber"
+    },
+    {
+      "id": "monad",
+      "name": "Monad",
+      "native_token_id": "monad"
+    },
+    {
+      "id": "taiko",
+      "name": "Taiko",
+      "native_token_id": "taiko"
+    },
+    {
+      "id": "era",
+      "name": "zkSync Era",
+      "native_token_id": "era"
+    },
+    {
+      "id": "merlin",
+      "name": "Merlin",
+      "native_token_id": "merlin"
+    },
+    {
+      "id": "hyper",
+      "name": "HyperEVM",
+      "native_token_id": "hyper"
+    },
+    {
+      "id": "bera",
+      "name": "Berachain",
+      "native_token_id": "bera"
+    },
+    {
+      "id": "soneium",
+      "name": "Soneium",
+      "native_token_id": "soneium"
+    },
+    {
+      "id": "scrl",
+      "name": "Scroll",
+      "native_token_id": "scrl"
+    },
+    {
+      "id": "dbk",
+      "name": "DBK Chain",
+      "native_token_id": "dbk"
+    },
+    {
+      "id": "linea",
+      "name": "Linea",
+      "native_token_id": "linea"
+    }
+  ],
+  "tokens": [
+    {
+      "id": "eth",
+      "chain": "eth",
+      "name": "ETH",
+      "symbol": "ETH",
+      "decimals": 18,
+      "raw_amount_hex_str": "0x501eb700c6dc3aeb",
+      "price": "2405.18",
+      "is_suspicious": false
+    },
+    {
+      "id": "0x2614f86ef84b2033cfb78cc634fd7d4ea43d85eb",
+      "chain": "eth",
+      "name": "CapyBara TATA",
+      "symbol": "TATA",
+      "decimals": 18,
+      "raw_amount_hex_str": "0x2f2b2a7a9802a3e71e2",
+      "price": "3.9859446613453636e-11",
+      "is_suspicious": false
+    },
+    {
+      "id": "0x045b198af1204ffcc22d9d0527070d921a540301",
+      "chain": "arb",
+      "name": "The pepefather ",
+      "symbol": "PEPEFA",
+      "decimals": 18,
+      "raw_amount_hex_str": "0xd02ab486cedc0000",
+      "price": 0,
+      "is_scam": false,
+      "is_suspicious": false
+    },
+    {
+      "id": "0x030242ea33a7da5af43d960badc2478fbec64d23",
+      "chain": "eth",
+      "name": "FLOKI in a memes world",
+      "symbol": "FEW",
+      "decimals": 18,
+      "raw_amount_hex_str": "0x33b2e3c9fd0803ce8000000",
+      "price": 0,
+      "is_suspicious": true
+    }
+  ],
+  "quote": {
+    "id": "0xdac17f958d2ee523a2206206994597c13d831ec7",
+    "chain": "eth",
+    "price": "0.99887"
+  }
+}

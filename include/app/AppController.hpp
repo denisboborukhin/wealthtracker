@@ -1,0 +1,333 @@
+#pragma once
+
+#include "app/FinanceModels.hpp"
+#include "app/CredentialBackend.hpp"
+
+#include <QByteArray>
+#include <QDateTime>
+#include <QObject>
+#include <QSet>
+#include <QString>
+#include <QStringList>
+#include <QUrl>
+#include <QVariantList>
+#include <QVariantMap>
+#include <QWindow>
+
+#include <expected>
+#include <memory>
+#include <optional>
+
+class QNetworkAccessManager;
+
+namespace wealthtracker::app {
+
+class AppControllerPrivate;
+
+
+class AppController final : public QObject {
+    Q_OBJECT
+    Q_PROPERTY(QAbstractItemModel* accounts READ accounts CONSTANT)
+    Q_PROPERTY(QAbstractItemModel* transactions READ transactions CONSTANT)
+    Q_PROPERTY(QAbstractItemModel* categories READ categories CONSTANT)
+    Q_PROPERTY(QAbstractItemModel* holdings READ holdings CONSTANT)
+    Q_PROPERTY(QAbstractItemModel* bankConnections READ bankConnections CONSTANT)
+    Q_PROPERTY(QVariantMap connectionStates READ connectionStates NOTIFY connectionStatesChanged)
+    Q_PROPERTY(QVariantList cryptoWallets READ cryptoWallets NOTIFY cryptoWalletsChanged)
+    Q_PROPERTY(QString cryptoStatus READ cryptoStatus NOTIFY cryptoWalletsChanged)
+    Q_PROPERTY(bool cryptoSyncRunning READ cryptoSyncRunning NOTIFY cryptoWalletsChanged)
+    Q_PROPERTY(QVariantList cashbackBanks READ cashbackBanks NOTIFY cashbackChanged)
+    Q_PROPERTY(QVariantList cashbackMonths READ cashbackMonths NOTIFY cashbackChanged)
+    Q_PROPERTY(QString cashbackError READ cashbackError NOTIFY cashbackChanged)
+    Q_PROPERTY(QVariantList balanceHistoryAccounts READ balanceHistoryAccounts NOTIFY balanceHistoryChanged)
+    Q_PROPERTY(QVariantList balanceHistoryConnections READ balanceHistoryConnections NOTIFY balanceHistoryChanged)
+    Q_PROPERTY(QStringList balanceHistoryCurrencies READ balanceHistoryCurrencies NOTIFY balanceHistoryChanged)
+    Q_PROPERTY(QString balanceHistoryError READ balanceHistoryError NOTIFY balanceHistoryChanged)
+    Q_PROPERTY(QString netWorth READ netWorth NOTIFY dashboardChanged)
+    Q_PROPERTY(QString netWorthUpdatedAt READ netWorthUpdatedAt NOTIFY dashboardChanged)
+    Q_PROPERTY(QString reportIncome READ reportIncome NOTIFY dashboardChanged)
+    Q_PROPERTY(QString reportSpending READ reportSpending NOTIFY dashboardChanged)
+    Q_PROPERTY(QString savings READ savings NOTIFY dashboardChanged)
+    Q_PROPERTY(QString reportingFrom READ reportingFrom NOTIFY reportingPeriodChanged)
+    Q_PROPERTY(QString reportingTo READ reportingTo NOTIFY reportingPeriodChanged)
+    Q_PROPERTY(QString reportingPeriodLabel READ reportingPeriodLabel
+               NOTIFY reportingPeriodChanged)
+    Q_PROPERTY(QString reportingPeriodError READ reportingPeriodError
+               NOTIFY reportingPeriodChanged)
+    Q_PROPERTY(QString portfolioValue READ portfolioValue NOTIFY dashboardChanged)
+    Q_PROPERTY(QString syncStatus READ syncStatus NOTIFY syncStatusChanged)
+    Q_PROPERTY(bool locked READ locked NOTIFY lockedChanged)
+    Q_PROPERTY(bool demoMode READ demoMode NOTIFY demoModeChanged)
+    Q_PROPERTY(bool hasFinancialData READ hasFinancialData NOTIFY dashboardChanged)
+    Q_PROPERTY(bool investmentConnected READ investmentConnected NOTIFY investmentConnectedChanged)
+    Q_PROPERTY(QString connectionMessage READ connectionMessage NOTIFY connectionMessageChanged)
+    Q_PROPERTY(QVariantList zenPluginFields READ zenPluginFields NOTIFY zenPluginChanged)
+    Q_PROPERTY(QString zenPluginId READ zenPluginId NOTIFY zenPluginChanged)
+    Q_PROPERTY(QString zenPluginBundlePath READ zenPluginBundlePath NOTIFY zenPluginChanged)
+    Q_PROPERTY(QString zenPluginInstitution READ zenPluginInstitution NOTIFY zenPluginChanged)
+    Q_PROPERTY(QString zenPluginPrompt READ zenPluginPrompt NOTIFY zenPluginChanged)
+    Q_PROPERTY(bool zenPluginPromptSecret READ zenPluginPromptSecret NOTIFY zenPluginChanged)
+    Q_PROPERTY(bool zenPluginRunning READ zenPluginRunning NOTIFY zenPluginChanged)
+    Q_PROPERTY(bool zenPluginAutoUpdate READ zenPluginAutoUpdate NOTIFY zenPluginChanged)
+    Q_PROPERTY(QString zenPluginLastSync READ zenPluginLastSync NOTIFY zenPluginChanged)
+    Q_PROPERTY(QString zenPluginNextSync READ zenPluginNextSync NOTIFY zenPluginChanged)
+
+public:
+    explicit AppController(QObject* parent = nullptr);
+    explicit AppController(std::unique_ptr<CredentialBackend> credentials,
+                           QObject* parent);
+    AppController(std::unique_ptr<CredentialBackend> credentials,
+                  std::unique_ptr<QNetworkAccessManager> network, QObject* parent);
+    AppController(std::unique_ptr<CredentialBackend> credentials,
+                  std::unique_ptr<QNetworkAccessManager> network, QObject* parent,
+                  const QString& historyPath);
+    ~AppController() override;
+
+    [[nodiscard]] QVariantList cryptoWallets() const;
+    [[nodiscard]] QString cryptoStatus() const;
+    [[nodiscard]] bool cryptoSyncRunning() const;
+    Q_INVOKABLE bool addCryptoWallet(const QString& name, const QString& address);
+    Q_INVOKABLE bool removeCryptoWallet(const QString& address);
+    Q_INVOKABLE bool refreshCryptoWallets();
+
+    [[nodiscard]] QVariantList cashbackBanks() const;
+    [[nodiscard]] QVariantList cashbackMonths() const;
+    [[nodiscard]] QString cashbackError() const;
+    Q_INVOKABLE bool saveCashbackCategory(const QString& bank, const QString& month,
+        const QString& category, const QString& percent);
+    Q_INVOKABLE bool removeCashbackCategory(const QString& bank, const QString& month,
+        const QString& category);
+    Q_INVOKABLE void refreshCashbackBanks();
+    Q_INVOKABLE void refreshCashbackBank(const QString& bank);
+    [[nodiscard]] QVariantMap connectionStates() const;
+    Q_INVOKABLE QVariantMap retailConnectionState(const QString& connectorId);
+    Q_INVOKABLE void prepareRetailConnection(const QString& connectorId);
+    Q_INVOKABLE void beginRetailLogin(const QString& connectorId);
+    Q_INVOKABLE void reloadRetailLogin(const QString& connectorId);
+    Q_INVOKABLE void cancelRetailLogin(const QString& connectorId);
+    Q_INVOKABLE void synchronizeRetailConnection(const QString& connectorId);
+    Q_INVOKABLE void setRetailAutoUpdate(const QString& connectorId, bool enabled);
+    Q_INVOKABLE void disconnectRetailConnection(const QString& connectorId);
+    Q_INVOKABLE bool openRetailCertificateInstructions(const QString& connectorId);
+
+
+    [[nodiscard]] QVariantList balanceHistoryAccounts() const;
+    [[nodiscard]] QVariantList balanceHistoryConnections() const;
+    [[nodiscard]] QStringList balanceHistoryCurrencies() const;
+    [[nodiscard]] QString balanceHistoryError() const;
+    Q_INVOKABLE QVariantMap balanceHistoryChart(const QString& accountId,
+                                               const QString& currency) const;
+    Q_INVOKABLE QVariantMap filteredBalanceHistoryChart(const QString& accountId,
+        const QString& currency, const QStringList& connectionIds, bool restrictConnections,
+        const QString& from, const QString& to, bool daily = false) const;
+    Q_INVOKABLE QVariantMap balanceHistorySummary(const QStringList& connectionIds,
+        bool restrictConnections, const QString& from, const QString& to) const;
+
+    [[nodiscard]] QAbstractItemModel* accounts() noexcept;
+    [[nodiscard]] QAbstractItemModel* transactions() noexcept;
+    [[nodiscard]] QAbstractItemModel* categories() noexcept;
+    [[nodiscard]] QAbstractItemModel* holdings() noexcept;
+    [[nodiscard]] QAbstractItemModel* bankConnections() noexcept;
+    [[nodiscard]] QString netWorth() const;
+    [[nodiscard]] QString netWorthUpdatedAt() const;
+    [[nodiscard]] QString reportIncome() const;
+    [[nodiscard]] QString reportSpending() const;
+    [[nodiscard]] QString savings() const;
+    [[nodiscard]] QString reportingFrom() const;
+    [[nodiscard]] QString reportingTo() const;
+    [[nodiscard]] QString reportingPeriodLabel() const;
+    [[nodiscard]] QString reportingPeriodError() const;
+    [[nodiscard]] QString portfolioValue() const;
+    [[nodiscard]] QString syncStatus() const;
+    [[nodiscard]] bool locked() const noexcept;
+    [[nodiscard]] bool demoMode() const noexcept;
+    [[nodiscard]] bool hasFinancialData() const noexcept;
+    [[nodiscard]] bool investmentConnected() const noexcept;
+    [[nodiscard]] QString connectionMessage() const;
+    [[nodiscard]] QVariantList zenPluginFields() const;
+    [[nodiscard]] QString zenPluginId() const;
+    [[nodiscard]] QString zenPluginBundlePath() const;
+    [[nodiscard]] QString zenPluginInstitution() const;
+    [[nodiscard]] QString zenPluginPrompt() const;
+    [[nodiscard]] bool zenPluginPromptSecret() const noexcept;
+    [[nodiscard]] bool zenPluginRunning() const noexcept;
+    [[nodiscard]] bool zenPluginAutoUpdate() const;
+    [[nodiscard]] QString zenPluginLastSync() const;
+    [[nodiscard]] QString zenPluginNextSync() const;
+    [[nodiscard]] bool tbankConnected() const noexcept;
+    [[nodiscard]] bool tbankLoginActive() const noexcept;
+    [[nodiscard]] bool tbankSyncRunning() const noexcept;
+    [[nodiscard]] bool tbankAutoUpdate() const;
+    [[nodiscard]] QString tbankLastSync() const;
+    [[nodiscard]] QString tbankNextSync() const;
+    [[nodiscard]] QString tbankLoginStatus() const;
+    [[nodiscard]] QUrl tbankLoginUrl() const;
+    [[nodiscard]] QWindow* tbankWebView();
+    [[nodiscard]] bool alfaConnected() const noexcept;
+    [[nodiscard]] bool alfaLoginActive() const noexcept;
+    [[nodiscard]] bool alfaSyncRunning() const noexcept;
+    [[nodiscard]] bool alfaAutoUpdate() const;
+    [[nodiscard]] QString alfaLastSync() const;
+    [[nodiscard]] QString alfaNextSync() const;
+    [[nodiscard]] QString alfaLoginStatus() const;
+    [[nodiscard]] bool alfaCertificateHelpRequired() const noexcept;
+    [[nodiscard]] QUrl alfaLoginUrl() const;
+    [[nodiscard]] QWindow* alfaWebView();
+    [[nodiscard]] bool vtbConnected() const noexcept;
+    [[nodiscard]] bool vtbLoginActive() const noexcept;
+    [[nodiscard]] bool vtbSyncRunning() const noexcept;
+    [[nodiscard]] bool vtbAutoUpdate() const;
+    [[nodiscard]] QString vtbLastSync() const;
+    [[nodiscard]] QString vtbNextSync() const;
+    [[nodiscard]] QString vtbLoginStatus() const;
+    [[nodiscard]] QUrl vtbLoginUrl() const;
+    [[nodiscard]] QWindow* vtbWebView();
+    [[nodiscard]] bool ozonConnected() const noexcept;
+    [[nodiscard]] bool ozonLoginActive() const noexcept;
+    [[nodiscard]] bool ozonSyncRunning() const noexcept;
+    [[nodiscard]] bool ozonAutoUpdate() const;
+    [[nodiscard]] QString ozonLastSync() const;
+    [[nodiscard]] QString ozonNextSync() const;
+    [[nodiscard]] QString ozonLoginStatus() const;
+    [[nodiscard]] QUrl ozonLoginUrl() const;
+    [[nodiscard]] QWindow* ozonWebView();
+
+    Q_INVOKABLE void loadDemoData();
+    Q_INVOKABLE void clearDemoData();
+    Q_INVOKABLE bool setReportingPeriod(const QString& from, const QString& to);
+    Q_INVOKABLE void resetReportingPeriod();
+    Q_INVOKABLE void lock();
+    Q_INVOKABLE bool unlock();
+    Q_INVOKABLE bool saveInvestmentToken(const QString& token);
+    Q_INVOKABLE void removeInvestmentToken();
+    Q_INVOKABLE void synchronizeInvestments();
+    Q_INVOKABLE bool saveBankToken(const QString& connectorId, const QString& token);
+    Q_INVOKABLE void removeBankToken(const QString& connectorId);
+    Q_INVOKABLE void synchronizeBank(const QString& connectorId);
+    Q_INVOKABLE void describeBankConnection(const QString& connectorId);
+    Q_INVOKABLE bool inspectZenPluginBundle(const QUrl& source);
+    Q_INVOKABLE bool startZenPlugin(const QString& institution,
+                                    const QVariantMap& preferences);
+    Q_INVOKABLE bool synchronizeZenPlugin();
+    Q_INVOKABLE void setZenPluginAutoUpdate(bool enabled);
+    Q_INVOKABLE bool answerZenPluginPrompt(const QString& value);
+    Q_INVOKABLE void cancelZenPlugin();
+    Q_INVOKABLE void removeZenPlugin();
+    bool prepareTBankConnection();
+    void beginTBankLogin();
+    void reloadTBankLoginPage();
+    void cancelTBankLogin();
+    bool synchronizeTBank();
+    void setTBankAutoUpdate(bool enabled);
+    void disconnectTBank();
+    bool prepareAlfaConnection();
+    void beginAlfaLogin();
+    void reloadAlfaLoginPage();
+    bool openAlfaCertificateInstructions();
+    void cancelAlfaLogin();
+    bool synchronizeAlfa();
+    void setAlfaAutoUpdate(bool enabled);
+    void disconnectAlfa();
+    bool prepareVtbConnection();
+    void beginVtbLogin();
+    void reloadVtbLoginPage();
+    void cancelVtbLogin();
+    bool synchronizeVtb();
+    void setVtbAutoUpdate(bool enabled);
+    void disconnectVtb();
+    bool prepareOzonConnection();
+    void beginOzonLogin();
+    void reloadOzonLoginPage();
+    void cancelOzonLogin();
+    bool synchronizeOzon();
+    void setOzonAutoUpdate(bool enabled);
+    void disconnectOzon();
+
+signals:
+    void retailConnectionChanged(const QString& connectorId);
+    void connectionStatesChanged();
+    void cashbackChanged();
+    void cryptoWalletsChanged();
+    void balanceHistoryChanged();
+    void dashboardChanged();
+    void reportingPeriodChanged();
+    void syncStatusChanged();
+    void lockedChanged();
+    void demoModeChanged();
+    void investmentConnectedChanged();
+    void connectionMessageChanged();
+    void zenPluginChanged();
+    void tbankConnectionChanged();
+    void alfaConnectionChanged();
+    void vtbConnectionChanged();
+    void ozonConnectionChanged();
+
+private:
+    void initializeCashback();
+    void initializeRetailCoordinators();
+    void initializeRefreshTimers();
+    void persistBankCashback(const QString& bank, bool remove = false);
+    void restoreSavedBalances();
+    void startVtbCashback();
+    void stopVtbCashback(bool clearData = false);
+    void startTBankCashback();
+    void stopTBankCashback(bool clearData = false);
+    void startAlfaCashback();
+    void stopAlfaCashback(bool clearData = false);
+    void startOzonCashback();
+    void stopOzonCashback(bool clearData = false);
+    bool persistCashback(const QByteArray& data);
+    void stopCryptoRefresh();
+    void initializeBalanceHistory(const QString& path);
+    void recordBalanceHistory(const QString& connectorId);
+
+    AccountModel accounts_;
+    TransactionModel transactions_;
+    CategoryModel categories_;
+    HoldingModel holdings_;
+    ConnectionModel bank_connections_;
+    QString sync_status_;
+    QString connection_message_;
+    QVariantList zen_plugin_fields_;
+    QString zen_plugin_id_;
+    QString zen_plugin_bundle_path_;
+    QString zen_plugin_institution_;
+    QString zen_plugin_prompt_;
+    bool zen_plugin_prompt_secret_ = true;
+    bool zen_plugin_running_ = false;
+    QString tbank_login_status_;
+    QString alfa_login_status_;
+    QString vtb_login_status_;
+    QString ozon_login_status_;
+    QString live_portfolio_value_ = QStringLiteral("0 ₽");
+    QString live_net_worth_ = QStringLiteral("0 ₽");
+    QString live_report_income_ = QStringLiteral("0 ₽");
+    QString live_report_spending_ = QStringLiteral("0 ₽");
+    QString live_savings_ = QStringLiteral("0 ₽");
+    QDate reporting_from_;
+    QDate reporting_to_;
+    QString reporting_period_error_;
+    bool locked_ = false;
+    bool demo_mode_ = false;
+    bool investment_connected_ = false;
+    QSet<QString> connected_bank_ids_;
+    std::unique_ptr<AppControllerPrivate> private_;
+
+    void refreshBankConnections();
+    void refreshZenPluginAutoUpdateSchedule();
+    void scheduleZenPluginAutoUpdateAfter(const QDateTime& from);
+    void refreshTBankAutoUpdateSchedule();
+    void scheduleTBankAutoUpdateAfter(const QDateTime& from);
+    void failTBankLogin(QString message);
+    void acceptTBankSession(QByteArray session);
+    void refreshAlfaAutoUpdateSchedule();
+    void scheduleAlfaAutoUpdateAfter(const QDateTime& from);
+    void refreshVtbAutoUpdateSchedule();
+    void scheduleVtbAutoUpdateAfter(const QDateTime& from);
+    void refreshOzonAutoUpdateSchedule();
+    void scheduleOzonAutoUpdateAfter(const QDateTime& from);
+    void restoreRetailConnections();
+    void rebuildBankModels();
+};
+
+}  // namespace wealthtracker::app

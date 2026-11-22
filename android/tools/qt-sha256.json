@@ -1,0 +1,10 @@
+{
+  "version": "6.11.1",
+  "archives": {
+    "online/qtsdkrepository/all_os/android/qt6_6111/qt6_6111_arm64_v8a/qt.qt6.6111.addons.qtwebview.android_arm64_v8a/6.11.1-0-202605090529qtwebview-MacOS-MacOS_14-Clang-Android-Android_ANY-ARM64.7z": "f4518988ec0650f067ff667c4347ae4811c2bf75e5f0b03f73cbdbc6be1fd29d",
+    "online/qtsdkrepository/all_os/android/qt6_6111/qt6_6111_arm64_v8a/qt.qt6.6111.android_arm64_v8a/6.11.1-0-202605090529qtbase-MacOS-MacOS_14-Clang-Android-Android_ANY-ARM64.7z": "c3242500ba28a1be10e0e25c875df3e37ad27ca16ce67ab77ee820bc71198de5",
+    "online/qtsdkrepository/all_os/android/qt6_6111/qt6_6111_arm64_v8a/qt.qt6.6111.android_arm64_v8a/6.11.1-0-202605090529qtsvg-MacOS-MacOS_14-Clang-Android-Android_ANY-ARM64.7z": "ea3e707cb67fd7b9235ed73c27bd42160a945fed0aaec7dc0c388ffe171666ab",
+    "online/qtsdkrepository/all_os/android/qt6_6111/qt6_6111_arm64_v8a/qt.qt6.6111.android_arm64_v8a/6.11.1-0-202605090529qtdeclarative-MacOS-MacOS_14-Clang-Android-Android_ANY-ARM64.7z": "0bc9b96a52acab974db7969e292cffbc760aa046124923fd9e148bf21db62758",
+    "online/qtsdkrepository/all_os/android/qt6_6111/qt6_6111_arm64_v8a/qt.qt6.6111.android_arm64_v8a/6.11.1-0-202605090529qttranslations-MacOS-MacOS_14-Clang-Android-Android_ANY-ARM64.7z": "2365bc63e9ef25a16ca1f938e001801e1dd149449af6707b7b59dfe0c803fb1b"
+  }
+}
