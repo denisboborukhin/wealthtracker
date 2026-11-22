@@ -90,6 +90,8 @@ TEST_CASE("T-Bank loads accounts after T-ID navigation without closing the login
     auto* observed = network.get();
     wealthtracker::app::AppController controller(std::make_unique<StartupCredentials>(),
                                                 std::move(network), nullptr);
+    const auto oldLastSync = QStringLiteral("2026-10-01T12:00:00Z");
+    QSettings{}.setValue(QStringLiteral("tbank/lastSyncAt"), oldLastSync);
     controller.beginTBankLogin();
     REQUIRE(controller.tbankLoginActive());
     auto* view = static_cast<QWebView*>(controller.tbankWebView());
@@ -113,12 +115,23 @@ TEST_CASE("T-Bank loads accounts after T-ID navigation without closing the login
     observed->latest->complete(QByteArrayLiteral(R"({"resultCode":"OK","payload":{"accessLevel":"CLIENT"}})"));
     REQUIRE(waitFor([&] { return observed->requests == 2 && controller.tbankSyncRunning(); }, 3'000));
     REQUIRE(observed->latest->url().path() == QStringLiteral("/api/common/v1/accounts_light_ib"));
+    SECTION("A rejected first balance response leaves the session available for retry") {
+        observed->latest->complete(QByteArrayLiteral("{}"));
+        CHECK_FALSE(controller.tbankConnected());
+        const auto state = controller.retailConnectionState(QStringLiteral("tbank-retail"));
+        CHECK(state.value(QStringLiteral("savedSession")).toBool());
+        CHECK(state.value(QStringLiteral("pendingSessionValidation")).toBool());
+        CHECK(QSettings{}.value(QStringLiteral("tbank/lastSyncAt")).toString() == oldLastSync);
+        REQUIRE(controller.synchronizeTBank());
+        REQUIRE(observed->requests == 3);
+    }
     observed->latest->complete(QByteArrayLiteral(
         R"({"resultCode":"OK","payload":[{"id":"fixture-account","name":"Account","accountType":"Debit",)"
         R"("moneyAmount":{"value":"123.45","currency":{"name":"RUB"}}}]})"));
     CHECK_FALSE(controller.tbankLoginActive());
     CHECK_FALSE(controller.tbankSyncRunning());
     CHECK(controller.tbankConnected());
+    CHECK_FALSE(QSettings{}.contains(QStringLiteral("tbank/pendingSessionValidation")));
     CHECK(controller.accounts()->rowCount() == 1);
 }
 

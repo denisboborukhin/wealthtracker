@@ -18,11 +18,13 @@ extern "C++" {
 #include <QTimeZone>
 #include <QTimer>
 
+#include <algorithm>
 #include <cstddef>
 #include <expected>
 #include <functional>
 #include <memory>
 #include <optional>
+#include <tuple>
 #include <utility>
 
 }
@@ -130,6 +132,13 @@ class BankSyncCoordinator final : public QObject {
                 finishIfReady();
                 return;
             }
+            if (!completeBalances(batch_)) {
+                fail({wealthtracker::connectors::ErrorCode::ParseFailed,
+                      QStringLiteral("Банк вернул неполный или некорректный список остатков"),
+                      {}, false});
+                finishIfReady();
+                return;
+            }
             if (!runtime_.synchronizeHistory) {
                 finishIfReady();
                 return;
@@ -172,6 +181,24 @@ class BankSyncCoordinator final : public QObject {
     static constexpr int maximumPagesPerRun = 1'000;
     static constexpr qsizetype maximumTransactionsPerRun = 250'000;
     static constexpr qsizetype maximumWarningsPerRun = 10'000;
+
+    static bool completeBalances(const wealthtracker::connectors::NormalizedBatch& batch) {
+        if (batch.accounts.size() != batch.balances.size() ||
+            std::ranges::any_of(batch.warnings, [](const auto& warning) {
+                return warning.severity == wealthtracker::connectors::WarningSeverity::RejectedRow;
+            })) return false;
+        QHash<QString, QString> accounts;
+        for (const auto& account : batch.accounts) {
+            if (account.externalId.isEmpty() || account.currency.isEmpty() ||
+                accounts.contains(account.externalId)) return false;
+            accounts.insert(account.externalId, account.currency);
+        }
+        for (const auto& balance : batch.balances) {
+            const auto currency = accounts.take(balance.accountExternalId);
+            if (currency.isEmpty() || currency != balance.balance.currency) return false;
+        }
+        return true;
+    }
 
     static wealthtracker::connectors::ConnectorError
     networkFailure(QString message,
@@ -256,6 +283,25 @@ class BankSyncCoordinator final : public QObject {
         return std::nullopt;
     }
 
+    void appendTransactions(QList<wealthtracker::connectors::NormalizedTransaction>& transactions) {
+        const auto contents = [](const auto& row) {
+            return std::tie(row.postingDate, row.occurredAt, row.amount, row.description,
+                            row.merchant, row.bankCategory, row.mcc, row.sourceFields, row.kind);
+        };
+        for (auto& transaction : transactions) {
+            const auto key = std::pair{transaction.accountExternalId, transaction.externalId};
+            const auto existing = transaction_indexes_.constFind(key);
+            if (existing == transaction_indexes_.cend()) {
+                transaction_indexes_.insert(key, batch_.transactions.size());
+                batch_.transactions.push_back(std::move(transaction));
+            } else if (contents(batch_.transactions.at(*existing)) != contents(transaction)) {
+                fail({wealthtracker::connectors::ErrorCode::ParseFailed,
+                      QStringLiteral("Банк вернул разные данные для одной операции"), {}, false});
+                return;
+            }
+        }
+    }
+
     void requestPage(const QString& accountId, const QByteArray& cursor) {
         if (first_error_) {
             return;
@@ -337,7 +383,7 @@ class BankSyncCoordinator final : public QObject {
                             fail(safetyLimit(
                                 QStringLiteral("История операций превысила безопасный лимит")));
                         } else {
-                            batch_.transactions += std::move(parsed->transactions);
+                            appendTransactions(parsed->transactions);
                             batch_.warnings += std::move(parsed->warnings);
                             nextCursor = std::move(parsed->nextCursor);
                         }
@@ -398,6 +444,7 @@ class BankSyncCoordinator final : public QObject {
     Failed failed_;
     wealthtracker::connectors::NormalizedBatch batch_;
     QHash<QString, int> pages_per_account_;
+    QHash<std::pair<QString, QString>, qsizetype> transaction_indexes_;
     QSet<QString> requested_pages_;
     QList<QPointer<QNetworkReply>> active_replies_;
     QList<PendingPage> pending_requests_;

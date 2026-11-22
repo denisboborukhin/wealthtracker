@@ -23,7 +23,7 @@ session expires.
   in USDT. Public-address tracking requires no registration or API key.
 - External ZenPlugins bundles: local execution through an optional Node.js host.
 - Cash-flow reports: date-filtered income, spending, savings, and categories,
-  with own-account transfers excluded from totals.
+  with confirmed own-account transfers excluded from totals.
 - Balance history: saved observations, date filters, selected banks and wallets,
   and opening/closing totals and changes for each currency.
 - Privacy screen: hides financial views and cancels active work.
@@ -82,7 +82,8 @@ file and network permissions; review their source before running them.
 
 ## Build and run
 
-On macOS arm64, install Xcode or LLVM, then run from the repository root:
+On macOS arm64, install the Xcode Command Line Tools and Homebrew LLVM 22,
+then run from the repository root:
 
 ```sh
 ./scripts/bootstrap.sh &&
@@ -90,7 +91,7 @@ On macOS arm64, install Xcode or LLVM, then run from the repository root:
 conan install . --profile:host=conan/profiles/macos-arm64 \
   --profile:build=conan/profiles/macos-arm64 \
   --build=missing -s:h build_type=Debug -of build/macos-debug &&
-./scripts/configure.sh macos-debug &&
+WEALTHTRACKER_LLVM_ROOT="$(brew --prefix llvm@22)" ./scripts/configure.sh macos-debug &&
 cmake --build --preset macos-debug &&
 open build/macos-debug/WealthTracker.app
 ```
@@ -113,7 +114,7 @@ For a directly installable ARM64 Android APK, see [Android packaging](android/RE
 | [Architecture](docs/architecture.md) | Code ownership and runtime data flow |
 | [Security design](docs/security-design.md) | Credential handling, network controls, and privacy |
 | [Building](docs/building.md) | Build, verification, and packaging commands |
-| [Verification](docs/verification.md) | Platform checks, GitLab source checks, and release limits |
+| [Verification](docs/verification.md) | Platform checks, hosted CI, and release limits |
 | [Contributing](CONTRIBUTING.md) | Development and submission rules |
 | [Security policy](SECURITY.md) | Vulnerability reporting |
 | [Agent instructions](AGENTS.md) | Coding-agent instructions |

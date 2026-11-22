@@ -139,7 +139,8 @@ public:
 #ifdef Q_OS_MACOS
         clearing_browser_data_ = true;
         const QPointer<OzonLoginCoordinator> guard(this);
-        clearBankBrowserData({QStringLiteral("finance.ozon.ru"), QStringLiteral("sso.ozon.ru")}, [guard] {
+        // WebKit groups the finance and SSO origins by registrable site.
+        clearBankBrowserData({QStringLiteral("ozon.ru")}, [guard] {
             if (guard) guard->clearing_browser_data_ = false;
         });
         stop(true);

@@ -3,12 +3,16 @@
 // Local compatibility host for separately obtained ZenMoney plugin bundles.
 // The bundle remains a separate work and is never distributed by WealthTracker.
 
-import { createRequire } from 'node:module'
+import { createHash } from 'node:crypto'
+import { closeSync, fstatSync, openSync, readSync } from 'node:fs'
+import Module, { createRequire } from 'node:module'
 import path from 'node:path'
 import readline from 'node:readline'
+import { runInThisContext } from 'node:vm'
 
 const maximumInputBytes = 8 * 1024 * 1024
 const maximumStateBytes = 1024 * 1024
+const maximumBundleBytes = 64 * 1024 * 1024
 const identifierPattern = /^[a-z0-9][a-z0-9._-]{0,63}$/
 const keyPattern = /^[A-Za-z][A-Za-z0-9._-]{0,63}$/
 const blockedKeys = new Set(['__proto__', 'constructor', 'prototype'])
@@ -364,6 +368,9 @@ async function start (command) {
   if (path.basename(command.bundlePath, path.extname(command.bundlePath)).toLowerCase() !== command.pluginId) {
     throw new Error('Plugin id does not match bundle name')
   }
+  if (typeof command.bundleDigest !== 'string' || !/^[a-f0-9]{64}$/.test(command.bundleDigest)) {
+    throw new Error('Invalid plugin bundle digest')
+  }
   assertScalarObject(command.preferences, 'Plugin preferences')
   assertObject(command.state, 'Plugin state')
   if (!Array.isArray(command.allowedOrigins) || command.allowedOrigins.length > 8 ||
@@ -382,6 +389,27 @@ async function start (command) {
     throw new Error('Invalid synchronization period')
   }
 
+  const file = openSync(command.bundlePath, 'r')
+  let source
+  try {
+    const info = fstatSync(file)
+    const { size } = info
+    if (!info.isFile() || size < 1 || size > maximumBundleBytes) throw new Error('Invalid bundle file')
+    source = Buffer.alloc(size)
+    let offset = 0
+    while (offset < size) {
+      const count = readSync(file, source, offset, size - offset, null)
+      if (count === 0) throw new Error('Plugin bundle changed')
+      offset += count
+    }
+    if (readSync(file, Buffer.alloc(1), 0, 1, null) !== 0 ||
+        createHash('sha256').update(source).digest('hex') !== command.bundleDigest) {
+      throw new Error('Plugin bundle changed')
+    }
+  } finally {
+    closeSync(file)
+  }
+
   preferenceSecrets = Object.values(command.preferences)
     .filter(value => typeof value === 'string' && value.length >= 3)
   globalThis.global = globalThis
@@ -391,8 +419,12 @@ async function start (command) {
   globalThis.ZenMoney = runtime
   globalThis.fetch = runtime.fetch
 
-  const require = createRequire(import.meta.url)
-  require(command.bundlePath)
+  const bundle = new Module(command.bundlePath)
+  bundle.filename = command.bundlePath
+  const require = createRequire(bundle.filename)
+  const code = source.toString('utf8').replace(/^#![^\n]*/, '')
+  const run = runInThisContext(Module.wrap(code), { filename: bundle.filename })
+  run.call(bundle.exports, bundle.exports, require, bundle, bundle.filename, path.dirname(bundle.filename))
   if (typeof globalThis.main !== 'function') {
     throw new Error('Bundle does not expose a ZenMoney main function')
   }

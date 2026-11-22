@@ -390,7 +390,7 @@ Item {
                     }
                     ActionButton {
                         visible: connectionDialog.builtinRetail
-                                 && connectionDialog.effectiveConnected
+                                 && (connectionDialog.effectiveConnected || selectedRetail.pendingSessionValidation)
                                  && !connectionDialog.retailSyncRunning
                                  && !connectionDialog.retailLoginActive
                         text: qsTr("Обновить")
@@ -399,7 +399,7 @@ Item {
                     }
                     ActionButton {
                         visible: connectionDialog.builtinRetail
-                                 && connectionDialog.effectiveConnected
+                                 && (connectionDialog.effectiveConnected || selectedRetail.savedSession)
                                  && !connectionDialog.retailSyncRunning
                                  && !connectionDialog.retailLoginActive
                         text: qsTr("Отключить")

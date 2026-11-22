@@ -218,19 +218,26 @@ struct BalanceHistoryFilter {
     });
     QMap<QString, const storage::BalanceCapture*> latest;
     std::vector<Sample> samples;
-    bool observed = false;
     int realObservations = 0;
+    const auto currencyCode = currency.toStdString();
     for (const auto& event : events) {
         const auto& capture = *event.capture;
-        latest[QString::fromStdString(capture.connection_id)] = &capture;
         std::int64_t amount = 0;
         int count = 0;
         QMap<QString, AccountAmount> accounts;
         if (accountId.isEmpty()) {
+            const auto connectionId = QString::fromStdString(capture.connection_id);
+            const bool hasCurrency = std::ranges::any_of(capture.balances,
+                [&](const auto& balance) { return balance.currency == currencyCode; });
+            if (hasCurrency) {
+                latest[connectionId] = &capture;
+            } else if (latest.remove(connectionId) == 0) {
+                continue;
+            }
             BigAmount total = 0;
             for (const auto* current : latest) {
                 for (const auto& balance : current->balances) {
-                    if (QString::fromStdString(balance.currency) != currency) continue;
+                    if (balance.currency != currencyCode) continue;
                     const auto value = balance.amount_minor;
                     total += value;
                     ++count;
@@ -242,8 +249,6 @@ struct BalanceHistoryFilter {
             if (total > std::numeric_limits<std::int64_t>::max() || total < std::numeric_limits<std::int64_t>::min())
                 return failure(QStringLiteral("Сумма остатков превышает допустимый диапазон."));
             amount = total.convert_to<std::int64_t>();
-            observed = observed || count > 0;
-            if (!observed) continue;
         } else {
             for (const auto& balance : capture.balances) {
                 if (accountKey(capture, balance) == accountId && QString::fromStdString(balance.currency) == currency) {

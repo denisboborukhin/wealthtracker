@@ -12,6 +12,7 @@ ComboBox {
 
     contentItem: Text {
         text: root.displayText
+        textFormat: Text.PlainText
         color: Theme.text
         font.pixelSize: 12
         verticalAlignment: Text.AlignVCenter
@@ -65,6 +66,7 @@ ComboBox {
         contentItem: Text {
             elide: Text.ElideRight
             text: optionDelegate.text
+            textFormat: Text.PlainText
             color: Theme.text
             font.pixelSize: 12
             verticalAlignment: Text.AlignVCenter

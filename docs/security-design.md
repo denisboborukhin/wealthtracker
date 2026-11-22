@@ -153,8 +153,10 @@ Certificate and hostname verification remain enabled. WebViews use platform TLS.
 
 HTTP authentication, throttling, server, and transport failures are classified
 separately. Failed synchronization stops outstanding work and preserves the
-previous complete snapshot. Parsers reject invalid schema and monetary values;
-some parsers skip malformed or duplicate rows with warnings.
+previous complete snapshot. Account discovery requires one valid balance per
+account and rejects snapshots with discarded accounts. Transaction parsers can
+skip malformed rows with warnings. Repeated operations with conflicting data
+fail synchronization.
 
 Sources: [host policy](../src/connectors/network_policy.cpp),
 [bank coordinator](../src/app/bank_sync.cppm),
@@ -266,5 +268,8 @@ tokens are not passed to the child.
 The child retains the current user's file and network permissions. These
 controls do not sandbox a selected bundle. The OS, local binary, and bank pages
 are trusted; code running as the same user can access process memory.
+Approval and saved state are tied to the bundle's SHA-256 digest. Inspect and
+select an updated bundle again before running it. Existing configurations
+without a digest also require selection again.
 
 Source: [plugin runner](../src/app/zen_plugin_runner.cppm).

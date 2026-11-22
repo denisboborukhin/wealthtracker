@@ -1,4 +1,5 @@
 #include "app/AppController.hpp"
+#include "app/CredentialBackend.hpp"
 
 #include <QGuiApplication>
 #include <QDir>
@@ -15,6 +16,7 @@
 #include <QtWebView/QtWebView>
 
 #include <openssl/ssl.h>
+#include <memory>
 
 Q_IMPORT_QML_PLUGIN(WealthTrackerPlugin)
 
@@ -49,10 +51,17 @@ int main(int argc, char* argv[]) {
     }
 #endif
 
-    wealthtracker::app::AppController controller;
+    const auto screenshotPath = qEnvironmentVariable("WEALTHTRACKER_SCREENSHOT");
+    const bool demoScreenshot = !screenshotPath.isEmpty() &&
+        qEnvironmentVariableIntValue("WEALTHTRACKER_SCREENSHOT_DEMO") == 1;
+    using wealthtracker::app::AppController;
+    const auto controller = demoScreenshot
+        ? std::make_unique<AppController>(nullptr, nullptr)
+        : std::make_unique<AppController>();
+    if (demoScreenshot) controller->loadDemoData();
     QQmlApplicationEngine engine;
     engine.setInitialProperties(QVariantMap{
-        {QStringLiteral("app"), QVariant::fromValue<QObject*>(&controller)}});
+        {QStringLiteral("app"), QVariant::fromValue<QObject*>(controller.get())}});
     engine.loadFromModule(QStringLiteral("WealthTracker"), QStringLiteral("Main"));
     if (engine.rootObjects().isEmpty()) {
         return 1;
@@ -65,15 +74,7 @@ int main(int argc, char* argv[]) {
         window->setProperty("currentPage", page);
     }
 
-    const auto screenshotPath = qEnvironmentVariable("WEALTHTRACKER_SCREENSHOT");
-    if (window && !screenshotPath.isEmpty()) {
-        bool demoOk = false;
-        const int demo = qEnvironmentVariableIntValue(
-            "WEALTHTRACKER_SCREENSHOT_DEMO", &demoOk);
-        if (demoOk && demo == 1) {
-            controller.loadDemoData();
-        }
-
+    if (window && demoScreenshot) {
         bool widthOk = false;
         const int width = qEnvironmentVariableIntValue(
             "WEALTHTRACKER_SCREENSHOT_WIDTH", &widthOk);

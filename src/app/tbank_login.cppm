@@ -189,7 +189,7 @@ class TBankLoginCoordinator final : public QObject {
                     .arg(static_cast<int>(reply.error()))
                     .arg(status));
         }
-        auto body = reply.readAll();
+        auto body = reply.read(maximumAuthResponseBytes + 1);
         if (body.isEmpty() || body.size() > maximumAuthResponseBytes) {
             body.fill('\0');
             return std::unexpected(QStringLiteral("Т-Банк вернул ответ недопустимого размера"));
@@ -273,6 +273,10 @@ class TBankLoginCoordinator final : public QObject {
         auto polledSession = candidate_session_;
         const auto generation = generation_;
         auto* reply = network_.get(*request);
+        reply->setReadBufferSize(maximumAuthResponseBytes + 1);
+        connect(reply, &QNetworkReply::readyRead, this, [reply] {
+            if (reply->bytesAvailable() > maximumAuthResponseBytes) reply->abort();
+        });
         authorization_reply_ = reply;
         request_deadline_.start(15'000);
         connect(reply, &QNetworkReply::finished, this,

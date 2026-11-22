@@ -11,7 +11,7 @@ platform ABI, and third-party C API boundaries.
 | `src/storage` | SQLCipher connections, migrations, and repositories |
 | `src/platform` | Secure buffers, key wrapping, and OS credential storage |
 | `src/connectors` | Bank clients, network policy, normalization, and deduplication |
-| `src/app` | Controller, synchronization, Ethereum wallet valuation, history projection, reporting, transfer matching, WebViews, plugin runner, and Qt models |
+| `src/app` | Controller, synchronization, Ethereum wallet valuation, history projection, reporting, WebViews, plugin runner, and Qt models |
 | `include/app` | Qt `moc` boundary headers |
 | `ui/qml` | Pages and reusable UI components |
 | `tests` | Catch2 tests and synthetic fixtures |
@@ -106,11 +106,9 @@ timeouts, and normalized month projections.
 range, initially the latest month through today. Current balances and portfolio
 values are independent of that range. Aggregate totals use RUB.
 
-[Transfer matching](../src/app/transfer_matching.cppm) preserves explicit bank
-markers and pairs opposite amounts in the same currency across different
-connections within three days. Matches are deterministic and one-to-one;
-ambiguous batches remain unclassified. Transfers stay visible in the operations
-list and are excluded from cash-flow and category totals.
+[Financial projection](../src/app/finance_projection.cppm) keeps transactions
+explicitly marked as own-account transfers visible in the operations list and
+excludes them from cash-flow and category totals.
 
 T-Invest portfolio value uses the API total. Holding rows use validated portfolio tickers and instrument reference names,
 with quantity times current price in the instrument's currency.

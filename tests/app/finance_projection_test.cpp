@@ -41,31 +41,38 @@ TEST_CASE("Financial projection keeps balances independent of reporting dates an
         transaction("income", QDate(2026,11,3), 30000),
         transaction("spend", QDate(2026,11,1), -10000),
         transaction("transfer-out", QDate(2026,11,2), -500),
+        transaction("unrelated-spend", QDate(2026,11,2), -200),
         transaction("outside-report", QDate(2026,10,31), -90000),
     };
+    first.transactions[2].kind = NormalizedTransactionKind::InternalTransfer;
     auto& second = batches["bank-b"];
     second.accounts.push_back({"account", "Alpha account", "current", "RUB", {}, false, {}});
     second.balances.push_back({"account", QDateTime::currentDateTimeUtc(), {7500,"RUB"}, {}});
-    second.transactions = {transaction("transfer-in", QDate(2026,11,2), 500)};
+    second.transactions = {
+        transaction("transfer-in", QDate(2026,11,2), 500),
+        transaction("unrelated-income", QDate(2026,11,2), 200),
+        transaction("unverified-income", QDate(2026,11,2), 500),
+    };
+    second.transactions.front().kind = NormalizedTransactionKind::InternalTransfer;
     // Unknown integrations are skipped just as they are by the controller facade.
     batches["unknown"].balances.push_back({"account", QDateTime::currentDateTimeUtc(), {1000000,"RUB"}, {}});
     const QHash<QString, ProjectionInstitution> metadata{
         {"bank-a", {"Zulu Bank", "#111111"}}, {"bank-b", {"Alpha Bank", "#222222"}}};
     const auto result = projectFinance(batches, metadata, period, today);
     CHECK(result.netWorth == QStringLiteral("325 ₽"));
-    CHECK(result.income == QStringLiteral("300 ₽"));
-    CHECK(result.spending == QStringLiteral("100 ₽"));
-    CHECK(result.savings == QStringLiteral("200 ₽"));
+    CHECK(result.income == QStringLiteral("307 ₽"));
+    CHECK(result.spending == QStringLiteral("102 ₽"));
+    CHECK(result.savings == QStringLiteral("205 ₽"));
     REQUIRE(result.accounts.size() == 2);
     CHECK(result.accounts.front().institution == QStringLiteral("Alpha Bank"));
     CHECK(result.accounts.front().accent == QStringLiteral("#222222"));
-    REQUIRE(result.transactions.size() == 4);
+    REQUIRE(result.transactions.size() == 7);
     CHECK(result.transactions.front().title == QStringLiteral("income"));
     int transfers = 0;
     for (const auto& row : result.transactions) if (row.transfer) ++transfers;
     CHECK(transfers == 2);
     REQUIRE(result.categories.size() == 1);
-    CHECK(result.categories.front().amount == QStringLiteral("100 ₽"));
+    CHECK(result.categories.front().amount == QStringLiteral("102 ₽"));
     CHECK(result.categories.front().share == 1.0);
     const auto later = projectFinance(batches, metadata, {today,today}, today);
     CHECK(later.netWorth == result.netWorth);

@@ -32,8 +32,8 @@ alone does not install Qt. If configuration reports a missing Qt SDK, rerun
 configuration file is `build/qt/6.11.1/macos/lib/cmake/Qt6/Qt6Config.cmake`.
 
 Keep that environment active during Conan installation. Dependency recipes
-invoke CMake and Ninja by name. C++23 module builds also require the selected
-compiler's dependency scanner; `scripts/configure.sh` validates it.
+invoke CMake and Ninja by name. Install Homebrew `llvm@22` for the compiler and
+matching `clang-scan-deps` used by the macOS build and CI.
 
 On macOS, the script selects Python 3.9 or newer backed by OpenSSL 1.1.1 or
 newer. Apple's Command Line Tools Python uses an unsupported LibreSSL runtime.
@@ -65,7 +65,7 @@ conan install . \
   --profile:build=conan/profiles/macos-arm64 \
   --build=missing -s:h build_type=Debug \
   -of build/macos-debug &&
-./scripts/configure.sh macos-debug &&
+WEALTHTRACKER_LLVM_ROOT="$(brew --prefix llvm@22)" ./scripts/configure.sh macos-debug &&
 cmake --build --preset macos-debug &&
 ctest --preset macos-debug --output-on-failure &&
 cmake --build --preset macos-debug --target wealthtracker_qmllint &&
@@ -152,7 +152,7 @@ conan install . \
   --profile:build=conan/profiles/macos-arm64 \
   --build=missing -s:h build_type=Release \
   -of build/macos-release &&
-./scripts/configure.sh macos-release &&
+WEALTHTRACKER_LLVM_ROOT="$(brew --prefix llvm@22)" ./scripts/configure.sh macos-release &&
 cmake --build --preset macos-release &&
 ctest --preset macos-release --output-on-failure &&
 cmake --build --preset macos-release --target wealthtracker_qmllint &&

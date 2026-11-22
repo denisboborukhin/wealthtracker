@@ -13,7 +13,6 @@ extern "C++" {
 #include <algorithm>
 #include <cstdint>
 #include <limits>
-#include <span>
 #include <tuple>
 #include <utility>
 }
@@ -22,7 +21,6 @@ export module wt.finance_projection;
 
 import wt.connectors;
 import wt.reporting;
-import wt.transfer_matching;
 
 namespace wealthtracker::app {
 namespace {
@@ -129,7 +127,6 @@ QString formatTransactionDate(const QDate& value, const QDate& today) {
     QVector<HoldingRow> holdingRows;
     std::int64_t portfolioValue = 0;
     bool portfolioValid = true;
-    QVector<OwnedTransaction> ownedTransactions;
     QVector<SourceTransaction> sourceTransactions;
     QVector<DatedTransaction> transactionRows;
     QHash<QString, std::int64_t> categorySpending;
@@ -177,19 +174,10 @@ QString formatTransactionDate(const QDate& value, const QDate& today) {
         }
         for (const auto& transaction : bank->transactions) {
             sourceTransactions.push_back({bank.key(), institution, &transaction});
-            ownedTransactions.push_back(
-                {bank.key(), transaction.accountExternalId, transaction.externalId,
-                 transaction.postingDate, transaction.occurredAt, transaction.amount.minorUnits,
-                 transaction.amount.currency,
-                 transaction.kind ==
-                     wealthtracker::connectors::NormalizedTransactionKind::InternalTransfer});
         }
     }
 
-    const auto transferIndexes = findOwnAccountTransfers(std::span<const OwnedTransaction>{
-        ownedTransactions.constData(), static_cast<std::size_t>(ownedTransactions.size())});
-    for (qsizetype index = 0; index < sourceTransactions.size(); ++index) {
-        const auto& source = sourceTransactions.at(index);
+    for (const auto& source : std::as_const(sourceTransactions)) {
         const auto& transaction = *source.transaction;
         if (!reportingPeriod.contains(transaction.postingDate)) {
             continue;
@@ -205,7 +193,8 @@ QString formatTransactionDate(const QDate& value, const QDate& today) {
         if (subtitle.isEmpty() || subtitle == title) {
             subtitle = source.institution;
         }
-        const bool internalTransfer = transferIndexes.contains(index);
+        const bool internalTransfer = transaction.kind ==
+            wealthtracker::connectors::NormalizedTransactionKind::InternalTransfer;
         const auto category = internalTransfer ? QStringLiteral("Внутренний перевод")
                               : transaction.bankCategory.trimmed().isEmpty()
                                   ? QStringLiteral("Без категории")

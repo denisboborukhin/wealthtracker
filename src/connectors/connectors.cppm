@@ -210,6 +210,7 @@ struct ZenPluginDescriptor {
     QString bundlePath;
     QString preferencesPath;
     QVector<ZenPluginPreference> preferences;
+    QByteArray bundleDigest;
 };
 
 struct ZenPluginRunRequest {

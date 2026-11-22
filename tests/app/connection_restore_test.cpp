@@ -136,12 +136,24 @@ TEST_CASE("External plugin restoration returns its inspected configuration") {
     QTemporaryDir directory;
     REQUIRE(directory.isValid());
     QSettings settings(directory.filePath("settings.ini"), QSettings::IniFormat);
-    settings.setValue("zenPlugin/bundlePath", QStringLiteral(
-        WEALTHTRACKER_SOURCE_DIR "/tests/fixtures/zen_plugin_fixture.cjs"));
+    const auto bundlePath = directory.filePath("zen_plugin_fixture.cjs");
+    REQUIRE(QFile::copy(QStringLiteral(WEALTHTRACKER_SOURCE_DIR "/tests/fixtures/zen_plugin_fixture.cjs"), bundlePath));
+    REQUIRE(QFile::copy(QStringLiteral(WEALTHTRACKER_SOURCE_DIR "/tests/fixtures/preferences.xml"),
+                        directory.filePath("preferences.xml")));
+    const auto descriptor = wealthtracker::connectors::inspectZenPluginBundle(bundlePath);
+    REQUIRE(descriptor);
+    settings.setValue("zenPlugin/bundlePath", bundlePath);
     settings.setValue("zenPlugin/institution", "Fixture institution");
+    CHECK_FALSE(restoreConnections(nullptr, settings, {}).plugin);
+    settings.setValue("zenPlugin/bundleDigest", descriptor->bundleDigest);
     const auto restored = restoreConnections(nullptr, settings, {});
     REQUIRE(restored.plugin);
     CHECK(restored.plugin->pluginId == "zen_plugin_fixture");
     CHECK(restored.pluginInstitution == "Fixture institution");
     CHECK(settings.contains("zenPlugin/bundlePath"));
+    QFile changed(bundlePath);
+    REQUIRE(changed.open(QIODevice::Append));
+    REQUIRE(changed.write("\n// Changed bundle\n") > 0);
+    changed.close();
+    CHECK_FALSE(restoreConnections(nullptr, settings, {}).plugin);
 }

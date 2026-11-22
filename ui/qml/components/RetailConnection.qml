@@ -24,6 +24,8 @@ QtObject {
 
     readonly property bool supported: snapshot.supported === true
     readonly property bool connected: supported ? snapshot.connected : fallbackConnected
+    readonly property bool pendingSessionValidation: snapshot.pendingSessionValidation === true
+    readonly property bool savedSession: snapshot.savedSession === true
     readonly property bool loginActive: supported ? snapshot.loginActive : false
     readonly property bool syncRunning: supported ? snapshot.syncRunning : false
     readonly property bool autoUpdate: supported ? snapshot.autoUpdate : false

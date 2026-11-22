@@ -27,6 +27,10 @@ QString pluginStateCredentialKey(const ZenPluginDescriptor& descriptor) {
     hash.addData(descriptor.pluginId.toUtf8());
     hash.addData("\n");
     hash.addData(descriptor.bundlePath.toUtf8());
+    if (descriptor.pluginId != QStringLiteral("tbank-retail")) {
+        hash.addData("\n");
+        hash.addData(descriptor.bundleDigest);
+    }
     return QStringLiteral("zen-plugin-state-%1")
         .arg(QString::fromLatin1(hash.result().toHex()));
 }
@@ -55,6 +59,9 @@ public:
     [[nodiscard]] std::expected<PreparedPluginRun, QString> prepare(
         const QVariantMap& preferences, CredentialBackend* credentials) const {
         if (!descriptor_) return std::unexpected(QStringLiteral("Сначала выберите собранный bundle"));
+        const auto current = wealthtracker::connectors::inspectZenPluginBundle(descriptor_->bundlePath);
+        if (!current || current->bundleDigest != descriptor_->bundleDigest)
+            return std::unexpected(QStringLiteral("Bundle изменился. Проверьте его и выберите снова."));
         if (!credentials || !credentials->supported()) return std::unexpected(QStringLiteral(
             "Системное хранилище секретов нужно для состояния плагина"));
         QJsonObject normalizedPreferences;

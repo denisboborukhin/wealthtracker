@@ -456,6 +456,30 @@ TEST_CASE("Daily history uses carried baselines and counts real same-time observ
     CHECK(noUpdates.value("points").toList().size() == 2);
 }
 
+TEST_CASE("Daily history updates observations only for the selected currency") {
+    const QDate firstDay{2026, 1, 1};
+    const auto stamp = [&](const int dayOffset) {
+        return firstDay.addDays(dayOffset).startOfDay().addSecs(3600).toUTC()
+            .toString(Qt::ISODateWithMs).toStdString();
+    };
+    const std::vector<BalanceCapture> captures{
+        capture(1, "a", stamp(0), {{"1", "A", "RUB", 100}}),
+        capture(2, "b", stamp(1), {{"1", "B", "USD", 200}}),
+        capture(3, "a", stamp(2), {{"1", "A", "USD", 300}}),
+        capture(4, "b", stamp(3), {{"1", "B", "USD", 400}})};
+    const auto result = balance_history_chart(captures, {}, "RUB",
+        {false, {}, firstDay, firstDay.addDays(3), true});
+    CHECK(result.value("observationCount").toInt() == 2);
+    const auto points = result.value("points").toList();
+    REQUIRE(points.size() == 4);
+    CHECK(points[1].toMap().value("carried").toBool());
+    CHECK(points[1].toMap().value("timestamp") == points[0].toMap().value("timestamp"));
+    CHECK_FALSE(points[2].toMap().value("carried").toBool());
+    CHECK(points[2].toMap().value("label").toString() == "0.00 RUB");
+    CHECK(points[3].toMap().value("carried").toBool());
+    CHECK(points[3].toMap().value("timestamp") == points[2].toMap().value("timestamp"));
+}
+
 TEST_CASE("Daily history defaults to today respects explicit end dates and bounds calendar expansion") {
     const auto today = QDate::currentDate();
     const auto stamp = [](const QDate& day) { return day.startOfDay().toUTC().toString(Qt::ISODateWithMs).toStdString(); };

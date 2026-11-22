@@ -10,6 +10,7 @@
 
 #include <algorithm>
 #include <expected>
+#include <functional>
 #include <optional>
 
 import wt.bank_sync;
@@ -81,7 +82,7 @@ class SyncFixture final : public QObject, public ILiveConnector {
     StreamingReply* start(const int accountCount = 1) {
         wealthtracker::app::BankRuntime runtime{
             this, 50,
-            [this, accountCount](const QByteArray& body, const QDateTime&)
+            [this, accountCount](const QByteArray& body, const QDateTime& observedAt)
                 -> ConnectorResult<NormalizedBatch> {
                 ++accountParses;
                 accountBody = body;
@@ -90,20 +91,35 @@ class SyncFixture final : public QObject, public ILiveConnector {
                     ExternalAccount account;
                     account.externalId = QString::number(index);
                     batch.accounts.push_back(account);
+                    batch.balances.push_back({account.externalId, observedAt, {0, account.currency}, {}});
                 }
+                if (mutateAccounts) mutateAccounts(batch);
                 return batch;
             },
-            [this](const QByteArray& body, const QString&, const QByteArray&, int)
+            [this](const QByteArray& body, const QString& accountId, const QByteArray& cursor, int)
                 -> ConnectorResult<NormalizedBatch> {
                 ++pageParses;
                 pageBody = body;
-                return NormalizedBatch{};
+                NormalizedBatch batch;
+                if (simulateOverlap) {
+                    NormalizedTransaction transaction;
+                    transaction.accountExternalId = accountId;
+                    transaction.externalId = QStringLiteral("op");
+                    transaction.amount.minorUnits = body.toLongLong();
+                    transaction.provenance.sourceRow = cursor.isEmpty() ? 2 : 0;
+                    batch.transactions.push_back(transaction);
+                    if (cursor.isEmpty()) batch.nextCursor = "next";
+                }
+                return batch;
             },
         };
         runtime.maximumResponseBytes = 16;
         coordinator = new wealthtracker::app::BankSyncCoordinator(
             std::move(runtime), []() -> std::expected<QByteArray, QString> { return "test"; },
-            [this](NormalizedBatch) { ++completions; },
+            [this](NormalizedBatch batch) {
+                ++completions;
+                transactionCount = batch.transactions.size();
+            },
             [this](ConnectorError error) {
                 ++failures;
                 lastError = std::move(error);
@@ -118,6 +134,9 @@ class SyncFixture final : public QObject, public ILiveConnector {
     std::optional<ConnectorError> lastError;
     QByteArray accountBody;
     QByteArray pageBody;
+    std::function<void(NormalizedBatch&)> mutateAccounts;
+    qsizetype transactionCount = 0;
+    bool simulateOverlap = false;
     int accountParses = 0;
     int pageParses = 0;
     int completions = 0;
@@ -207,4 +226,57 @@ TEST_CASE("Bank sync preserves chunked responses at the exact size limit") {
     CHECK(fixture.accountBody == QByteArray(8, 'a') + QByteArray(8, 'b'));
     CHECK(fixture.pageBody == QByteArray(8, 'c') + QByteArray(8, 'd'));
     CHECK(fixture.completions == 1);
+}
+
+TEST_CASE("Bank sync fails before publishing incomplete account snapshots") {
+    SyncFixture fixture;
+    SECTION("Missing balance") {
+        fixture.mutateAccounts = [](auto& batch) { batch.balances.removeLast(); };
+    }
+    SECTION("Wrong balance currency") {
+        fixture.mutateAccounts = [](auto& batch) { batch.balances.front().balance.currency = "USD"; };
+    }
+    SECTION("Duplicate balance account") {
+        fixture.mutateAccounts = [](auto& batch) {
+            batch.balances.back().accountExternalId = batch.balances.front().accountExternalId;
+        };
+    }
+    SECTION("Malformed account skipped by parser") {
+        fixture.mutateAccounts = [](auto& batch) {
+            batch.warnings.push_back({WarningSeverity::RejectedRow, "account", {}, 2});
+        };
+    }
+    fixture.start(2)->finish();
+    REQUIRE(fixture.lastError);
+    CHECK(fixture.lastError->code == ErrorCode::ParseFailed);
+    CHECK(fixture.completions == 0);
+    CHECK(fixture.pages.isEmpty());
+}
+
+TEST_CASE("Bank sync deduplicates overlapping pages per account and rejects conflicting records") {
+    SyncFixture fixture;
+    fixture.simulateOverlap = true;
+    fixture.start(2)->finish();
+    REQUIRE(fixture.pages.size() == 2);
+    for (const auto index : {0, 1}) {
+        fixture.pages[index]->append("100");
+        fixture.pages[index]->finish();
+    }
+    REQUIRE(fixture.pages.size() == 4);
+    fixture.pages[2]->append("100");
+    fixture.pages[2]->finish();
+    SECTION("Identical operations on different pages count once for each account") {
+        fixture.pages[3]->append("100");
+        fixture.pages[3]->finish();
+        CHECK_FALSE(fixture.lastError);
+        CHECK(fixture.completions == 1);
+        CHECK(fixture.transactionCount == 2);
+    }
+    SECTION("A conflicting operation fails the entire refresh") {
+        fixture.pages[3]->append("101");
+        fixture.pages[3]->finish();
+        REQUIRE(fixture.lastError);
+        CHECK(fixture.lastError->code == ErrorCode::ParseFailed);
+        CHECK(fixture.completions == 0);
+    }
 }

@@ -21,17 +21,18 @@ versions, `androidName` supplies Android display version and artifact name, and
 `androidCode` is the monotonic Android upgrade code. Package IDs, signing keys,
 credential keys and local data paths remain stable across refactoring.
 
-## GitLab source checks
+## Hosted checks
 
-[`.gitlab-ci.yml`](../.gitlab-ci.yml) runs portable script/recipe checks, a
-redacted Gitleaks scan of all fetched Git history, and an OSV scan of
-`conan.lock`. The scan jobs fail on findings or scanner errors. They need a
-Linux container runner and network access to the pinned scanner images and
-public dependency databases; no bank credentials or signing keys are required.
-These jobs do not compile Qt, run native tests, or validate an Android package.
-Run the platform checks above before a release. The first hosted pipeline must
-be checked after creating the GitLab project; local YAML validation does not
-prove runner availability or image execution on that server.
+[GitHub Actions](../.github/workflows/ci.yml) builds, tests, and stages desktop
+packages on macOS and Windows. GitHub Actions and [GitLab CI](../.gitlab-ci.yml)
+both run portable checks, a redacted Gitleaks scan of fetched Git history, and
+an OSV scan of `conan.lock`. The scans fail on findings or scanner errors and
+use pinned Linux container images. Android verification requires the local
+checks above.
+
+Confirm the first hosted run and enable
+[private vulnerability reporting](https://docs.github.com/en/code-security/how-tos/report-and-fix-vulnerabilities/configure-vulnerability-reporting/configure-for-a-repository)
+in the GitHub repository settings when publishing the repository.
 
 OSV coverage for Conan packages is incomplete. An empty scan is not proof that
 a dependency has no known vulnerabilities: review upstream Qt, OpenSSL and

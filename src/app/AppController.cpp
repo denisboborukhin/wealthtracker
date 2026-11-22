@@ -762,7 +762,7 @@ void AppController::restoreSavedBalances() {
     QMap<QString, const wealthtracker::storage::BalanceCapture*> latest;
     for (const auto& capture : private_->history.captures()) {
         const auto id = QString::fromStdString(capture.connection_id);
-        const bool connected = id == QStringLiteral("tbank-retail") ? tbankConnected()
+        const bool connected = id == QStringLiteral("tbank-retail") ? private_->activity.value(id).savedSession
             : id == QStringLiteral("alfa-retail") ? alfaConnected()
             : id == QStringLiteral("vtb-retail") ? vtbConnected()
             : id == QStringLiteral("ozon-retail") ? ozonConnected()
@@ -939,8 +939,11 @@ AppController::AppController(std::unique_ptr<CredentialBackend> credentials,
     auto restored = restoreConnections(private_->credentials.get(), settings, connectionCredentials);
     connected_bank_ids_ = std::move(restored.apiConnectionIds);
     investment_connected_ = connected_bank_ids_.contains(QStringLiteral("t-invest"));
-    private_->activity[QStringLiteral("tbank-retail")].connected = restored.tbankConnected;
-    private_->activity[QStringLiteral("tbank-retail")].savedSession = restored.tbankSessionSaved;
+    auto& tbank = private_->activity[QStringLiteral("tbank-retail")];
+    tbank.savedSession = restored.tbankSessionSaved || restored.tbankConnected;
+    tbank.pendingSessionValidation = tbank.savedSession &&
+        settings.value(QStringLiteral("tbank/pendingSessionValidation"), false).toBool();
+    tbank.connected = restored.tbankConnected && !tbank.pendingSessionValidation;
     private_->activity[QStringLiteral("alfa-retail")].connected = restored.alfaConnected;
     private_->activity[QStringLiteral("vtb-retail")].connected = restored.vtbConnected;
     private_->activity[QStringLiteral("ozon-retail")].connected = restored.ozonConnected;
@@ -962,7 +965,8 @@ AppController::AppController(std::unique_ptr<CredentialBackend> credentials,
     restoreSavedBalances();
     refreshBankConnections();
     sync_status_ = QStringLiteral("Нет синхронизированных подключений");
-    if (tbankConnected()) private_->pending_retail_restores.push_back(QStringLiteral("tbank"));
+    if (private_->activity.value(QStringLiteral("tbank-retail")).savedSession)
+        private_->pending_retail_restores.push_back(QStringLiteral("tbank"));
     if (alfaConnected()) private_->pending_retail_restores.push_back(QStringLiteral("alfa"));
     if (vtbConnected()) private_->pending_retail_restores.push_back(QStringLiteral("vtb"));
     if (ozonConnected()) private_->pending_retail_restores.push_back(QStringLiteral("ozon"));
@@ -1237,7 +1241,9 @@ void AppController::restoreRetailConnections() {
     }
     while (!private_->pending_retail_restores.isEmpty()) {
         const auto bank = private_->pending_retail_restores.takeFirst();
-        if (bank == QStringLiteral("tbank") && tbankConnected()) (void)synchronizeTBank();
+        if (bank == QStringLiteral("tbank") && (tbankConnected() ||
+                private_->activity.value(QStringLiteral("tbank-retail")).pendingSessionValidation))
+            (void)synchronizeTBank();
         if (bank == QStringLiteral("alfa") && alfaConnected()) (void)synchronizeAlfa();
         if (bank == QStringLiteral("vtb") && vtbConnected()) (void)synchronizeVtb();
         if (bank == QStringLiteral("ozon") && ozonConnected()) (void)synchronizeOzon();
@@ -1367,10 +1373,15 @@ QVariantMap AppController::retailConnectionState(const QString& connectorId) {
             {QStringLiteral("webView"), QVariant::fromValue(webView)},
             {QStringLiteral("certificateHelpRequired"), certificateHelp}};
     };
-    if (connectorId == QStringLiteral("tbank-retail"))
-        return snapshot(tbankConnected(), tbankLoginActive(), tbankSyncRunning(),
+    if (connectorId == QStringLiteral("tbank-retail")) {
+        auto state = snapshot(tbankConnected(), tbankLoginActive(), tbankSyncRunning(),
             tbankAutoUpdate(), tbankLastSync(), tbankNextSync(), tbankLoginStatus(),
             tbankWebView());
+        const auto activity = private_->activity.value(connectorId);
+        state.insert(QStringLiteral("pendingSessionValidation"), activity.pendingSessionValidation);
+        state.insert(QStringLiteral("savedSession"), activity.savedSession);
+        return state;
+    }
     if (connectorId == QStringLiteral("alfa-retail"))
         return snapshot(alfaConnected(), alfaLoginActive(), alfaSyncRunning(),
             alfaAutoUpdate(), alfaLastSync(), alfaNextSync(), alfaLoginStatus(),
@@ -2435,8 +2446,10 @@ bool AppController::inspectZenPluginBundle(const QUrl& source) {
         private_->plugin.descriptor() ? pluginStateCredentialKey(*private_->plugin.descriptor())
                                  : QString{};
     const auto newStateKey = pluginStateCredentialKey(*descriptor);
-    if (!previousStateKey.isEmpty() && previousStateKey != newStateKey) {
-        QSettings settings;
+    QSettings settings;
+    if ((!previousStateKey.isEmpty() && previousStateKey != newStateKey) ||
+        (settings.contains(QStringLiteral("zenPlugin/bundlePath")) &&
+         settings.value(QStringLiteral("zenPlugin/bundleDigest")).toByteArray() != descriptor->bundleDigest)) {
         settings.remove(QStringLiteral("zenPlugin/preferences"));
         settings.remove(QStringLiteral("zenPlugin/lastSyncAt"));
         settings.setValue(QStringLiteral("zenPlugin/autoUpdate"), false);
@@ -2550,6 +2563,8 @@ bool AppController::startZenPlugin(
             settings.setValue(
                 QStringLiteral("zenPlugin/bundlePath"),
                 private_->plugin.descriptor()->bundlePath);
+            settings.setValue(QStringLiteral("zenPlugin/bundleDigest"),
+                              private_->plugin.descriptor()->bundleDigest);
             settings.setValue(
                 QStringLiteral("zenPlugin/institution"),
                 displayName);
@@ -2801,12 +2816,6 @@ void AppController::cancelTBankLogin() {
     private_->tbank_login->cancel();
     private_->activity[QStringLiteral("tbank-retail")].loginActive = false;
     tbank_login_status_ = QStringLiteral("Вход отменён");
-    if (!tbankConnected() && private_->activity[QStringLiteral("tbank-retail")].pendingSessionValidation
-        && private_->credentials) {
-        (void)private_->credentials->remove(
-            QString::fromLatin1(tbankRetailCredentialKey));
-        private_->activity[QStringLiteral("tbank-retail")].pendingSessionValidation = false;
-    }
     refreshBankConnections();
     emit tbankConnectionChanged();
 }
@@ -2839,7 +2848,7 @@ void AppController::acceptTBankSession(QByteArray session) {
     }
 
     QSettings settings;
-    settings.remove(QStringLiteral("tbank/lastSyncAt"));
+    settings.setValue(QStringLiteral("tbank/pendingSessionValidation"), true);
     settings.setValue(QStringLiteral("tbank/autoUpdate"), true);
     private_->activity[QStringLiteral("tbank-retail")].connected = false;
     private_->activity[QStringLiteral("tbank-retail")].loginActive = false;
@@ -2851,10 +2860,6 @@ void AppController::acceptTBankSession(QByteArray session) {
     emit tbankConnectionChanged();
 
     if (!synchronizeTBank()) {
-        (void)private_->credentials->remove(
-            QString::fromLatin1(tbankRetailCredentialKey));
-        private_->activity[QStringLiteral("tbank-retail")].pendingSessionValidation = false;
-        private_->activity[QStringLiteral("tbank-retail")].savedSession = false;
         failTBankLogin(sync_status_);
     }
 }
@@ -2963,9 +2968,9 @@ bool AppController::synchronizeTBank() {
             recordBalanceHistory(QStringLiteral("tbank-retail"));
             rebuildBankModels();
             const auto completedAt = QDateTime::currentDateTimeUtc();
-            QSettings{}.setValue(
-                QStringLiteral("tbank/lastSyncAt"),
-                completedAt.toString(Qt::ISODateWithMs));
+            QSettings settings;
+            settings.setValue(QStringLiteral("tbank/lastSyncAt"), completedAt.toString(Qt::ISODateWithMs));
+            settings.remove(QStringLiteral("tbank/pendingSessionValidation"));
             tbank_login_status_ = QStringLiteral("Остатки обновлены · счетов %1").arg(accountCount);
             sync_status_ = QStringLiteral("Т-Банк: остатки обновлены · счетов %1").arg(accountCount);
             scheduleTBankAutoUpdateAfter(completedAt);
@@ -2980,25 +2985,17 @@ bool AppController::synchronizeTBank() {
             private_->tbank_sync_coordinator.clear();
             private_->activity[QStringLiteral("tbank-retail")].refreshActive = false;
             const bool authenticationRejected = error.code == ErrorCode::AuthenticationFailed;
-            const bool validatedSession = private_->activity[QStringLiteral("tbank-retail")].pendingSessionValidation;
-            private_->activity[QStringLiteral("tbank-retail")].pendingSessionValidation = false;
             if (authenticationRejected) {
                 // A rejected request must not rewrite the Keychain during startup.
                 // Keep the saved session until replacement or explicit disconnect,
                 // but stop publishing data or scheduling refreshes with it.
                 private_->activity[QStringLiteral("tbank-retail")].connected = false;
+                private_->activity[QStringLiteral("tbank-retail")].pendingSessionValidation = false;
             }
             if (private_->bank_batches.contains(QStringLiteral("tbank-retail"))) {
                 error.message += QStringLiteral(" Показаны последние успешно загруженные остатки.");
             }
-            if (validatedSession && !authenticationRejected) {
-                private_->activity[QStringLiteral("tbank-retail")].connected = true;
-                tbank_login_status_ =
-                    QStringLiteral("Т-Банк подключён, но синхронизация не завершена: %1")
-                        .arg(error.message);
-            } else {
-                tbank_login_status_ = error.message;
-            }
+            tbank_login_status_ = error.message;
             sync_status_ = QStringLiteral("Т-Банк: %1").arg(error.message);
             if (tbankConnected()) {
                 scheduleTBankAutoUpdateAfter(QDateTime::currentDateTimeUtc());

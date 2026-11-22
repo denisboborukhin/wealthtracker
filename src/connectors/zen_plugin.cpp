@@ -508,6 +508,11 @@ normalizeResult(const QJsonObject &object, const QString &pluginId,
             mcc = mccValue.toString().left(8);
         }
         const auto occurredAt = std::optional{*date};
+        const bool knownIncome = accountIds.contains(incomeAccount);
+        const bool knownOutcome = accountIds.contains(outcomeAccount);
+        const auto kind = knownIncome && knownOutcome && incomeAccount != outcomeAccount &&
+            *income > 0 && *outcome > 0
+            ? NormalizedTransactionKind::InternalTransfer : NormalizedTransactionKind::Regular;
 
         auto append = [&](const QString &accountId,
                           const std::int64_t amount, const QString &suffix) {
@@ -529,11 +534,10 @@ normalizeResult(const QJsonObject &object, const QString &pluginId,
                  category,
                  mcc,
                  std::move(fields),
-                 Provenance{pluginId, {}, baseId, -1}});
+                 Provenance{pluginId, {}, baseId, -1},
+                 kind});
         };
 
-        const bool knownIncome = accountIds.contains(incomeAccount);
-        const bool knownOutcome = accountIds.contains(outcomeAccount);
         if (knownOutcome && *outcome > 0) {
             append(outcomeAccount, -*outcome,
                    knownIncome ? QStringLiteral(":out") : QString{});
@@ -580,8 +584,16 @@ inspectZenPluginBundle(const QString &bundlePath)
     if (!preferences) {
         return std::unexpected(preferences.error());
     }
-    return ZenPluginDescriptor{pluginId, canonical, preferencesPath,
-                               std::move(*preferences)};
+    QFile source(canonical);
+    if (!source.open(QIODevice::ReadOnly)) {
+        return std::unexpected(invalidInput(QStringLiteral("Не удалось прочитать bundle")));
+    }
+    const auto code = source.read(maximumBundleBytes + 1);
+    if (code.isEmpty() || code.size() > maximumBundleBytes || source.error() != QFileDevice::NoError) {
+        return std::unexpected(invalidInput(QStringLiteral("Некорректный размер bundle")));
+    }
+    return ZenPluginDescriptor{pluginId, canonical, preferencesPath, std::move(*preferences),
+                               QCryptographicHash::hash(code, QCryptographicHash::Sha256).toHex()};
 }
 
 ConnectorResult<QByteArray>
@@ -619,6 +631,7 @@ makeZenPluginStartMessage(const ZenPluginRunRequest &request)
         {QStringLiteral("pluginId"), request.descriptor.pluginId},
         {QStringLiteral("bundlePath"),
          QFileInfo(request.descriptor.bundlePath).canonicalFilePath()},
+        {QStringLiteral("bundleDigest"), QString::fromLatin1(request.descriptor.bundleDigest)},
         {QStringLiteral("preferences"), request.preferences},
         {QStringLiteral("state"), request.state},
         {QStringLiteral("from"),

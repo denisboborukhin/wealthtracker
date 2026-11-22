@@ -66,6 +66,8 @@ RestoredConnections restoreConnections(
     auto descriptor = wealthtracker::connectors::inspectZenPluginBundle(configuredBundle);
     if (!descriptor) return restored;
     if (descriptor->pluginId != QStringLiteral("tbank-retail")) {
+        if (settings.value(QStringLiteral("zenPlugin/bundleDigest")).toByteArray() != descriptor->bundleDigest)
+            return restored;
         restored.pluginInstitution = settings.value(
             QStringLiteral("zenPlugin/institution"), descriptor->pluginId).toString();
         restored.plugin = std::move(*descriptor);

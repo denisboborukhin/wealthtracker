@@ -78,6 +78,25 @@ TEST_CASE("Zen plugin result events normalize accounts and signed operations")
     CHECK(event->batch.transactions.front().amount
           == Money{-4275, QStringLiteral("RUB")});
     CHECK(event->batch.transactions.front().mcc == QStringLiteral("5812"));
+    CHECK(event->batch.transactions.front().kind == NormalizedTransactionKind::Regular);
+}
+
+TEST_CASE("Zen plugin marks both legs when one operation names two owned accounts")
+{
+    const auto event = parseZenPluginEvent(QByteArrayLiteral(R"({
+        "type":"result", "accounts":[
+            {"id":"checking","title":"Checking","instrument":"RUB","balance":900},
+            {"id":"savings","title":"Savings","instrument":"RUB","balance":100}
+        ], "transactions":[
+            {"id":"transfer","date":"2026-07-30T10:00:00.000Z","income":100,"outcome":100,
+             "incomeAccount":"savings","outcomeAccount":"checking"}
+        ], "state":{}
+    })"), QStringLiteral("fixture"));
+    REQUIRE(event);
+    REQUIRE(event->batch.transactions.size() == 2);
+    for (const auto& transaction : event->batch.transactions) {
+        CHECK(transaction.kind == NormalizedTransactionKind::InternalTransfer);
+    }
 }
 
 TEST_CASE("Zen plugin protocol rejects malformed events and secret-sized input")

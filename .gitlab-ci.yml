@@ -18,7 +18,10 @@ source-checks:
   script:
     - conan inspect .
     - git check-ignore tasks/todo.md tasks/lessons.md android/.local/user/debug.keystore android/output/test.apk
-    - sh -n scripts/bootstrap.sh scripts/configure.sh scripts/verify.sh android/build.sh android/verify.sh
+    - |
+      for script in scripts/bootstrap.sh scripts/configure.sh scripts/verify.sh android/build.sh android/verify.sh; do
+        sh -n "$script" || exit
+      done
     - node --check scripts/zen_plugin_host.mjs
     - python -m unittest discover -s tests/scripts -v
 
