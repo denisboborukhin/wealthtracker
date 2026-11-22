@@ -8,7 +8,7 @@ supply real credentials to automated tests.
 | Area | Check | What it establishes |
 | --- | --- | --- |
 | Native | `sh scripts/verify.sh` | C++ domain/storage/coordinator behavior, native WebView fixtures, QML interaction and tooling contracts |
-| Windows | Equivalent `windows-debug` build/CTest and QML lint | Desktop compile and platform-specific credential support |
+| Windows (local) | Equivalent `windows-debug` build/CTest and QML lint | Desktop compile and platform-specific credential support |
 | Android package | Set JDK/SDK variables, run `./android/build.sh` | ARM64 compilation, packaging and signature verification |
 | Android runtime | `sh android/verify.sh emulator-5554` with JDK/SDK variables set and an owned emulator booted | Android trust/credential/browser instrumentation plus guarded native C++ callback checks |
 | UI | Compare phone/desktop screenshots after layout changes | Visible geometry and native window rendering |
@@ -23,8 +23,8 @@ credential keys and local data paths remain stable across refactoring.
 
 ## Hosted checks
 
-[GitHub Actions](../.github/workflows/ci.yml) builds, tests, and stages desktop
-packages on macOS and Windows. GitHub Actions and [GitLab CI](../.gitlab-ci.yml)
+[GitHub Actions](../.github/workflows/ci.yml) builds, tests, and stages the
+macOS application. GitHub Actions and [GitLab CI](../.gitlab-ci.yml)
 both run portable checks, a redacted Gitleaks scan of fetched Git history, and
 an OSV scan of `conan.lock`. The scans fail on findings or scanner errors and
 use pinned Linux container images. Android verification requires the local
