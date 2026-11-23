@@ -24,8 +24,8 @@ credential keys and local data paths remain stable across refactoring.
 ## Hosted checks
 
 [GitHub Actions](../.github/workflows/ci.yml) builds, tests, and packages the
-macOS application. It also builds an ARM64 Android APK and verifies its
-signature. Push builds keep these downloads under **Actions → CI run →
+macOS application, then builds and verifies the ARM64 Android APK on the same
+runner. Push builds keep these downloads under **Actions → CI run →
 Artifacts** for seven days.
 
 - **WealthTracker-macOS-preview** contains the macOS DMG.
