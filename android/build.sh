@@ -42,5 +42,5 @@ android_version=$(python -c 'import json; print(json.load(open("version.json"))[
 apk="android/output/wealthtracker-${android_version}-debug.apk"
 cp build/android-release/ui/qml/android-build/wealthtracker.apk "$apk"
 "${ANDROID_SDK_ROOT}/build-tools/36.0.0/apksigner" verify --verbose "$apk"
-shasum -a 256 "$apk" > "${apk}.sha256"
+(cd android/output && shasum -a 256 "${apk##*/}") > "${apk}.sha256"
 cat "${apk}.sha256"
