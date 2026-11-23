@@ -66,8 +66,17 @@ jobs:
       - name: Test
         run: ctest --preset "$WT_CI_PRESET" --output-on-failure
 
-      - name: Stage application bundle
-        run: cmake --install "build/$WT_CI_PRESET" --prefix "build/stage/$WT_CI_PRESET"
+      - name: Build macOS DMG
+        run: cmake --build --preset "$WT_CI_PRESET" --target package
+
+      - name: Upload macOS preview
+        if: github.event_name == 'push'
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: WealthTracker-macOS-preview
+          path: build/${{ env.WT_CI_PRESET }}/WealthTracker-*.dmg
+          if-no-files-found: error
+          retention-days: 7
 
   checks:
     runs-on: ubuntu-24.04
