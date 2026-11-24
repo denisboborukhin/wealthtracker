@@ -25,8 +25,9 @@ credential keys and local data paths remain stable across refactoring.
 
 [GitHub Actions](../.github/workflows/ci.yml) builds, tests, and packages the
 macOS application, then builds and verifies the ARM64 Android APK on the same
-runner. Push builds keep these downloads under **Actions → CI run →
-Artifacts** for seven days.
+runner. Android packaging can proceed after the shared setup succeeds even if
+macOS verification fails. Push builds keep these downloads under **Actions →
+CI run → Artifacts** for seven days.
 
 - **WealthTracker-macOS-preview** contains the macOS DMG.
 - **WealthTracker-Android-arm64-preview** contains the debug APK and its

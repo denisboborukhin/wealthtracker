@@ -23,6 +23,7 @@ jobs:
           python-version: "3.12"
 
       - name: Bootstrap macOS toolchain and verified Qt
+        id: bootstrap
         run: |
           brew install llvm@22
           echo "WEALTHTRACKER_LLVM_ROOT=$(brew --prefix llvm@22)" >> "$GITHUB_ENV"
@@ -78,23 +79,24 @@ jobs:
           if-no-files-found: error
           retention-days: 7
 
-      - name: Install verified Android Qt SDK
-        run: build/tooling/bin/python android/tools/install_qt.py https://ftp.fau.de/qtproject/ build/qt
-
       - name: Cache Android Conan packages
+        if: ${{ !cancelled() && steps.bootstrap.outcome == 'success' }}
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: build/conan-android/p
           key: conan-android-macos-15-${{ hashFiles('conanfile.py', 'conan.lock', 'conan/profiles/macos-arm64', 'android/conan.profile', 'android/build.sh') }}
 
       - name: Build and verify Android APK
+        id: android_package
+        if: ${{ !cancelled() && steps.bootstrap.outcome == 'success' }}
         run: |
+          build/tooling/bin/python android/tools/install_qt.py https://ftp.fau.de/qtproject/ build/qt
           export JAVA_HOME="${JAVA_HOME_21_arm64:?JDK 21 is required}"
           unset ANDROID_NDK_ROOT
           sh android/build.sh
 
       - name: Upload Android preview
-        if: github.event_name == 'push'
+        if: ${{ !cancelled() && github.event_name == 'push' && steps.android_package.outcome == 'success' }}
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: WealthTracker-Android-arm64-preview
