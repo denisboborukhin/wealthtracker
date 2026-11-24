@@ -23,12 +23,22 @@ credential keys and local data paths remain stable across refactoring.
 
 ## Hosted checks
 
-[GitHub Actions](../.github/workflows/ci.yml) builds, tests, and stages the
-macOS application. GitHub Actions and [GitLab CI](../.gitlab-ci.yml)
-both run portable checks, a redacted Gitleaks scan of fetched Git history, and
-an OSV scan of `conan.lock`. The scans fail on findings or scanner errors and
-use pinned Linux container images. Android verification requires the local
-checks above.
+[GitHub Actions](../.github/workflows/ci.yml) builds, tests, and packages the
+macOS application, then builds and verifies the ARM64 Android APK on the same
+runner. Android packaging can proceed after the shared setup succeeds even if
+macOS verification fails. Push builds keep these downloads under **Actions →
+CI run → Artifacts** for seven days.
+
+- **WealthTracker-macOS-preview** contains the macOS DMG.
+- **WealthTracker-Android-arm64-preview** contains the debug APK and its
+  SHA-256 checksum. GitHub's runners use a fresh debug key for each build.
+  For updates that preserve an existing installation, use the original
+  signing key with the [local Android build](../android/README.md#build-on-macos).
+
+GitHub Actions and [GitLab CI](../.gitlab-ci.yml) both run portable checks, a
+redacted Gitleaks scan of fetched Git history, and an OSV scan of `conan.lock`.
+The scans fail on findings or scanner errors and use pinned Linux container
+images. Android runtime verification requires the local checks above.
 
 Confirm the first hosted run and enable
 [private vulnerability reporting](https://docs.github.com/en/code-security/how-tos/report-and-fix-vulnerabilities/configure-vulnerability-reporting/configure-for-a-repository)
