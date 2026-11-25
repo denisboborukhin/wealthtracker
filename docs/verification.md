@@ -35,6 +35,11 @@ CI run → Artifacts** for seven days.
   For updates that preserve an existing installation, use the original
   signing key with the [local Android build](../android/README.md#build-on-macos).
 
+Increase `product` in [`version.json`](../version.json) on `master` to prepare
+a draft prerelease. After the build and repository checks pass, GitHub Actions
+attaches the DMG, APK, and checksum from that run to `v<product>` for the tested
+commit. Review the draft under **Releases** before publishing.
+
 GitHub Actions and [GitLab CI](../.gitlab-ci.yml) both run portable checks, a
 redacted Gitleaks scan of fetched Git history, and an OSV scan of `conan.lock`.
 The scans fail on findings or scanner errors and use pinned Linux container
